@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const webRoot = path.resolve(scriptDir, "../../web");
+const webRoot = path.resolve(scriptDir, "../vendor/web");
 const routerPackage = path.join(webRoot, "node_modules", "react-router-dom", "package.json");
 
 if (!existsSync(routerPackage)) {

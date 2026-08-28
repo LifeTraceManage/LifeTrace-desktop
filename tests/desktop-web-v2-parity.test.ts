@@ -16,7 +16,7 @@ test("desktop cloud workspace mounts the maintained apps/web feature layer", () 
 
 test("desktop native shell owns navigation while web owns feature pages", () => {
   const shell = read("src/components/DesktopWorkbenchShell.tsx");
-  const router = read("../web/src/app/DesktopFeatureRouter.tsx");
+  const router = read("../vendor/web/src/app/DesktopFeatureRouter.tsx");
   assert.doesNotMatch(shell, /web-client/);
   for (const route of [
     "/app/today",

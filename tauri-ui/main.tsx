@@ -14,7 +14,7 @@ import { installWindowPlacementPersistence, restoreWindowPlacement } from "./win
 /* The authenticated cloud workspace reuses the current apps/web feature layer.
  * Compile its Tailwind visual contract first, then keep desktop/local styles in
  * control of native shell and local-only tools. */
-import "../../web/src/styles/globals.css";
+import "../vendor/web/src/styles/globals.css";
 
 import "@/app/tokens.css";
 import "@/app/globals.css";

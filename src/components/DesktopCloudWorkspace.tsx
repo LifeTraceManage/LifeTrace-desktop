@@ -4,8 +4,8 @@ import {
   AppRuntimeProvider,
   type AppContextValue,
   type ThemeMode,
-} from "../../../web/src/app/AppContext";
-import { DesktopFeatureRouter } from "../../../web/src/app/DesktopFeatureRouter";
+} from "../../vendor/web/src/app/AppContext";
+import { DesktopFeatureRouter } from "../../vendor/web/src/app/DesktopFeatureRouter";
 import {
   CloudDataStore,
   EMPTY_CLOUD_STATE,
@@ -15,7 +15,7 @@ import {
   type EntityType,
   type JsonEntity,
   type WebSession,
-} from "../../../web/src/services/core";
+} from "../../vendor/web/src/services/core";
 import DesktopLocalToolsCenter from "@/src/components/DesktopLocalToolsCenter";
 import DesktopFitnessImport from "@/src/components/DesktopFitnessImport";
 import DesktopWorkbenchShell from "@/src/components/DesktopWorkbenchShell";
