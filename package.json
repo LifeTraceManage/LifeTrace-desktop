@@ -16,12 +16,9 @@
     "web:dev": "vite --config vite.tauri.config.ts",
     "preweb:build": "npm run prepare:web-shared",
     "web:build": "vite build --config vite.tauri.config.ts",
-    "browser:dev": "vite --config vite.browser.config.ts",
-    "browser:build": "vite build --config vite.browser.config.ts",
-    "browser:preview": "vite preview --config vite.browser.config.ts",
     "prelint": "npm run prepare:web-shared",
     "lint": "tsc --noEmit",
-    "test": "npm run lint && npm run test:unit && npm run web:build && npm run browser:build",
+    "test": "npm run lint && npm run test:unit && npm run web:build && npm run test:rust",
     "test:unit": "tsx --test tests/*.test.ts",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
   },
@@ -54,7 +51,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "22.19.19",
-    "@types/qrcode": "^1.5.6",
+    "@types/qrcode": "^5.0.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
