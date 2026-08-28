@@ -27,7 +27,7 @@ test("desktop photos return to the primary navigation without duplicating the lo
 
 test("manual bookkeeping stays absent while finance remains available and fitness import lives in fitness", () => {
   const shell = readFileSync("src/components/DesktopWorkbenchShell.tsx", "utf8");
-  const router = readFileSync("../vendor/web/src/app/DesktopFeatureRouter.tsx", "utf8");
+  const router = readFileSync("vendor/web/src/app/DesktopFeatureRouter.tsx", "utf8");
   const workspace = readFileSync("src/components/DesktopCloudWorkspace.tsx", "utf8");
   const localTools = readFileSync("src/components/DesktopLocalToolsCenter.tsx", "utf8");
   const fitnessImport = readFileSync("src/components/DesktopFitnessImport.tsx", "utf8");
