@@ -6,9 +6,9 @@ import test from "node:test";
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
-test("desktop cloud workspace mounts the maintained apps/web feature layer", () => {
+test("desktop cloud workspace mounts the maintained web feature snapshot", () => {
   const workspace = read("src/components/DesktopCloudWorkspace.tsx");
-  assert.match(workspace, /\.\.\/\.\.\/\.\.\/web\/src\/app\/AppContext/);
+  assert.match(workspace, /\.\.\/\.\.\/vendor\/web\/src\/app\/AppContext/);
   assert.match(workspace, /DesktopFeatureRouter/);
   assert.match(workspace, /setCloudFetchOverride\(desktopCloudFetch\)/);
   assert.doesNotMatch(workspace, /web-client/);
@@ -16,7 +16,7 @@ test("desktop cloud workspace mounts the maintained apps/web feature layer", () 
 
 test("desktop native shell owns navigation while web owns feature pages", () => {
   const shell = read("src/components/DesktopWorkbenchShell.tsx");
-  const router = read("../vendor/web/src/app/DesktopFeatureRouter.tsx");
+  const router = read("vendor/web/src/app/DesktopFeatureRouter.tsx");
   assert.doesNotMatch(shell, /web-client/);
   for (const route of [
     "/app/today",
@@ -44,6 +44,6 @@ function workspaceSource(): string {
 
 test("tauri entry loads the current web visual contract instead of legacy css", () => {
   const entry = read("tauri-ui/main.tsx");
-  assert.match(entry, /web\/src\/styles\/globals\.css/);
+  assert.match(entry, /vendor\/web\/src\/styles\/globals\.css/);
   assert.doesNotMatch(entry, /web-client\/src/);
 });
