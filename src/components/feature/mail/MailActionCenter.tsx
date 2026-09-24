@@ -167,9 +167,15 @@ export default function MailActionCenter() {
   };
 
   const patchMessage = (id: string, patch: Partial<MailMessage>) => {
-    setMessages((current) => current.map((item) => item.id === id
-      ? { ...item, ...(typeof patch.isRead === "boolean" ? { isRead: patch.isRead } : {}) }
-      : item));
+    setMessages((current) => current.flatMap((item) => {
+      if (item.id !== id) return [item];
+      if (activeSource.kind === "starred" && patch.isStarred === false) return [];
+      return [{
+        ...item,
+        ...(typeof patch.isRead === "boolean" ? { isRead: patch.isRead } : {}),
+        ...(typeof patch.isStarred === "boolean" ? { isStarred: patch.isStarred } : {}),
+      }];
+    }));
   };
 
   const archiveMessage = (id: string) => {
