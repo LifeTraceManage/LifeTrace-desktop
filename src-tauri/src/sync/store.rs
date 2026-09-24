@@ -74,11 +74,11 @@ impl SqliteSyncStore {
             "english.note" => english::get(connection, "notes", entity_id).map_err(Self::db_error)?,
             "english.vocabulary" => english::get(connection, "vocabulary", entity_id).map_err(Self::db_error)?,
             "note.folder" => connection.query_row(
-                "SELECT id,user_id,name,icon,color,sort_order,created_at,updated_at FROM note_folders WHERE id=?1 AND user_id=?2",
+                "SELECT id,user_id,name,icon,color,parent_folder_id,sort_order,created_at,updated_at FROM note_folders WHERE id=?1 AND user_id=?2",
                 params![entity_id,profile], |row| Ok(json!({
                     "id":row.get::<_,String>(0)?,"userId":row.get::<_,String>(1)?,"name":row.get::<_,String>(2)?,
-                    "icon":row.get::<_,String>(3)?,"color":row.get::<_,String>(4)?,"sortOrder":row.get::<_,i64>(5)?,
-                    "createdAt":row.get::<_,String>(6)?,"updatedAt":row.get::<_,String>(7)?
+                    "icon":row.get::<_,String>(3)?,"color":row.get::<_,String>(4)?,"parentFolderId":row.get::<_,Option<String>>(5)?,
+                    "sortOrder":row.get::<_,i64>(6)?,"createdAt":row.get::<_,String>(7)?,"updatedAt":row.get::<_,String>(8)?
                 }))
             ).optional().map_err(Self::db_error)?,
             "note.tag" => connection.query_row(
