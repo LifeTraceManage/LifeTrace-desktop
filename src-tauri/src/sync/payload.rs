@@ -189,6 +189,30 @@ pub fn legacy_to_wire(
             "embeddingStatus": object.get("embeddingStatus").cloned().unwrap_or(Value::Null),
             "lastAiProcessedAt": object.get("lastAiProcessedAt").cloned().unwrap_or(Value::Null)
         }),
+        "execution.important_date" => json!({
+            "id": text(object.get("id"), ""),
+            "userId": profile_id,
+            "title": text(object.get("title"), ""),
+            "date": text(object.get("date"), Utc::now().date_naive().to_string().as_str()),
+            "repeat": text(object.get("repeat"), "once"),
+            "kind": text(object.get("kind"), "other"),
+            "calendar": text(object.get("calendar"), "solar"),
+            "lunarYear": object.get("lunarYear").cloned().unwrap_or(Value::Null),
+            "lunarMonth": object.get("lunarMonth").cloned().unwrap_or(Value::Null),
+            "lunarDay": object.get("lunarDay").cloned().unwrap_or(Value::Null),
+            "lunarLeapMonth": object.get("lunarLeapMonth").and_then(Value::as_bool).unwrap_or(false),
+            "enabled": object.get("enabled").and_then(Value::as_bool).unwrap_or(true)
+        }),
+        "execution.focus_session" => json!({
+            "id": text(object.get("id"), ""),
+            "userId": profile_id,
+            "taskId": object.get("taskId").cloned().unwrap_or(Value::Null),
+            "mode": text(object.get("mode"), "short"),
+            "startedAt": stamp(object.get("startedAt")),
+            "endedAt": stamp(object.get("endedAt")),
+            "focusSeconds": object.get("focusSeconds").and_then(Value::as_u64).unwrap_or(0),
+            "completed": object.get("completed").and_then(Value::as_bool).unwrap_or(false)
+        }),
         "workout.workout" => json!({
             "meta": meta,
             "source": text(object.get("source"), "manual"),
@@ -285,6 +309,48 @@ mod tests {
     use super::*;
     use lifetrace_contracts::domain::payload::EntityPayload;
     use lifetrace_contracts::EntityType;
+
+    #[test]
+    fn execution_cloud_extension_payloads_match_strict_contracts() {
+        let important = json!({
+            "id":"date-1","userId":"profile-1","title":"Birthday","date":"2026-10-15",
+            "repeat":"yearly","kind":"birthday","calendar":"solar",
+            "lunarYear":null,"lunarMonth":null,"lunarDay":null,
+            "lunarLeapMonth":false,"enabled":true,
+            "createdAt":"2026-09-24T00:00:00Z","updatedAt":"2026-09-24T00:00:00Z","version":1
+        });
+        let important_wire = legacy_to_wire(
+            EntityType::EXECUTION_IMPORTANT_DATE,
+            &important,
+            "profile-1",
+            None,
+        ).unwrap();
+        assert!(important_wire.get("meta").is_none());
+        assert!(important_wire.get("createdAt").is_none());
+        assert!(EntityPayload::try_from((
+            &EntityType::new(EntityType::EXECUTION_IMPORTANT_DATE),
+            important_wire.clone().into(),
+        )).is_ok(), "{important_wire}");
+
+        let focus = json!({
+            "id":"focus-1","userId":"profile-1","taskId":"task-1","mode":"short",
+            "startedAt":"2026-09-24T10:00:00Z","endedAt":"2026-09-24T10:25:00Z",
+            "focusSeconds":1500,"completed":true,
+            "createdAt":"2026-09-24T10:00:00Z","updatedAt":"2026-09-24T10:25:00Z","version":1
+        });
+        let focus_wire = legacy_to_wire(
+            EntityType::EXECUTION_FOCUS_SESSION,
+            &focus,
+            "profile-1",
+            None,
+        ).unwrap();
+        assert!(focus_wire.get("meta").is_none());
+        assert!(focus_wire.get("version").is_none());
+        assert!(EntityPayload::try_from((
+            &EntityType::new(EntityType::EXECUTION_FOCUS_SESSION),
+            focus_wire.clone().into(),
+        )).is_ok(), "{focus_wire}");
+    }
 
     #[test]
     fn finance_transaction_payload_matches_contract() {
