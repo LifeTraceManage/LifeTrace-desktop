@@ -422,7 +422,7 @@ pub fn meta(connection: &Connection) -> Result<Value, String> {
     let profile_id = crate::database::profile::active_profile_id(connection)?;
     let mut statement = connection
         .prepare(
-            "SELECT id, name, icon, color, sort_order, created_at, updated_at
+            "SELECT id, name, icon, color, parent_folder_id, sort_order, created_at, updated_at
              FROM note_folders WHERE deleted_at IS NULL AND user_id=?1 ORDER BY sort_order, name",
         )
         .map_err(|error| error.to_string())?;
@@ -433,9 +433,10 @@ pub fn meta(connection: &Connection) -> Result<Value, String> {
                 "name": row.get::<_, String>(1)?,
                 "icon": row.get::<_, String>(2)?,
                 "color": row.get::<_, String>(3)?,
-                "sortOrder": row.get::<_, i64>(4)?,
-                "createdAt": row.get::<_, String>(5)?,
-                "updatedAt": row.get::<_, String>(6)?
+                "parentFolderId": row.get::<_, Option<String>>(4)?,
+                "sortOrder": row.get::<_, i64>(5)?,
+                "createdAt": row.get::<_, String>(6)?,
+                "updatedAt": row.get::<_, String>(7)?
             }))
         })
         .map_err(|error| error.to_string())?
@@ -888,17 +889,19 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
     connection
         .execute(
             "INSERT INTO note_folders(
-               id, user_id, name, icon, color, sort_order, created_at, updated_at,
+               id, user_id, name, icon, color, parent_folder_id, sort_order, created_at, updated_at,
                deleted_at, version, modified_by_device
-             ) VALUES(?1,'local',?2,?3,?4,?5,?6,?7,NULL,1,NULL)
+             ) VALUES(?1,'local',?2,?3,?4,?5,?6,?7,?8,NULL,1,NULL)
              ON CONFLICT(id) DO UPDATE SET
                name=excluded.name, icon=excluded.icon, color=excluded.color,
+               parent_folder_id=excluded.parent_folder_id,
                sort_order=excluded.sort_order, updated_at=excluded.updated_at",
             params![
                 folder_id,
                 name,
                 text(object, "icon").unwrap_or_else(|| "folder".to_owned()),
                 text(object, "color").unwrap_or_else(|| "#5f7d70".to_owned()),
+                text(object, "parentFolderId").filter(|parent| parent != &folder_id),
                 object.get("sortOrder").and_then(Value::as_i64).unwrap_or(0),
                 text(object, "createdAt").unwrap_or_else(|| stamp.clone()),
                 text(object, "updatedAt").unwrap_or(stamp)
@@ -920,6 +923,13 @@ pub fn delete_folder(connection: &Connection, folder_id: &str) -> Result<(), Str
     connection
         .execute(
             "UPDATE notes SET folder_id=NULL, updated_at=?1 WHERE folder_id=?2",
+            params![stamp, folder_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE note_folders SET parent_folder_id=NULL, updated_at=?1
+             WHERE parent_folder_id=?2",
             params![stamp, folder_id],
         )
         .map_err(|error| error.to_string())?;
