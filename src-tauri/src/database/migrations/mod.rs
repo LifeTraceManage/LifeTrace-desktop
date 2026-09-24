@@ -17,7 +17,8 @@ mod m0011_execution_completion_backfill;
 mod m0012_analytics_insights;
 mod m0013_note_links;
 mod m0014_execution_goals;
-mod m0015_execution_weekly_reviews;\nmod m0016_note_folder_hierarchy;
+mod m0015_execution_weekly_reviews;
+mod m0016_note_folder_hierarchy;
 
 pub use m0001_framework::M0001Framework;
 pub use m0002_finance::M0002Finance;
@@ -33,7 +34,8 @@ pub use m0011_execution_completion_backfill::M0011ExecutionCompletionBackfill;
 pub use m0012_analytics_insights::M0012AnalyticsInsights;
 pub use m0013_note_links::M0013NoteLinks;
 pub use m0014_execution_goals::M0014ExecutionGoals;
-pub use m0015_execution_weekly_reviews::M0015ExecutionWeeklyReviews;\npub use m0016_note_folder_hierarchy::M0016NoteFolderHierarchy;
+pub use m0015_execution_weekly_reviews::M0015ExecutionWeeklyReviews;
+pub use m0016_note_folder_hierarchy::M0016NoteFolderHierarchy;
 
 use crate::database::migration_runner::Migration;
 
@@ -54,6 +56,7 @@ pub fn all() -> Vec<Box<dyn Migration>> {
         Box::new(M0012AnalyticsInsights),
         Box::new(M0013NoteLinks),
         Box::new(M0014ExecutionGoals),
-        Box::new(M0015ExecutionWeeklyReviews),\n        Box::new(M0016NoteFolderHierarchy),
+        Box::new(M0015ExecutionWeeklyReviews),
+        Box::new(M0016NoteFolderHierarchy),
     ]
 }
