@@ -150,6 +150,42 @@ export type EntityLink = {
 };
 
 export type EntityLinkInput = Pick<EntityLink, "sourceType" | "sourceId" | "relationType" | "targetType" | "targetId">;
+export type ImportantDate = {
+  id: string;
+  userId: string;
+  title: string;
+  date: string;
+  repeat: "once" | "yearly";
+  kind: "birthday" | "anniversary" | "milestone" | "other";
+  calendar: "solar" | "lunar";
+  lunarYear?: number | null;
+  lunarMonth?: number | null;
+  lunarDay?: number | null;
+  lunarLeapMonth: boolean;
+  enabled: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ImportantDateInput = Omit<ImportantDate, "id" | "userId" | "version" | "createdAt" | "updatedAt">;
+
+export type FocusSession = {
+  id: string;
+  userId: string;
+  taskId?: string | null;
+  mode: "short" | "long";
+  startedAt: string;
+  endedAt: string;
+  focusSeconds: number;
+  completed: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FocusSessionInput = Omit<FocusSession, "id" | "userId" | "version" | "createdAt" | "updatedAt">;
+
 
 export type TaskInput = {
   projectId?: string | null;
@@ -347,6 +383,27 @@ export const executionApi = {
       request<EntityLink>("/api/execution/entity-links", json("POST", input)),
     remove: (id: string) =>
       request<{ ok: true }>(`/api/execution/entity-links/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+  importantDates: {
+    list: () => request<ImportantDate[]>("/api/execution/important-dates"),
+    get: (id: string) => request<ImportantDate>(`/api/execution/important-dates/${encodeURIComponent(id)}`),
+    create: (input: ImportantDateInput) =>
+      request<ImportantDate>("/api/execution/important-dates", json("POST", input)),
+    update: (id: string, input: ImportantDateInput) =>
+      request<ImportantDate>(`/api/execution/important-dates/${encodeURIComponent(id)}`, json("PUT", input)),
+    remove: (id: string) =>
+      request<{ ok: true }>(`/api/execution/important-dates/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+  focusSessions: {
+    list: (taskId?: string) =>
+      request<FocusSession[]>(query("/api/execution/focus-sessions", { taskId })),
+    get: (id: string) => request<FocusSession>(`/api/execution/focus-sessions/${encodeURIComponent(id)}`),
+    create: (input: FocusSessionInput) =>
+      request<FocusSession>("/api/execution/focus-sessions", json("POST", input)),
+    update: (id: string, input: FocusSessionInput) =>
+      request<FocusSession>(`/api/execution/focus-sessions/${encodeURIComponent(id)}`, json("PUT", input)),
+    remove: (id: string) =>
+      request<{ ok: true }>(`/api/execution/focus-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   reminders: {
     list: (subjectType: Reminder["subjectType"], subjectId: string) => request<Reminder[]>(query("/api/execution/reminders", { subjectType, subjectId })),
