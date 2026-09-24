@@ -34,6 +34,16 @@ export type AppInstallationId = string;
 
 export type ArticleVocabularyItem = { word: string, phonetic: string | null, meaning: string, example: string | null, };
 
+export type Asset = { id: EntityId, name: string, brand: string, model: string, category: AssetCategory, status: AssetStatus, purchasePrice: number, currentValue: number, purchaseDate: string, warrantyUntil: string | null, spec: string, serialNumber: string, location: string, targetDailyCost: number, purchaseChannel: string, maintenanceCost: number, recoveredAmount: number, createdAt: string, updatedAt: string, isDeleted: boolean, serverVersion: ServerVersion, };
+
+export type AssetCategory = "phone" | "tablet" | "computer" | "wearable" | "audio" | "camera" | "home" | "other";
+
+export type AssetEvent = { id: EntityId, assetId: EntityId, type: AssetEventType, date: string, title: string, detail: string, amount: number | null, createdAt: string, updatedAt: string, isDeleted: boolean, serverVersion: ServerVersion, };
+
+export type AssetEventType = "purchase" | "useStart" | "maintenance" | "repair" | "replacement" | "lend" | "returnItem" | "idle" | "valuation" | "sell" | "retire" | "note";
+
+export type AssetStatus = "active" | "idle" | "lent" | "repair" | "sold" | "retired";
+
 export type AtomicGroupId = string;
 
 export type AuthCapabilitiesV1 = { registrationMode: string, passwordMinLength: number, passwordMaxBytes: number, accessTokenTtlSeconds: bigint, refreshIdleTtlSeconds: bigint, refreshAbsoluteTtlSeconds: bigint, webSessionEnabled: boolean, supportedApps: Array<AppId>, };
@@ -72,7 +82,7 @@ export type CurrencyCode = string;
 
 export type Cursor = string;
 
-export type DailyReview = { meta: EntityMeta, reviewDate: LocalDate, energy: bigint | null, mood: bigint | null, completionScore: number | null, bestThing: string | null, problem: string | null, tomorrowPriority: string | null, note: string | null, };
+export type DailyReview = { meta: EntityMeta, reviewDate: LocalDate, energy: bigint | null, mood: bigint | null, completionScore: number | null, bestThing: string | null, problem: string | null, tomorrowPriority: string | null, note: string | null, completedTaskCount: bigint | null, totalTaskCount: bigint | null, focusSeconds: bigint | null, };
 
 export type Device = { meta: EntityMeta, deviceName: string, platform: string, appId: string | null, status: string, lastSeenAt: string | null, };
 
@@ -137,6 +147,8 @@ export type EntityType = string;
 
 export type ErrorCode = string;
 
+export type ExecutionGoal = { meta: EntityMeta, name: string, description: string | null, status: GoalStatus, targetAt: string | null, color: string | null, icon: string | null, sortOrder: bigint, completedAt: string | null, };
+
 export type FieldError = { 
 /**
  * Field path, for example `changes[3].entityType`.
@@ -159,6 +171,8 @@ openingBalanceCents: bigint | null, balanceAt: string | null, last4: string | nu
 
 export type ForgotPasswordRequestV1 = { email: string, };
 
+export type GoalStatus = "active" | "paused" | "completed" | "cancelled";
+
 export type HighlightColor = string;
 
 export type ImportStatus = string;
@@ -179,7 +193,11 @@ amountCents: bigint, currency: CurrencyCode, };
 
 export type Note = { meta: EntityMeta, title: string | null, noteType: NoteType, folderId: EntityId | null, contentJson: JsonValue, contentHtml: string, contentText: string, contentMarkdown: string, summary: string, isPinned: boolean, isFavorite: boolean, isArchived: boolean, aiSummary: string | null, aiTags: string | null, embeddingStatus: string | null, lastAiProcessedAt: string | null, };
 
-export type NoteFolder = { meta: EntityMeta, name: string, icon: string, color: string, sortOrder: bigint, };
+export type NoteFolder = { meta: EntityMeta, name: string, icon: string, color: string, 
+/**
+ * Optional parent folder for hierarchical Notes organization.
+ */
+parentFolderId: EntityId | null, sortOrder: bigint, };
 
 export type NoteRelation = { meta: EntityMeta, noteId: EntityId, entityType: EntityType, entityId: EntityId, relationType: string, };
 
@@ -221,6 +239,10 @@ export type PushResponseV1 = { requestId: RequestId, serverTime: string, results
 export type RefreshRequestV1 = { refreshToken: string, appId: AppId, deviceId: string, };
 
 export type RegisterRequestV1 = { email: string, password: string, displayName: string | null, inviteToken: string | null, appId: AppId, deviceId: string, deviceName: string, platform: string, clientVersion: string | null, requestedScopes: Array<Scope>, };
+
+export type Reminder = { meta: EntityMeta, subjectType: string, subjectId: EntityId, triggerAt: string, status: ReminderStatus, fireKey: string, snoozedUntil: string | null, lastFiredAt: string | null, title: string | null, body: string | null, };
+
+export type ReminderStatus = "scheduled" | "fired" | "dismissed" | "cancelled";
 
 export type RequestId = string;
 
@@ -332,6 +354,8 @@ export type VocabularyStatus = string;
 export type WebLoginRequestV1 = { email: string, password: string, requestedScopes: Array<Scope>, publicDevice: boolean, };
 
 export type WebSessionResponseV1 = { user: AuthUserV1, session: AuthSessionV1, csrfToken: string, };
+
+export type WeeklyReview = { meta: EntityMeta, weekStart: LocalDate, weekEnd: LocalDate, completionScore: number | null, completedTaskCount: bigint | null, totalTaskCount: bigint | null, focusSeconds: bigint | null, completionSummary: string | null, bestThing: string | null, problem: string | null, improvement: string | null, nextWeekPriority: string | null, note: string | null, };
 
 export type Workout = { meta: EntityMeta, source: WorkoutSource, sourceId: string | null, name: string, occurredAt: string, localDate: LocalDate, durationSeconds: bigint, exerciseCount: bigint, setCount: bigint, plannedSetCount: bigint | null, volumeKg: number | null, caloriesKcal: number | null, status: WorkoutStatus | null, };
 
