@@ -93,6 +93,15 @@
         "null"
       ]
     },
+    "completedTaskCount": {
+      "default": null,
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "completionScore": {
       "format": "double",
       "type": [
@@ -102,6 +111,15 @@
     },
     "energy": {
       "format": "int64",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "focusSeconds": {
+      "default": null,
+      "format": "uint64",
+      "minimum": 0,
       "type": [
         "integer",
         "null"
@@ -135,6 +153,15 @@
     "tomorrowPriority": {
       "type": [
         "string",
+        "null"
+      ]
+    },
+    "totalTaskCount": {
+      "default": null,
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
         "null"
       ]
     }
