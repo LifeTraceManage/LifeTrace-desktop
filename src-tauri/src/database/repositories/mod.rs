@@ -6,6 +6,7 @@ pub mod analytics;
 pub mod english;
 pub mod execution;
 pub mod execution_calendar;
+pub mod execution_cloud;
 pub mod execution_memo;
 pub mod execution_relation;
 pub mod execution_reminder;
