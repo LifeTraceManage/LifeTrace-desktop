@@ -130,11 +130,11 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBytes(value: string): Uint8Array {
+function base64ToArrayBuffer(value: string): ArrayBuffer {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
+  return bytes.buffer;
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -255,7 +255,7 @@ async function cloudAuthFetch(input: string, init: RequestInit = {}): Promise<Re
   }
 
   const noBody = [204, 205, 304].includes(result.status);
-  const body = noBody ? null : base64ToBytes(result.bodyBase64);
+  const body: BodyInit | null = noBody ? null : base64ToArrayBuffer(result.bodyBase64);
   const responseHeaders = new Headers();
   responseHeaders.set("content-type", result.contentType || "application/json");
   return new Response(body, {
