@@ -70,6 +70,44 @@ pub fn legacy_to_wire(
         .ok_or_else(|| "sync payload must be an object".to_owned())?;
     let meta = common_meta(object, profile_id, server_version);
     let payload = match entity_type {
+        "asset.asset" => json!({
+            "id": text(object.get("id"), ""),
+            "name": text(object.get("name"), ""),
+            "brand": text(object.get("brand"), ""),
+            "model": text(object.get("model"), ""),
+            "category": text(object.get("category"), "other"),
+            "status": text(object.get("status"), "active"),
+            "purchasePrice": object.get("purchasePrice").and_then(Value::as_f64).unwrap_or(0.0),
+            "currentValue": object.get("currentValue").and_then(Value::as_f64).unwrap_or(0.0),
+            "purchaseDate": stamp(object.get("purchaseDate")),
+            "warrantyUntil": object.get("warrantyUntil").cloned().unwrap_or(Value::Null),
+            "spec": text(object.get("spec"), ""),
+            "serialNumber": text(object.get("serialNumber"), ""),
+            "location": text(object.get("location"), ""),
+            "targetDailyCost": object.get("targetDailyCost").and_then(Value::as_f64).unwrap_or(0.0),
+            "purchaseChannel": text(object.get("purchaseChannel"), ""),
+            "maintenanceCost": object.get("maintenanceCost").and_then(Value::as_f64).unwrap_or(0.0),
+            "recoveredAmount": object.get("recoveredAmount").and_then(Value::as_f64).unwrap_or(0.0),
+            "createdAt": stamp(object.get("createdAt")),
+            "updatedAt": stamp(object.get("updatedAt")),
+            "isDeleted": object.get("isDeleted").and_then(Value::as_bool).unwrap_or(false),
+            "serverVersion": object.get("serverVersion").cloned()
+                .unwrap_or_else(|| json!(server_version.unwrap_or("0")))
+        }),
+        "asset.event" => json!({
+            "id": text(object.get("id"), ""),
+            "assetId": text(object.get("assetId"), ""),
+            "type": text(object.get("type"), "note"),
+            "date": stamp(object.get("date")),
+            "title": text(object.get("title"), ""),
+            "detail": text(object.get("detail"), ""),
+            "amount": object.get("amount").cloned().unwrap_or(Value::Null),
+            "createdAt": stamp(object.get("createdAt")),
+            "updatedAt": stamp(object.get("updatedAt")),
+            "isDeleted": object.get("isDeleted").and_then(Value::as_bool).unwrap_or(false),
+            "serverVersion": object.get("serverVersion").cloned()
+                .unwrap_or_else(|| json!(server_version.unwrap_or("0")))
+        }),
         "finance.account" => json!({
             "meta": meta,
             "name": text(object.get("name"), "账户"),
@@ -309,6 +347,26 @@ mod tests {
     use super::*;
     use lifetrace_contracts::domain::payload::EntityPayload;
     use lifetrace_contracts::EntityType;
+
+    #[test]
+    fn asset_payloads_do_not_receive_entity_meta() {
+        let asset = json!({
+            "id":"asset-1","name":"Phone","brand":"LifeTrace","model":"V1",
+            "category":"phone","status":"active","purchasePrice":1000.0,"currentValue":800.0,
+            "purchaseDate":"2026-01-01T00:00:00Z","warrantyUntil":null,"spec":"",
+            "serialNumber":"","location":"","targetDailyCost":5.0,"purchaseChannel":"store",
+            "maintenanceCost":0.0,"recoveredAmount":0.0,
+            "createdAt":"2026-09-24T00:00:00Z","updatedAt":"2026-09-24T00:00:00Z",
+            "isDeleted":false,"serverVersion":"0"
+        });
+        let wire = legacy_to_wire(EntityType::ASSET_ASSET, &asset, "profile-1", Some("0")).unwrap();
+        assert!(wire.get("meta").is_none());
+        assert!(wire.get("userId").is_none());
+        assert!(EntityPayload::try_from((
+            &EntityType::new(EntityType::ASSET_ASSET),
+            wire.clone().into(),
+        )).is_ok(), "{wire}");
+    }
 
     #[test]
     fn execution_cloud_extension_payloads_match_strict_contracts() {
