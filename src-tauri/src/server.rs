@@ -4,6 +4,7 @@ mod dictionary;
 mod english;
 mod execution;
 mod execution_calendar;
+mod execution_cloud;
 mod execution_memo;
 mod execution_relation;
 mod execution_reminder;
@@ -272,6 +273,28 @@ pub async fn serve(
         .route(
             "/api/execution/calendar-conflicts",
             axum::routing::post(execution_calendar::find_conflicts),
+        )
+        .route(
+            "/api/execution/important-dates",
+            get(execution_cloud::list_important_dates)
+                .post(execution_cloud::create_important_date),
+        )
+        .route(
+            "/api/execution/important-dates/{id}",
+            get(execution_cloud::get_important_date)
+                .put(execution_cloud::update_important_date)
+                .delete(execution_cloud::delete_important_date),
+        )
+        .route(
+            "/api/execution/focus-sessions",
+            get(execution_cloud::list_focus_sessions)
+                .post(execution_cloud::create_focus_session),
+        )
+        .route(
+            "/api/execution/focus-sessions/{id}",
+            get(execution_cloud::get_focus_session)
+                .put(execution_cloud::update_focus_session)
+                .delete(execution_cloud::delete_focus_session),
         )
         .route(
             "/api/execution/reminders",
