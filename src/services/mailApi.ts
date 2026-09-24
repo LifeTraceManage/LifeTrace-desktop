@@ -81,6 +81,7 @@ export type MailMessage = {
   flagsJson: unknown;
   isRead: boolean;
   isArchived: boolean;
+  isStarred?: boolean;
   sizeBytes?: number | null;
   snippet?: string | null;
   bodyText?: string | null;
@@ -100,6 +101,7 @@ export type MailMessageSummary = {
   receivedAt: string;
   isRead: boolean;
   isArchived: boolean;
+  isStarred: boolean;
   snippet?: string | null;
   hasAttachments: boolean;
 };
@@ -124,6 +126,63 @@ export type MailAttachment = {
   downloadState: string;
 };
 
+export type MailIdentity = {
+  id: string;
+  accountId: string;
+  emailAddress: string;
+  displayName?: string | null;
+  replyTo?: string | null;
+  signatureHtml?: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MailIdentityInput = {
+  accountId: string;
+  emailAddress: string;
+  displayName?: string | null;
+  replyTo?: string | null;
+  signatureHtml?: string | null;
+  isDefault?: boolean;
+};
+
+export type MailDraft = {
+  id: string;
+  accountId: string;
+  identityId?: string | null;
+  threadId?: string | null;
+  inReplyToMessageId?: string | null;
+  toJson: unknown;
+  ccJson: unknown;
+  bccJson: unknown;
+  subject: string;
+  bodyText: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MailDraftInput = {
+  accountId: string;
+  identityId?: string | null;
+  inReplyToMessageId?: string | null;
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject?: string;
+  bodyText?: string;
+};
+
+export type MailDraftAttachment = {
+  id: string;
+  draftId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+};
+
 export type ConnectionTestResult = {
   imapOk: boolean;
   smtpOk: boolean;
@@ -132,6 +191,8 @@ export type ConnectionTestResult = {
 };
 
 export type SendMailInput = {
+  identityId?: string | null;
+  attachmentDraftId?: string | null;
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -139,6 +200,17 @@ export type SendMailInput = {
   bodyText: string;
   inReplyToMessageId?: string | null;
   idempotencyKey: string;
+};
+
+export type MailMessageListOptions = {
+  accountId?: string;
+  folderId?: string;
+  role?: string;
+  q?: string;
+  unreadOnly?: boolean;
+  starredOnly?: boolean;
+  limit?: number;
+  offset?: number;
 };
 
 type ErrorPayload = { message?: string; code?: string; error?: string };
@@ -197,25 +269,49 @@ function query(path: string, values: Record<string, string | number | boolean | 
 export const mailApi = {
   accounts: {
     list: async () => (await request<{ items: MailAccount[] }>("/api/v1/mail/accounts")).items,
+    get: (id: string) => request<MailAccount>(`/api/v1/mail/accounts/${encodeURIComponent(id)}`),
     create: (input: MailAccountInput) => request<MailAccount>("/api/v1/mail/accounts", json("POST", input)),
     test: (id: string) => request<ConnectionTestResult>(`/api/v1/mail/accounts/${encodeURIComponent(id)}/test`, json("POST", {})),
-    sync: (id: string) => request<{ ok: true; persisted: number }>(`/api/v1/mail/accounts/${encodeURIComponent(id)}/sync`, json("POST", {})),
+    sync: (id: string) => request<{ ok: true; persisted: number; syncedMessages?: number }>(`/api/v1/mail/accounts/${encodeURIComponent(id)}/sync`, json("POST", {})),
     disconnect: (id: string) => request<{ ok: true }>(`/api/v1/mail/accounts/${encodeURIComponent(id)}`, { method: "DELETE" }),
     folders: async (id: string) => (await request<{ items: MailFolder[] }>(`/api/v1/mail/accounts/${encodeURIComponent(id)}/folders`)).items,
     send: (id: string, input: SendMailInput) => request<{ ok: true; messageId: string }>(`/api/v1/mail/accounts/${encodeURIComponent(id)}/send`, json("POST", input)),
   },
+  identities: {
+    list: async () => (await request<{ items: MailIdentity[] }>("/api/v1/mail/identities")).items,
+    create: (input: MailIdentityInput) => request<MailIdentity>("/api/v1/mail/identities", json("POST", input)),
+    update: (id: string, input: MailIdentityInput) => request<MailIdentity>(`/api/v1/mail/identities/${encodeURIComponent(id)}`, json("PATCH", input)),
+    remove: (id: string) => request<{ ok: true }>(`/api/v1/mail/identities/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
+  drafts: {
+    list: async () => (await request<{ items: MailDraft[] }>("/api/v1/mail/drafts")).items,
+    create: (input: MailDraftInput) => request<MailDraft>("/api/v1/mail/drafts", json("POST", input)),
+    update: (id: string, input: MailDraftInput) => request<MailDraft>(`/api/v1/mail/drafts/${encodeURIComponent(id)}`, json("PATCH", input)),
+    remove: (id: string) => request<{ ok: true }>(`/api/v1/mail/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    send: (id: string) => request<{ ok: true; messageId: string }>(`/api/v1/mail/drafts/${encodeURIComponent(id)}/send`, json("POST", {})),
+    attachments: async (id: string) => (await request<{ items: MailDraftAttachment[] }>(`/api/v1/mail/drafts/${encodeURIComponent(id)}/attachments`)).items,
+    addAttachment: (id: string, file: File) => {
+      const body = new FormData();
+      body.append("file", file, file.name);
+      return request<MailDraftAttachment>(`/api/v1/mail/drafts/${encodeURIComponent(id)}/attachments`, { method: "POST", body });
+    },
+    removeAttachment: (id: string, attachmentId: string) =>
+      request<{ ok: true }>(`/api/v1/mail/drafts/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`, { method: "DELETE" }),
+  },
   threads: {
-    list: async (options: { accountId?: string; folderId?: string; q?: string; unreadOnly?: boolean; limit?: number; offset?: number } = {}) =>
+    list: async (options: MailMessageListOptions = {}) =>
       (await request<{ items: MailThread[] }>(query("/api/v1/mail/threads", options))).items,
     messages: async (threadId: string) => (await request<{ items: MailMessage[] }>(`/api/v1/mail/threads/${encodeURIComponent(threadId)}/messages`)).items,
   },
   messages: {
-    list: (options: { accountId?: string; folderId?: string; q?: string; unreadOnly?: boolean; limit?: number; offset?: number } = {}) =>
+    list: (options: MailMessageListOptions = {}) =>
       request<MailMessagePage>(query("/api/v1/mail/messages", options)),
     get: (id: string) => request<MailMessage>(`/api/v1/mail/messages/${encodeURIComponent(id)}`),
     attachments: async (id: string) => (await request<{ items: MailAttachment[] }>(`/api/v1/mail/messages/${encodeURIComponent(id)}/attachments`)).items,
     downloadAttachment: (id: string) => binaryRequest(`/api/v1/mail/attachments/${encodeURIComponent(id)}/content`),
     setRead: (id: string, read: boolean) => request<{ ok: true; read: boolean }>(`/api/v1/mail/messages/${encodeURIComponent(id)}/read`, json("POST", { read })),
+    setStarred: (id: string, starred: boolean) => request<{ ok: true; starred: boolean }>(`/api/v1/mail/messages/${encodeURIComponent(id)}/star`, json("POST", { starred })),
     archive: (id: string) => request<{ ok: true }>(`/api/v1/mail/messages/${encodeURIComponent(id)}/archive`, json("POST", {})),
+    move: (id: string, destinationRole: string) => request<{ ok: true; destinationRole: string }>(`/api/v1/mail/messages/${encodeURIComponent(id)}/move`, json("POST", { destinationRole })),
   },
 };
