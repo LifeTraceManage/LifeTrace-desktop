@@ -12,13 +12,23 @@ import {
   Mail,
   Paperclip,
   Reply,
+  Star,
   StickyNote,
+  Trash2,
 } from "lucide-react";
 import { browserTimezone, executionApi } from "@/src/services/executionApi";
 import { mailApi, type MailAccount, type MailAttachment, type MailMessage } from "@/src/services/mailApi";
 import { confirmAction } from "@/src/ui/feedback/confirm";
 import { collectAddresses, senderIdentity, senderLabel } from "./mailModel";
 import { actionButton, errorMessage, formatBytes, formatTime, panelStyle, toast } from "./mailStyles";
+
+function flagsContainStarred(value: unknown): boolean {
+  try {
+    return JSON.stringify(value ?? "").toLowerCase().includes("flagged");
+  } catch {
+    return false;
+  }
+}
 
 function sourceText(message: MailMessage) {
   return `来源邮件：${message.subject || "无主题"}\n发件人：${senderLabel(message)}\n邮件时间：${formatTime(message.sentAt || message.receivedAt)}\nmail:${message.id}`;
@@ -96,7 +106,7 @@ export function MailMessageDetail({
       mailApi.messages.attachments(messageId),
     ]).then(([nextMessage, nextAttachments]) => {
       if (cancelled) return;
-      setMessage(nextMessage);
+      setMessage({ ...nextMessage, isStarred: nextMessage.isStarred ?? flagsContainStarred(nextMessage.flagsJson) });
       setAttachments(nextAttachments);
     }).catch((error) => {
       if (!cancelled) toast(errorMessage(error), "error");
@@ -116,6 +126,42 @@ export function MailMessageDetail({
       await mailApi.messages.setRead(message.id, nextRead);
       setMessage((current) => current ? { ...current, isRead: nextRead } : current);
       onMessagePatch(message.id, { isRead: nextRead });
+    } catch (error) {
+      toast(errorMessage(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleStarred = async () => {
+    if (!message) return;
+    const starred = !message.isStarred;
+    setBusy(true);
+    try {
+      await mailApi.messages.setStarred(message.id, starred);
+      setMessage((current) => current ? { ...current, isStarred: starred } : current);
+      onMessagePatch(message.id, { isStarred: starred });
+      toast(starred ? "已添加星标" : "已取消星标");
+    } catch (error) {
+      toast(errorMessage(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const moveToTrash = async () => {
+    if (!message) return;
+    const confirmed = await confirmAction({
+      title: "移到垃圾箱",
+      description: "该操作会同步修改远端邮箱中的邮件位置。",
+      confirmLabel: "移到垃圾箱",
+    });
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await mailApi.messages.move(message.id, "trash");
+      onArchived(message.id);
+      toast("邮件已移到垃圾箱");
     } catch (error) {
       toast(errorMessage(error), "error");
     } finally {
@@ -195,7 +241,9 @@ export function MailMessageDetail({
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
             <button type="button" style={actionButton} disabled={busy} onClick={() => void setRead()}>{message.isRead ? <Mail size={15} /> : <CheckCircle2 size={15} />}{message.isRead ? "标为未读" : "标为已读"}</button>
+            <button type="button" style={actionButton} disabled={busy} onClick={() => void toggleStarred()}><Star size={15} fill={message.isStarred ? "currentColor" : "none"} />{message.isStarred ? "取消星标" : "星标"}</button>
             <button type="button" style={actionButton} disabled={busy} onClick={() => void archive()}><Archive size={15} />归档</button>
+            <button type="button" style={actionButton} disabled={busy} onClick={() => void moveToTrash()}><Trash2 size={15} />垃圾箱</button>
             <button type="button" style={actionButton} disabled={busy || !account} onClick={() => onReply(message)}><Reply size={15} />回复</button>
           </div>
         </section>
