@@ -58,7 +58,14 @@ type CredentialApi = {
 
 type NativeCloudAuthResponse = {
   status: number;
-  body: string;
+  bodyBase64: string;
+  contentType?: string | null;
+};
+
+type NativeSerializedBody = {
+  body: string | null;
+  bodyBase64: string | null;
+  contentType: string | null;
 };
 
 const APP_ID = "lifetrace-desktop";
@@ -82,37 +89,146 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+function multipartToken(value: string): string {
+  return value.replace(/[\r\n"]/g, (character) => character === "\"" ? "%22" : "_");
+}
+
+async function serializeNativeBody(body: BodyInit | null | undefined, headers: Headers): Promise<NativeSerializedBody> {
+  if (body == null) return { body: null, bodyBase64: null, contentType: null };
+
+  if (typeof body === "string") {
+    return {
+      body,
+      bodyBase64: null,
+      contentType: headers.get("content-type") || "application/json",
+    };
+  }
+
+  if (body instanceof URLSearchParams) {
+    return {
+      body: body.toString(),
+      bodyBase64: null,
+      contentType: headers.get("content-type") || "application/x-www-form-urlencoded;charset=UTF-8",
+    };
+  }
+
+  if (body instanceof FormData) {
+    const boundary = `----LifeTraceDesktop${crypto.randomUUID().replace(/-/g, "")}`;
+    const encoder = new TextEncoder();
+    const parts: Uint8Array[] = [];
+    for (const [name, value] of body.entries()) {
+      if (typeof value === "string") {
+        parts.push(encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${multipartToken(name)}"\r\n\r\n${value}\r\n`,
+        ));
+        continue;
+      }
+      const filename = value instanceof File && value.name ? value.name : "attachment";
+      const contentType = value.type || "application/octet-stream";
+      parts.push(encoder.encode(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${multipartToken(name)}"; filename="${multipartToken(filename)}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+      ));
+      parts.push(new Uint8Array(await value.arrayBuffer()));
+      parts.push(encoder.encode("\r\n"));
+    }
+    parts.push(encoder.encode(`--${boundary}--\r\n`));
+    return {
+      body: null,
+      bodyBase64: bytesToBase64(concatBytes(parts)),
+      contentType: `multipart/form-data; boundary=${boundary}`,
+    };
+  }
+
+  if (body instanceof Blob) {
+    return {
+      body: null,
+      bodyBase64: bytesToBase64(new Uint8Array(await body.arrayBuffer())),
+      contentType: headers.get("content-type") || body.type || "application/octet-stream",
+    };
+  }
+
+  if (body instanceof ArrayBuffer) {
+    return {
+      body: null,
+      bodyBase64: bytesToBase64(new Uint8Array(body)),
+      contentType: headers.get("content-type") || "application/octet-stream",
+    };
+  }
+
+  if (ArrayBuffer.isView(body)) {
+    const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+    return {
+      body: null,
+      bodyBase64: bytesToBase64(bytes),
+      contentType: headers.get("content-type") || "application/octet-stream",
+    };
+  }
+
+  throw new Error("桌面端云 API 不支持该请求体类型");
+}
+
 async function cloudAuthFetch(input: string, init: RequestInit = {}): Promise<Response> {
   if (!isTauriRuntime()) return fetch(input, init);
 
   const url = new URL(input);
-  if (url.search || url.hash) throw new Error("云认证请求不允许 URL 查询参数或片段");
-  if (init.body != null && typeof init.body !== "string") {
-    throw new Error("桌面端云认证只支持 JSON 文本请求体");
-  }
+  if (url.hash) throw new Error("云 API 请求不允许 URL 片段");
   const headers = new Headers(init.headers);
+  const serialized = await serializeNativeBody(init.body, headers);
   let result: NativeCloudAuthResponse;
   try {
     result = await invoke<NativeCloudAuthResponse>("cloud_auth_http_request", {
       request: {
         origin: url.origin,
         path: url.pathname,
+        query: url.search ? url.search.slice(1) : null,
         method: (init.method || "GET").toUpperCase(),
-        body: typeof init.body === "string" ? init.body : null,
+        body: serialized.body,
+        bodyBase64: serialized.bodyBase64,
+        contentType: serialized.contentType,
         authorization: headers.get("authorization"),
       },
     });
   } catch (cause) {
     const message = rawCloudAuthErrorMessage(cause) || "无法连接 LifeTrace 云端";
     const error = new Error(message, { cause });
-    clientLogger.error("cloud.auth.native_transport_failed", { origin: url.origin, path: url.pathname, stage: "request.send" }, error);
+    clientLogger.error("cloud.api.native_transport_failed", { origin: url.origin, path: url.pathname, stage: "request.send" }, error);
     throw error;
   }
 
-  const body = [204, 205, 304].includes(result.status) ? null : result.body;
+  const noBody = [204, 205, 304].includes(result.status);
+  const body = noBody ? null : base64ToBytes(result.bodyBase64);
+  const responseHeaders = new Headers();
+  responseHeaders.set("content-type", result.contentType || "application/json");
   return new Response(body, {
     status: result.status,
-    headers: { "content-type": "application/json" },
+    headers: responseHeaders,
   });
 }
 
@@ -360,7 +476,11 @@ export class CloudAuthClient {
   async request(input: string, init: RequestInit = {}): Promise<Response> {
     this.ensureOrigin();
     if (!this.accessToken) await this.refresh();
-    const execute = () => cloudAuthFetch(`${this.origin}${input}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${this.accessToken}` } });
+    const execute = () => {
+      const headers = new Headers(init.headers);
+      headers.set("authorization", `Bearer ${this.accessToken}`);
+      return cloudAuthFetch(`${this.origin}${input}`, { ...init, headers });
+    };
     let response = await execute();
     if (response.status === 401) { clientLogger.warn("cloud.auth.request_unauthorized", { path: input, status: response.status }); await this.refresh(); response = await execute(); }
     return response;
