@@ -9,6 +9,7 @@ import {
   Plus,
   Send,
   Settings2,
+  Star,
   ShieldAlert,
   Trash2,
 } from "lucide-react";
@@ -33,7 +34,7 @@ function roleIcon(role: string) {
 
 function sourceEquals(left: MailCollectionSource, right: MailCollectionSource) {
   if (left.kind !== right.kind) return false;
-  if (left.kind === "unified" || left.kind === "unread") return true;
+  if (left.kind === "unified" || left.kind === "unread" || left.kind === "starred") return true;
   if (left.kind === "account" && right.kind === "account") return left.accountId === right.accountId;
   if (left.kind === "folder" && right.kind === "folder") return left.folderId === right.folderId;
   return false;
@@ -105,6 +106,9 @@ export function MailSidebar({
         </NavButton>
         <NavButton active={sourceEquals(activeSource, { kind: "unread" })} onClick={() => onSelectSource({ kind: "unread" })}>
           <MailOpen size={16} />未读邮件
+        </NavButton>
+        <NavButton active={sourceEquals(activeSource, { kind: "starred" })} onClick={() => onSelectSource({ kind: "starred" })}>
+          <Star size={16} />星标邮件
         </NavButton>
       </nav>
 
