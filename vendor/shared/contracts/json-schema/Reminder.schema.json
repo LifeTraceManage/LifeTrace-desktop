@@ -71,6 +71,16 @@
       ],
       "type": "object"
     },
+    "ReminderStatus": {
+      "description": "Reminder delivery lifecycle shared by Cloud and clients.",
+      "enum": [
+        "scheduled",
+        "fired",
+        "dismissed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
     "ServerVersion": {
       "description": "Server-authoritative entity version. Wire format: decimal string\n(for example `\"42\"`) to avoid JavaScript safe-integer issues.",
       "type": "string"
@@ -81,43 +91,62 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "`note.folder`",
+  "description": "`execution.reminder`.\n\nThis intentionally preserves the existing Execute wire shape\n(`subjectType`, `subjectId`, `fireKey`) while making it a strict typed\ncontract. The Cloud execution worker advances due `scheduled` reminders to\n`fired`. Clients use the subject fields to route notification taps.",
   "properties": {
-    "color": {
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fireKey": {
       "type": "string"
     },
-    "icon": {
-      "type": "string"
+    "lastFiredAt": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "meta": {
       "$ref": "#/$defs/EntityMeta"
     },
-    "name": {
+    "snoozedUntil": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "$ref": "#/$defs/ReminderStatus"
+    },
+    "subjectId": {
+      "$ref": "#/$defs/EntityId"
+    },
+    "subjectType": {
       "type": "string"
     },
-    "parentFolderId": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/EntityId"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Optional parent folder for hierarchical Notes organization."
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
-    "sortOrder": {
-      "format": "int64",
-      "type": "integer"
+    "triggerAt": {
+      "format": "date-time",
+      "type": "string"
     }
   },
   "required": [
     "meta",
-    "name",
-    "icon",
-    "color",
-    "sortOrder"
+    "subjectType",
+    "subjectId",
+    "triggerAt",
+    "status",
+    "fireKey"
   ],
-  "title": "NoteFolder",
+  "title": "Reminder",
   "type": "object"
 }

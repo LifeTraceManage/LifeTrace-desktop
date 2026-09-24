@@ -71,6 +71,15 @@
       ],
       "type": "object"
     },
+    "GoalStatus": {
+      "enum": [
+        "active",
+        "paused",
+        "completed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
     "ServerVersion": {
       "description": "Server-authoritative entity version. Wire format: decimal string\n(for example `\"42\"`) to avoid JavaScript safe-integer issues.",
       "type": "string"
@@ -81,13 +90,36 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "`note.folder`",
+  "description": "`execution.goal`, matching the shared Goal layer used by LifeTrace desktop/web.\n\nGoal is the layer above projects: Goal -> Project -> Task. The wire contract\nintentionally preserves the existing nullable presentation fields and\ntimestamp fields so older clients can continue syncing the same entity.",
   "properties": {
     "color": {
-      "type": "string"
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "completedAt": {
+      "default": null,
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "icon": {
-      "type": "string"
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "meta": {
       "$ref": "#/$defs/EntityMeta"
@@ -95,29 +127,28 @@
     "name": {
       "type": "string"
     },
-    "parentFolderId": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/EntityId"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Optional parent folder for hierarchical Notes organization."
-    },
     "sortOrder": {
+      "default": 0,
       "format": "int64",
       "type": "integer"
+    },
+    "status": {
+      "$ref": "#/$defs/GoalStatus"
+    },
+    "targetAt": {
+      "default": null,
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
     "meta",
     "name",
-    "icon",
-    "color",
-    "sortOrder"
+    "status"
   ],
-  "title": "NoteFolder",
+  "title": "ExecutionGoal",
   "type": "object"
 }
