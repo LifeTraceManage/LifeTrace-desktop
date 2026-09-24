@@ -101,7 +101,7 @@ export type MailMessageSummary = {
   receivedAt: string;
   isRead: boolean;
   isArchived: boolean;
-  isStarred: boolean;
+  isStarred?: boolean;
   snippet?: string | null;
   hasAttachments: boolean;
 };
