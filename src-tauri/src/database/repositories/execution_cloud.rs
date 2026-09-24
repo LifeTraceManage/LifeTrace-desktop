@@ -121,10 +121,10 @@ pub fn list_important_dates(
          WHERE user_id=?1 ORDER BY enabled DESC,date ASC,title ASC"
     );
     let mut statement = connection.prepare(&sql).map_err(|error| error.to_string())?;
-    statement
+    let rows = statement
         .query_map([user_id], important_date_from_row)
-        .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())
 }
 
@@ -201,10 +201,10 @@ pub fn list_focus_sessions(
          ORDER BY started_at DESC,id DESC"
     );
     let mut statement = connection.prepare(&sql).map_err(|error| error.to_string())?;
-    statement
+    let rows = statement
         .query_map(params![user_id,task_id], focus_session_from_row)
-        .map_err(|error| error.to_string())?
-        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| error.to_string())
 }
 
