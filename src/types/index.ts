@@ -184,6 +184,7 @@ export interface NoteFolder {
   name: string;
   icon: string;
   color: string;
+  parentFolderId: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
