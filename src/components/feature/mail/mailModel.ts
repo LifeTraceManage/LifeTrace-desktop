@@ -3,6 +3,7 @@ import type { MailAccount, MailFolder, MailMessage, MailMessageSummary } from "@
 export type MailCollectionSource =
   | { kind: "unified" }
   | { kind: "unread" }
+  | { kind: "starred" }
   | { kind: "account"; accountId: string }
   | { kind: "folder"; accountId: string; folderId: string; role: string; name: string };
 
@@ -126,6 +127,7 @@ export function sourceQuery(source: MailCollectionSource, search: string) {
   const q = search.trim() || undefined;
   if (source.kind === "unified") return { q };
   if (source.kind === "unread") return { q, unreadOnly: true };
+  if (source.kind === "starred") return { q, starredOnly: true };
   if (source.kind === "account") return { q, accountId: source.accountId };
   return { q, accountId: source.accountId, folderId: source.folderId };
 }
@@ -152,6 +154,7 @@ export function sourceTitle(
 ) {
   if (source.kind === "unified") return "统一收件箱";
   if (source.kind === "unread") return "未读邮件";
+  if (source.kind === "starred") return "星标邮件";
   const account = accounts.find((item) => item.id === source.accountId);
   if (source.kind === "account") return account ? accountLabel(account) : "收件箱";
   return source.name || folderRoleLabel(source.role);
@@ -160,6 +163,7 @@ export function sourceTitle(
 export function sourceSubtitle(source: MailCollectionSource, accounts: MailAccount[]) {
   if (source.kind === "unified") return `${accounts.length} 个邮箱 · 最近 30 天`;
   if (source.kind === "unread") return `${accounts.length} 个邮箱中的未读邮件 · 最近 30 天`;
+  if (source.kind === "starred") return `${accounts.length} 个邮箱中的星标邮件 · 最近 30 天`;
   const account = accounts.find((item) => item.id === source.accountId);
   if (source.kind === "account") return `${account?.emailAddress || "邮箱"} · 收件箱 · 最近 30 天`;
   return `${account?.emailAddress || "邮箱"} · ${folderRoleLabel(source.role)} · 最近 30 天`;
