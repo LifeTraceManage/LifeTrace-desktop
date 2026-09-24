@@ -106,13 +106,13 @@ fn parse_method(value: &str) -> Result<Method, String> {
 
 fn validate_auth_method(path: &str, method: &Method) -> Result<(), String> {
     if path == "/api/v1/auth/capabilities" {
-        return if *method == Method::GET {
+        return if method.as_str() == "GET" {
             Ok(())
         } else {
             Err("云认证 capabilities 只允许 GET".to_owned())
         };
     }
-    if AUTH_PATHS.contains(&path) && *method != Method::GET && *method != Method::POST {
+    if AUTH_PATHS.contains(&path) && !matches!(method.as_str(), "GET" | "POST") {
         return Err("该云认证接口只允许 GET 或 POST".to_owned());
     }
     Ok(())
