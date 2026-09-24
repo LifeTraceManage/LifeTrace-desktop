@@ -69,6 +69,38 @@ type NativeSerializedBody = {
 };
 
 const APP_ID = "lifetrace-desktop";
+const DESKTOP_SCOPES = [
+  "account:read",
+  "account:write",
+  "devices:read",
+  "devices:write",
+  "sessions:read",
+  "sessions:write",
+  "sync:read",
+  "sync:write",
+  "finance:read",
+  "finance:write",
+  "notes:read",
+  "notes:write",
+  "files:read",
+  "files:write",
+  "english:read",
+  "english:write",
+  "habits:read",
+  "habits:write",
+  "reviews:read",
+  "reviews:write",
+  "workouts:read",
+  "workouts:write",
+  "execution:read",
+  "execution:write",
+  "assets:read",
+  "assets:write",
+  "links:read",
+  "links:write",
+  "mail:read",
+  "mail:write",
+] as const;
 export const CLIENT_VERSION = "0.3.3";
 const DEVICE_KEY = "lifetrace-cloud-device-id";
 const CLOUD_ORIGIN_KEY = "lifetrace-cloud-origin";
@@ -306,7 +338,7 @@ function nativeRequestPayload(email: string, password: string) {
     deviceName: "LifeTrace Windows Desktop",
     platform: "windows",
     clientVersion: CLIENT_VERSION,
-    requestedScopes: [],
+    requestedScopes: [...DESKTOP_SCOPES],
   };
 }
 
@@ -336,14 +368,55 @@ export class CloudAuthClient {
     return parseResponse<CloudAuthCapabilities>(await cloudAuthFetch(`${this.origin}/api/v1/auth/capabilities`), "capabilities");
   }
 
+  private missingDesktopScopes(scopes: string[]): string[] {
+    const current = new Set(scopes);
+    return DESKTOP_SCOPES.filter((scope) => !current.has(scope));
+  }
+
+  private async loginTokens(email: string, password: string): Promise<CloudTokenResponse> {
+    const response = await cloudAuthFetch(`${this.origin}/api/v1/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...nativeRequestPayload(email, password), publicDevice: false }),
+    });
+    return parseResponse<CloudTokenResponse>(response, "login");
+  }
+
+  private async upgradeDesktopGrant(tokens: CloudTokenResponse, email: string, password: string): Promise<CloudTokenResponse> {
+    const missing = this.missingDesktopScopes(tokens.scopes);
+    if (!missing.length) return tokens;
+    if (!tokens.scopes.includes("account:write")) {
+      throw new Error(`桌面端云权限缺少 ${missing.join(", ")}，且当前会话无权升级授权`);
+    }
+
+    clientLogger.info("cloud.auth.scope_upgrade_started", { missingScopes: missing });
+    const response = await cloudAuthFetch(
+      `${this.origin}/api/v1/auth/apps/${encodeURIComponent(APP_ID)}/grant`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${tokens.accessToken}`,
+        },
+        body: JSON.stringify({ scopes: [...DESKTOP_SCOPES] }),
+      },
+    );
+    await parseResponse<unknown>(response, "desktop-scope-upgrade");
+
+    const upgraded = await this.loginTokens(email, password);
+    const stillMissing = this.missingDesktopScopes(upgraded.scopes);
+    if (stillMissing.length) {
+      throw new Error(`桌面端云权限升级不完整：${stillMissing.join(", ")}`);
+    }
+    clientLogger.info("cloud.auth.scope_upgrade_succeeded", { scopeCount: upgraded.scopes.length });
+    return upgraded;
+  }
+
   async login(email: string, password: string): Promise<CloudAuthSnapshot> {
     this.ensureOrigin();
     clientLogger.info("cloud.auth.login_started", { origin: this.origin });
-    const response = await cloudAuthFetch(`${this.origin}/api/v1/auth/login`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...nativeRequestPayload(email, password), publicDevice: false }),
-    });
-    const snapshot = await this.acceptTokens(await parseResponse<CloudTokenResponse>(response, "login"));
+    const tokens = await this.upgradeDesktopGrant(await this.loginTokens(email, password), email, password);
+    const snapshot = await this.acceptTokens(tokens);
     clientLogger.info("cloud.auth.login_succeeded", { userId: snapshot.user?.id, sessionId: snapshot.session?.id });
     return snapshot;
   }
@@ -456,6 +529,11 @@ export class CloudAuthClient {
       });
       try {
         const tokens = await parseResponse<CloudTokenResponse>(response, "refresh");
+        const missing = this.missingDesktopScopes(tokens.scopes);
+        if (missing.length) {
+          await this.clearLocal();
+          throw new Error(`云端已新增 Desktop 权限（${missing.join(", ")}），请重新登录一次完成授权升级`);
+        }
         await this.acceptTokens(tokens);
         clientLogger.info("cloud.auth.refresh_succeeded", { userId: tokens.user.id, sessionId: tokens.session.id });
         return tokens;
