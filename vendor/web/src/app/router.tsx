@@ -1,9 +1,10 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, useLocation } from "react-router-dom";
 import { useApp } from "./AppContext";
 import { AppShell } from "../layouts/AppShell";
 
 const LoginPage = lazy(() => import("../features/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
+const PortalPage = lazy(() => import("../features/portal/PortalPage").then((module) => ({ default: module.PortalPage })));
 const TodayPage = lazy(() => import("../features/dashboard/TodayPage").then((module) => ({ default: module.TodayPage })));
 const ExecutionPage = lazy(() => import("../features/execution/ExecutionPage").then((module) => ({ default: module.ExecutionPage })));
 const CalendarPage = lazy(() => import("../features/calendar/CalendarPage").then((module) => ({ default: module.CalendarPage })));
@@ -11,6 +12,7 @@ const HabitsPage = lazy(() => import("../features/habits/HabitsPage").then((modu
 const FitnessPage = lazy(() => import("../features/fitness/FitnessPage").then((module) => ({ default: module.FitnessPage })));
 const HealthPage = lazy(() => import("../features/health/HealthPage").then((module) => ({ default: module.HealthPage })));
 const NotesPage = lazy(() => import("../features/notes/NotesPage").then((module) => ({ default: module.NotesPage })));
+const MailPage = lazy(() => import("../features/mail/MailPage").then((module) => ({ default: module.MailPage })));
 const EnglishPage = lazy(() => import("../features/english/EnglishPage").then((module) => ({ default: module.EnglishPage })));
 const ReviewPage = lazy(() => import("../features/review/ReviewPage").then((module) => ({ default: module.ReviewPage })));
 const FinanceWorkspace = lazy(() => import("../features/finance/FinanceWorkspace").then((module) => ({ default: module.FinanceWorkspace })));
@@ -38,18 +40,31 @@ function withSuspense(element: ReactNode) {
   return <Suspense fallback={<PageFallback />}>{element}</Suspense>;
 }
 
-function ProtectedShell() {
-  const { session, authLoading, online } = useApp();
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { session, authLoading } = useApp();
+  const location = useLocation();
+
   if (authLoading) {
     return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">正在验证 LifeTrace Cloud 会话…</div>;
   }
-  if (!session) return <Navigate to="/login" replace state={{ offline: !online }} />;
-  return <AppShell />;
+
+  if (!session) {
+    const target = `${location.pathname}${location.search}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(target)}`} replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function ProtectedShell() {
+  return <RequireAuth><AppShell /></RequireAuth>;
 }
 
 export const router = createBrowserRouter([
-  { path: "/", element: <Navigate to="/app/today" replace /> },
+  { path: "/", element: <RequireAuth>{withSuspense(<PortalPage />)}</RequireAuth> },
   { path: "/login", element: withSuspense(<LoginPage />) },
+  { path: "/notes/*", element: <RequireAuth>{withSuspense(<NotesPage />)}</RequireAuth> },
+  { path: "/mail/*", element: <RequireAuth>{withSuspense(<MailPage />)}</RequireAuth> },
   {
     path: "/app",
     element: <ProtectedShell />,
@@ -61,7 +76,7 @@ export const router = createBrowserRouter([
       { path: "habits", element: withSuspense(<HabitsPage />) },
       { path: "fitness", element: withSuspense(<FitnessPage />) },
       { path: "health", element: withSuspense(<HealthPage />) },
-      { path: "notes", element: withSuspense(<NotesPage />) },
+      { path: "notes", element: <Navigate to="/notes" replace /> },
       { path: "english/*", element: withSuspense(<EnglishPage />) },
       { path: "review", element: withSuspense(<ReviewPage />) },
       { path: "finance/transactions", element: withSuspense(<FinanceTransactionsPage />) },
@@ -73,5 +88,5 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="today" replace /> },
     ],
   },
-  { path: "*", element: <Navigate to="/app/today" replace /> },
+  { path: "*", element: <Navigate to="/" replace /> },
 ]);

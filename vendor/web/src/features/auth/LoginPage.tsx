@@ -1,23 +1,31 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Leaf, LockKeyhole, WifiOff } from "lucide-react";
 import { useApp } from "../../app/AppContext";
 import { Button, Card, CardContent, Input } from "../../components/ui";
 
+function safeRedirect(search: string): string {
+  const target = new URLSearchParams(search).get("redirect");
+  if (!target || !target.startsWith("/") || target.startsWith("//")) return "/";
+  return target;
+}
+
 export function LoginPage() {
   const { session, login, loading, online, error, clearError } = useApp();
+  const location = useLocation();
   const navigate = useNavigate();
+  const destination = safeRedirect(location.search);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [publicDevice, setPublicDevice] = useState(false);
 
   useEffect(() => () => clearError(), [clearError]);
-  if (session) return <Navigate to="/app/today" replace />;
+  if (session) return <Navigate to={destination} replace />;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     await login(email.trim(), password, publicDevice);
-    navigate("/app/today", { replace: true });
+    navigate(destination, { replace: true });
   }
 
   return <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
@@ -26,15 +34,15 @@ export function LoginPage() {
         <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-card text-primary"><Leaf size={20} /></div>
         <div>
           <div className="text-lg font-semibold tracking-[-0.02em]">LifeTrace</div>
-          <div className="text-xs text-muted-foreground">Personal OS</div>
+          <div className="text-xs text-muted-foreground">One account · Multiple workspaces</div>
         </div>
       </div>
       <Card>
         <CardContent className="p-6 sm:p-7">
           <div className="mb-6">
-            <div className="eyebrow">Cloud account</div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em]">登录你的生活工作台</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">使用现有 LifeTrace Cloud 账号。Web 端只读取云端业务数据，不在浏览器持久化业务记录。</p>
+            <div className="eyebrow">LifeTrace account</div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em]">登录 LifeTrace</h1>
+            
           </div>
           {!online ? <div className="mb-4 flex gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"><WifiOff size={17} className="mt-0.5 shrink-0" /><span>当前离线，恢复网络后才能登录。</span></div> : null}
           {error ? <div role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
@@ -55,7 +63,6 @@ export function LoginPage() {
           </form>
         </CardContent>
       </Card>
-      <p className="mt-5 text-center text-xs leading-5 text-muted-foreground">界面参考：Preline Login · shadcn/ui Form · Catalyst Typography</p>
     </div>
   </main>;
 }
