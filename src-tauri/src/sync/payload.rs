@@ -164,6 +164,7 @@ pub fn legacy_to_wire(
         "note.folder" => json!({
             "meta": meta, "name": text(object.get("name"), "文件夹"),
             "icon": text(object.get("icon"), ""), "color": text(object.get("color"), "#64748b"),
+            "parentFolderId": object.get("parentFolderId").cloned().unwrap_or(Value::Null),
             "sortOrder": object.get("sortOrder").and_then(Value::as_i64).unwrap_or(0)
         }),
         "note.tag" => json!({
