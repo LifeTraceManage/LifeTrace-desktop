@@ -19,6 +19,7 @@ mod m0013_note_links;
 mod m0014_execution_goals;
 mod m0015_execution_weekly_reviews;
 mod m0016_note_folder_hierarchy;
+mod m0017_execution_cloud_extensions;
 
 pub use m0001_framework::M0001Framework;
 pub use m0002_finance::M0002Finance;
@@ -36,6 +37,7 @@ pub use m0013_note_links::M0013NoteLinks;
 pub use m0014_execution_goals::M0014ExecutionGoals;
 pub use m0015_execution_weekly_reviews::M0015ExecutionWeeklyReviews;
 pub use m0016_note_folder_hierarchy::M0016NoteFolderHierarchy;
+pub use m0017_execution_cloud_extensions::M0017ExecutionCloudExtensions;
 
 use crate::database::migration_runner::Migration;
 
@@ -58,5 +60,6 @@ pub fn all() -> Vec<Box<dyn Migration>> {
         Box::new(M0014ExecutionGoals),
         Box::new(M0015ExecutionWeeklyReviews),
         Box::new(M0016NoteFolderHierarchy),
+        Box::new(M0017ExecutionCloudExtensions),
     ]
 }
