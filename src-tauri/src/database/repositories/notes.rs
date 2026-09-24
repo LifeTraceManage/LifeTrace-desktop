@@ -885,14 +885,16 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
     let object = json_parser::as_object(input, "文件夹数据")?;
     let folder_id = text(object, "id").unwrap_or_else(id);
     let name = text(object, "name").ok_or_else(|| "文件夹缺少 name".to_owned())?;
+    let user_id = text(object, "userId").ok_or_else(|| "文件夹缺少当前资料归属".to_owned())?;
     let stamp = now();
     connection
         .execute(
             "INSERT INTO note_folders(
                id, user_id, name, icon, color, parent_folder_id, sort_order, created_at, updated_at,
                deleted_at, version, modified_by_device
-             ) VALUES(?1,'local',?2,?3,?4,?5,?6,?7,?8,NULL,1,NULL)
+             ) VALUES(?1,?9,?2,?3,?4,?5,?6,?7,?8,NULL,1,NULL)
              ON CONFLICT(id) DO UPDATE SET
+               user_id=excluded.user_id,
                name=excluded.name, icon=excluded.icon, color=excluded.color,
                parent_folder_id=excluded.parent_folder_id,
                sort_order=excluded.sort_order, updated_at=excluded.updated_at",
@@ -904,7 +906,8 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
                 text(object, "parentFolderId").filter(|parent| parent != &folder_id),
                 object.get("sortOrder").and_then(Value::as_i64).unwrap_or(0),
                 text(object, "createdAt").unwrap_or_else(|| stamp.clone()),
-                text(object, "updatedAt").unwrap_or(stamp)
+                text(object, "updatedAt").unwrap_or(stamp),
+                user_id
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -914,23 +917,24 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
 /// 删除文件夹：软删除并清空笔记引用。
 pub fn delete_folder(connection: &Connection, folder_id: &str) -> Result<(), String> {
     let stamp = now();
+    let profile_id = crate::database::profile::active_profile_id(connection)?;
     connection
         .execute(
-            "UPDATE note_folders SET deleted_at=?1, updated_at=?1 WHERE id=?2",
-            params![stamp, folder_id],
+            "UPDATE note_folders SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
+            params![stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
         .execute(
-            "UPDATE notes SET folder_id=NULL, updated_at=?1 WHERE folder_id=?2",
-            params![stamp, folder_id],
+            "UPDATE notes SET folder_id=NULL, updated_at=?1 WHERE folder_id=?2 AND user_id=?3",
+            params![stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
         .execute(
             "UPDATE note_folders SET parent_folder_id=NULL, updated_at=?1
-             WHERE parent_folder_id=?2",
-            params![stamp, folder_id],
+             WHERE parent_folder_id=?2 AND user_id=?3",
+            params![stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     Ok(())
@@ -943,21 +947,24 @@ pub fn save_tag(connection: &Connection, input: &Value) -> Result<String, String
     let object = json_parser::as_object(input, "标签数据")?;
     let tag_id = text(object, "id").unwrap_or_else(id);
     let name = text(object, "name").ok_or_else(|| "标签缺少 name".to_owned())?;
+    let user_id = text(object, "userId").ok_or_else(|| "标签缺少当前资料归属".to_owned())?;
     let stamp = now();
     connection
         .execute(
             "INSERT INTO note_tags(
                id, user_id, name, color, created_at, updated_at, deleted_at, version,
                modified_by_device
-             ) VALUES(?1,'local',?2,?3,?4,?5,NULL,1,NULL)
+             ) VALUES(?1,?6,?2,?3,?4,?5,NULL,1,NULL)
              ON CONFLICT(id) DO UPDATE SET
+               user_id=excluded.user_id,
                name=excluded.name, color=excluded.color, updated_at=excluded.updated_at",
             params![
                 tag_id,
                 name,
                 text(object, "color").unwrap_or_else(|| "#5f7d70".to_owned()),
                 text(object, "createdAt").unwrap_or_else(|| stamp.clone()),
-                text(object, "updatedAt").unwrap_or(stamp)
+                text(object, "updatedAt").unwrap_or(stamp),
+                user_id
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -967,14 +974,20 @@ pub fn save_tag(connection: &Connection, input: &Value) -> Result<String, String
 /// 删除标签：软删除并移除关系。
 pub fn delete_tag(connection: &Connection, tag_id: &str) -> Result<(), String> {
     let stamp = now();
+    let profile_id = crate::database::profile::active_profile_id(connection)?;
     connection
         .execute(
-            "UPDATE note_tags SET deleted_at=?1, updated_at=?1 WHERE id=?2",
-            params![stamp, tag_id],
+            "UPDATE note_tags SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
+            params![stamp, tag_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
-        .execute("DELETE FROM note_tag_relations WHERE tag_id = ?1", [tag_id])
+        .execute(
+            "DELETE FROM note_tag_relations
+             WHERE tag_id=?1
+               AND EXISTS(SELECT 1 FROM note_tags WHERE id=?1 AND user_id=?2)",
+            params![tag_id, profile_id],
+        )
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -1209,7 +1222,7 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE note_folders(
                    id TEXT PRIMARY KEY, user_id TEXT, name TEXT, icon TEXT, color TEXT,
-                   sort_order INTEGER, created_at TEXT, updated_at TEXT, deleted_at TEXT,
+                   parent_folder_id TEXT, sort_order INTEGER, created_at TEXT, updated_at TEXT, deleted_at TEXT,
                    version INTEGER, modified_by_device TEXT
                  );
                  CREATE TABLE notes(
