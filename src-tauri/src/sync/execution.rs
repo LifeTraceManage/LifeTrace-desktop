@@ -68,6 +68,16 @@ const TABLE_SPECS: &[TableSpec] = &[
         soft_delete: true,
     },
     TableSpec {
+        entity_type: "execution.important_date",
+        table: "execution_important_dates",
+        soft_delete: false,
+    },
+    TableSpec {
+        entity_type: "execution.focus_session",
+        table: "execution_focus_sessions",
+        soft_delete: false,
+    },
+    TableSpec {
         entity_type: "execution.memo",
         table: "execution_memos",
         soft_delete: true,
@@ -105,6 +115,8 @@ pub const ENTITY_TYPES: &[&str] = &[
     "execution.waiting_item",
     "execution.calendar_event",
     "execution.calendar_occurrence",
+    "execution.important_date",
+    "execution.focus_session",
     "execution.memo",
     "execution.memo_tag",
     MEMO_TAG_RELATION,
@@ -154,7 +166,10 @@ fn camel_to_snake(value: &str) -> String {
 }
 
 fn is_boolean_column(column: &str) -> bool {
-    matches!(column, "is_all_day" | "is_pinned")
+    matches!(
+        column,
+        "is_all_day" | "is_pinned" | "lunar_leap_month" | "enabled" | "completed"
+    )
 }
 
 fn sqlite_value(value: ValueRef<'_>, column: &str) -> Value {
