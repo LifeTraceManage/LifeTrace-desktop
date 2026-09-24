@@ -7,6 +7,7 @@ mod database;
 mod desktop;
 mod execution;
 mod execution_calendar;
+mod execution_cloud;
 mod execution_memo;
 mod execution_relation;
 mod execution_reminder;
