@@ -1,7 +1,6 @@
 mod analytics;
 mod assistant;
 mod dictionary;
-mod english;
 mod execution;
 mod execution_calendar;
 mod execution_cloud;
@@ -119,7 +118,6 @@ pub async fn serve(
     imports::ensure_schema(&connection)?;
     crate::database::repositories::notes::seed_default_folders(&connection)?;
     translation::ensure_schema(&connection)?;
-    english::ensure_schema(&connection)?;
     photo::ensure_schema(&connection)?;
     match crate::database::legacy::d1_import::import_once(&mut connection, &data_dir) {
         Ok(count) if count > 0 => eprintln!("LifeTrace migrated {count} legacy records"),
@@ -424,10 +422,6 @@ pub async fn serve(
         .route(
             "/api/english/translate",
             axum::routing::post(translation::translate),
-        )
-        .route(
-            "/api/english/{*path}",
-            axum::routing::any(english::dispatch),
         )
         .route(
             "/api/photo-sync/dashboard",

@@ -9,7 +9,6 @@ import {
   FileUp,
   Home,
   Images,
-  Languages,
   ListChecks,
   Mail,
   NotebookPen,
@@ -23,7 +22,6 @@ export type PlatformView =
   | "assistant"
   | "mail"
   | "habits"
-  | "english"
   | "fitness"
   | "photos"
   | "finance"
@@ -50,7 +48,6 @@ export const navGroups: NavGroup[] = [
     items: [
       { id: "habits", label: "坚持", icon: Check },
       { id: "fitness", label: "健身", icon: Dumbbell },
-      { id: "english", label: "英语", icon: Languages },
     ],
   },
   {
@@ -90,7 +87,6 @@ export const pageTitles: Record<PlatformView, string> = {
   assistant: "AI 管家",
   mail: "邮件行动中心",
   habits: "坚持",
-  english: "每日英语",
   fitness: "健身训练",
   photos: "照片",
   finance: "财务",
