@@ -1,41 +1,43 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity, Bot, CalendarDays, CheckSquare2, ChevronLeft, ChevronRight, Command,
-  Dumbbell, FileText, GraduationCap, HeartPulse, Home, Leaf, Menu, Moon, NotebookPen,
-  RefreshCw, Search, Settings, Sun, WalletCards, X,
+  Bot, ChevronLeft, ChevronRight, Command,
+  Dumbbell, HeartPulse, Leaf, Menu, Moon,
+  RefreshCw, Search, Settings, Sun, X,
 } from "lucide-react";
 import { useApp } from "../app/AppContext";
 import { Badge, Button, Input, cn } from "../components/ui";
+import { AgentSidebar } from "../features/assistant/AgentSidebar";
+import {
+  agentContextFromPath,
+  useAgentRouteContext,
+  useAgentSidebar,
+} from "../features/assistant/AgentSidebarContext";
 
 const nav = [
-  { group: "工作台", items: [
-    ["/app/today", "今日", Home], ["/app/execution", "计划与待办", CheckSquare2], ["/app/calendar", "日历", CalendarDays], ["/app/assistant", "AI 助手", Bot],
-  ] },
-  { group: "成长健康", items: [
-    ["/app/habits", "坚持", Activity], ["/app/fitness", "健身", Dumbbell], ["/app/health", "健康", HeartPulse], ["/app/review", "复盘", FileText],
-  ] },
-  { group: "知识与资产", items: [
-    ["/app/notes", "笔记", NotebookPen], ["/app/english", "英语学习", GraduationCap], ["/app/finance", "财务", WalletCards],
+  { group: "LifeTrace Core", items: [
+    ["/app/health", "健康", HeartPulse], ["/app/fitness", "健身", Dumbbell],
   ] },
 ] as const;
 
 const mobile = [
-  ["/app/today", "今日", Home], ["/app/execution", "计划", CheckSquare2], ["/app/finance", "财务", WalletCards], ["/app/notes", "笔记", NotebookPen],
+  ["/app/health", "健康", HeartPulse], ["/app/fitness", "健身", Dumbbell],
 ] as const;
 
 const commands = [
-  ["打开今日", "/app/today"], ["新建任务", "/app/execution?new=task"], ["记录支出", "/app/finance/transactions?new=expense"], ["开始训练", "/app/fitness?new=workout"], ["新建笔记", "/app/notes?new=note"], ["打开设置", "/app/settings"],
+  ["打开 Execute", "/execute/today"], ["新建任务", "/execute/inbox"], ["记录支出", "/finance/transactions?new=expense"], ["开始训练", "/app/fitness?new=workout"], ["新建笔记", "/notes?new=note"], ["打开设置", "/app/settings"],
 ] as const;
 
 function routeActive(current: string, target: string) {
-  return current === target || (target !== "/app/today" && current.startsWith(`${target}/`));
+  return current === target || current.startsWith(`${target}/`);
 }
 
 export function AppShell() {
   const { session, loading, online, privacy, setPrivacy, refresh, logout, theme, setTheme, error, clearError } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
+  const agent = useAgentSidebar();
+  useAgentRouteContext(agentContextFromPath(location.pathname));
   const [collapsed, setCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -55,11 +57,11 @@ export function AppShell() {
   useEffect(() => { setMoreOpen(false); }, [location.pathname]);
   const filtered = useMemo(() => commands.filter(([label]) => label.includes(query.trim())), [query]);
 
-  return <div className="min-h-screen bg-background lg:grid lg:grid-cols-[auto_1fr]">
+  return <div className={cn("min-h-screen bg-background transition-[padding] lg:grid lg:grid-cols-[auto_1fr]", agent.open && "lg:pr-[420px]")}>
     <aside className={cn("sticky top-0 hidden h-screen border-r bg-card lg:flex lg:flex-col", collapsed ? "w-[76px]" : "w-[236px]") }>
       <div className="flex h-16 items-center gap-3 border-b px-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Leaf size={18} /></div>
-        {!collapsed ? <div className="min-w-0"><div className="font-semibold tracking-[-0.02em]">LifeTrace</div><div className="text-[11px] text-muted-foreground">Personal OS</div></div> : null}
+        <Link to="/" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground" aria-label="返回 LifeTrace 首页"><Leaf size={18} /></Link>
+        {!collapsed ? <div className="min-w-0"><div className="font-semibold tracking-[-0.02em]">LifeTrace</div></div> : null}
       </div>
       <nav className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4" aria-label="主导航">
         {nav.map((group) => <div key={group.group} className="mb-5">
@@ -82,6 +84,7 @@ export function AppShell() {
         </div>
         <div className="flex items-center gap-1.5">
           <Button variant="outline" className="hidden min-w-56 justify-between text-muted-foreground md:flex" onClick={() => setCommandOpen(true)}><span className="flex items-center gap-2"><Search size={15} />搜索或执行命令</span><kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px]">⌘K</kbd></Button>
+          <Button size="icon" variant={agent.open ? "secondary" : "ghost"} onClick={agent.toggle} aria-label="打开 Agent"><Bot size={17} /></Button>
           <Button size="icon" variant="ghost" onClick={() => void refresh()} aria-label="刷新云端数据"><RefreshCw size={17} /></Button>
           <Button size="icon" variant="ghost" onClick={() => void setTheme(theme === "dark" ? "light" : "dark")} aria-label="切换主题">{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</Button>
           <Button className="md:hidden" size="icon" variant="ghost" onClick={() => setCommandOpen(true)} aria-label="搜索"><Command size={18} /></Button>
@@ -93,8 +96,9 @@ export function AppShell() {
       <Outlet />
     </div>
 
-    <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[68px] grid-cols-5 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="移动端导航">
+    <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[68px] grid-cols-4 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="移动端导航">
       {mobile.map(([path, label, Icon]) => <NavLink key={path} to={path} className={({ isActive }) => cn("flex min-h-11 flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground", isActive || routeActive(location.pathname, path) ? "text-primary" : "")}><Icon size={19} /><span>{label}</span></NavLink>)}
+      <button className={cn("flex min-h-11 flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground", agent.open && "text-primary")} onClick={agent.toggle}><Bot size={19} /><span>助手</span></button>
       <button className="flex min-h-11 flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground" onClick={() => setMoreOpen(true)}><Menu size={19} /><span>更多</span></button>
     </nav>
 
@@ -105,9 +109,11 @@ export function AppShell() {
       </div>
     </div> : null}
 
+    <AgentSidebar />
+
     {moreOpen ? <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 lg:items-center" role="dialog" aria-modal="true" aria-label="账户与更多菜单" onMouseDown={(event) => { if (event.currentTarget === event.target) setMoreOpen(false); }}>
       <div className="w-full rounded-t-xl border bg-popover p-4 shadow-2xl sm:max-w-md sm:rounded-xl">
-        <div className="flex items-center justify-between"><div><div className="font-semibold">{session?.user.displayName || "LifeTrace 用户"}</div><div className="text-xs text-muted-foreground">{session?.user.email}</div></div><Button size="icon" variant="ghost" onClick={() => setMoreOpen(false)}><X size={17} /></Button></div>
+        <div className="flex items-center justify-between"><div><div className="font-semibold">{session?.user.displayName || "LifeTrace 用户"}</div><div className="text-xs text-muted-foreground">{session?.user.email}</div></div><Button size="icon" variant="ghost" onClick={() => setMoreOpen(false)} aria-label="关闭账户菜单"><X size={17} /></Button></div>
         <div className="mt-4 grid gap-2">
           <Button variant="outline" className="justify-start" onClick={() => { setMoreOpen(false); navigate("/app/search"); }}><Search size={16} />全局搜索</Button>
           <Button variant="outline" className="justify-start" onClick={() => { setMoreOpen(false); navigate("/app/settings"); }}><Settings size={16} />设置</Button>
