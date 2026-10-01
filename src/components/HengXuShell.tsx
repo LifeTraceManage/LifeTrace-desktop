@@ -35,7 +35,6 @@ import DesignGallery from "@/src/components/design/DesignGallery";
 import EditorModal, {
   type EditorModalState,
 } from "@/src/components/feature/forms/EditorModal";
-import DailyEnglish from "@/src/components/english/DailyEnglish";
 import ExecutionModule from "@/src/components/feature/execution/ExecutionModule";
 import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
 import NotesModule from "@/src/components/NotesModule";
@@ -126,11 +125,6 @@ export default function HengXuShell() {
         return;
       case "workout":
         setView("fitness");
-        return;
-      case "english_article":
-      case "english_learning_record":
-      case "vocabulary":
-        setView("english");
         return;
       case "calendar_event":
       case "execution_task":
@@ -338,7 +332,6 @@ export default function HengXuShell() {
             }
           />
         ) : null}
-        {view === "english" ? <DailyEnglish /> : null}
         {view === "fitness" ? (
           <Fitness
             note={(value) =>

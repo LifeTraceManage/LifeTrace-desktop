@@ -2,7 +2,7 @@ export type ActivityType = "duration" | "count" | "completion" | "weekly" | "con
 export type ActivityColorKey = "emerald" | "blue" | "cyan" | "violet" | "rose" | "orange" | "amber" | "slate";
 export type ActivityScheduleType = "daily" | "weekly" | "custom";
 export type ActivityCheckinMethod = "manual" | "automatic";
-export type ActivitySyncSource = "fitness" | "english";
+export type ActivitySyncSource = "fitness";
 
 export interface Activity {
   id: string;
