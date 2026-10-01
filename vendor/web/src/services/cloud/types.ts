@@ -25,13 +25,10 @@ export const ENTITY_TYPES = [
   "finance.account", "finance.category", "finance.transaction", "finance.transaction_evidence",
   "habit.activity", "habit.log", "review.daily",
   "note.folder", "note.note", "note.tag", "note.tag_relation", "note.relation", "note.revision",
-  "english.article", "english.highlight", "english.note", "english.learning_record",
-  "english.vocabulary", "english.vocabulary_occurrence", "english.vocabulary_review_state",
   "workout.import", "workout.workout", "workout.exercise", "workout.set", "workout.training_note",
   "execution.goal", "execution.weekly_review", "execution.project", "execution.recurrence_rule", "execution.task", "execution.task_dependency",
   "execution.task_occurrence", "execution.waiting_item", "execution.calendar_event",
-  "execution.calendar_occurrence", "execution.memo", "execution.memo_tag",
-  "execution.memo_tag_relation", "execution.reminder", "execution.completion_result",
+  "execution.calendar_occurrence", "execution.reminder", "execution.completion_result",
   "execution.entity_link",
   "file.metadata", "entity.link", "user.preference",
 ] as const;
@@ -251,9 +248,10 @@ export const REQUESTED_SCOPES = [
   "account:read", "account:write", "devices:read", "devices:write",
   "sessions:read", "sessions:write", "sync:read", "sync:write",
   "finance:read", "finance:write", "notes:read", "notes:write",
-  "english:read", "english:write", "habits:read", "habits:write",
+  "habits:read", "habits:write",
   "reviews:read", "reviews:write", "workouts:read", "workouts:write",
   "execution:read", "execution:write", "files:read", "files:write",
+  "links:read", "links:write", "mail:read", "mail:write",
 ] as const;
 
 export const EMPTY_CLOUD_STATE: CloudState = { cursor: null, entities: {}, conflicts: [], lastLoadedAt: null };
@@ -264,7 +262,19 @@ export function clone<T>(value: T): T {
 }
 
 export function uuid(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
     const random = Math.floor(Math.random() * 16);
     return (character === "x" ? random : (random & 0x3) | 0x8).toString(16);
