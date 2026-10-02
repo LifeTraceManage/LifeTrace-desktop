@@ -1,23 +1,17 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { Navigate, createBrowserRouter, useLocation } from "react-router-dom";
 import { useApp } from "./AppContext";
 import { AppShell } from "../layouts/AppShell";
+import { useAgentSidebar } from "../features/assistant/AgentSidebarContext";
 
 const LoginPage = lazy(() => import("../features/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
 const PortalPage = lazy(() => import("../features/portal/PortalPage").then((module) => ({ default: module.PortalPage })));
-const TodayPage = lazy(() => import("../features/dashboard/TodayPage").then((module) => ({ default: module.TodayPage })));
-const ExecutionPage = lazy(() => import("../features/execution/ExecutionPage").then((module) => ({ default: module.ExecutionPage })));
-const CalendarPage = lazy(() => import("../features/calendar/CalendarPage").then((module) => ({ default: module.CalendarPage })));
-const HabitsPage = lazy(() => import("../features/habits/HabitsPage").then((module) => ({ default: module.HabitsPage })));
+const ExecutionWorkspace = lazy(() => import("../features/execution/ExecutionWorkspace").then((module) => ({ default: module.ExecutionWorkspace })));
 const FitnessPage = lazy(() => import("../features/fitness/FitnessPage").then((module) => ({ default: module.FitnessPage })));
 const HealthPage = lazy(() => import("../features/health/HealthPage").then((module) => ({ default: module.HealthPage })));
 const NotesPage = lazy(() => import("../features/notes/NotesPage").then((module) => ({ default: module.NotesPage })));
 const MailPage = lazy(() => import("../features/mail/MailPage").then((module) => ({ default: module.MailPage })));
-const EnglishPage = lazy(() => import("../features/english/EnglishPage").then((module) => ({ default: module.EnglishPage })));
-const ReviewPage = lazy(() => import("../features/review/ReviewPage").then((module) => ({ default: module.ReviewPage })));
 const FinanceWorkspace = lazy(() => import("../features/finance/FinanceWorkspace").then((module) => ({ default: module.FinanceWorkspace })));
-const FinanceTransactionsPage = lazy(() => import("../features/finance/FinanceTransactionsPage").then((module) => ({ default: module.FinanceTransactionsPage })));
-const AssistantPage = lazy(() => import("../features/assistant/AssistantPage").then((module) => ({ default: module.AssistantPage })));
 const SearchPage = lazy(() => import("../features/search/SearchPage").then((module) => ({ default: module.SearchPage })));
 const SettingsPage = lazy(() => import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const UiShowcasePage = lazy(() => import("../features/system/UiShowcasePage").then((module) => ({ default: module.UiShowcasePage })));
@@ -60,32 +54,48 @@ function ProtectedShell() {
   return <RequireAuth><AppShell /></RequireAuth>;
 }
 
+function LegacyFinanceRedirect() {
+  const location = useLocation();
+  const pathname = location.pathname.replace(/^\/app\/finance/, "/finance");
+  return <Navigate to={`${pathname || "/finance"}${location.search}${location.hash}`} replace />;
+}
+
+function LegacyAssistantRedirect() {
+  const { setOpen } = useAgentSidebar();
+  useEffect(() => {
+    setOpen(true);
+  }, [setOpen]);
+  return <Navigate to="/app/health" replace />;
+}
+
 export const router = createBrowserRouter([
   { path: "/", element: <RequireAuth>{withSuspense(<PortalPage />)}</RequireAuth> },
   { path: "/login", element: withSuspense(<LoginPage />) },
   { path: "/notes/*", element: <RequireAuth>{withSuspense(<NotesPage />)}</RequireAuth> },
   { path: "/mail/*", element: <RequireAuth>{withSuspense(<MailPage />)}</RequireAuth> },
+  { path: "/finance/*", element: <RequireAuth>{withSuspense(<FinanceWorkspace />)}</RequireAuth> },
+  { path: "/execute", element: <Navigate to="/execute/today" replace /> },
+  { path: "/execute/:view", element: <RequireAuth>{withSuspense(<ExecutionWorkspace />)}</RequireAuth> },
+  { path: "/execute/*", element: <Navigate to="/execute/today" replace /> },
   {
     path: "/app",
     element: <ProtectedShell />,
     children: [
-      { index: true, element: <Navigate to="today" replace /> },
-      { path: "today", element: withSuspense(<TodayPage />) },
-      { path: "execution", element: withSuspense(<ExecutionPage />) },
-      { path: "calendar", element: withSuspense(<CalendarPage />) },
-      { path: "habits", element: withSuspense(<HabitsPage />) },
+      { index: true, element: <Navigate to="health" replace /> },
+      { path: "today", element: <Navigate to="/execute/today" replace /> },
+      { path: "execution", element: <Navigate to="/execute/today" replace /> },
+      { path: "calendar", element: <Navigate to="/execute/planner" replace /> },
+      { path: "habits", element: <Navigate to="/execute/habits" replace /> },
       { path: "fitness", element: withSuspense(<FitnessPage />) },
       { path: "health", element: withSuspense(<HealthPage />) },
       { path: "notes", element: <Navigate to="/notes" replace /> },
-      { path: "english/*", element: withSuspense(<EnglishPage />) },
-      { path: "review", element: withSuspense(<ReviewPage />) },
-      { path: "finance/transactions", element: withSuspense(<FinanceTransactionsPage />) },
-      { path: "finance/*", element: withSuspense(<FinanceWorkspace />) },
-      { path: "assistant", element: withSuspense(<AssistantPage />) },
+      { path: "review", element: <Navigate to="/execute/review" replace /> },
+      { path: "finance/*", element: <LegacyFinanceRedirect /> },
+      { path: "assistant", element: <LegacyAssistantRedirect /> },
       { path: "search", element: withSuspense(<SearchPage />) },
       { path: "settings/*", element: withSuspense(<SettingsPage />) },
       { path: "system/ui", element: withSuspense(<UiShowcasePage />) },
-      { path: "*", element: <Navigate to="today" replace /> },
+      { path: "*", element: <Navigate to="health" replace /> },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

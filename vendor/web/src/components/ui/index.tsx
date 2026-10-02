@@ -38,7 +38,7 @@ export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) 
 export type ButtonVariant = "default" | "secondary" | "ghost" | "outline" | "destructive";
 
 export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: "sm" | "md" | "icon" }>(
-  ({ className, variant = "default", size = "md", type = "button", ...props }, ref) => {
+  ({ className, variant = "default", size = "md", type = "button", title, "aria-label": ariaLabel, ...props }, ref) => {
     const variants: Record<ButtonVariant, string> = {
       default: "bg-primary text-primary-foreground hover:bg-primary/90",
       secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/75",
@@ -47,7 +47,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
       destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
     };
     const sizes = { sm: "h-8 px-3 text-xs", md: "h-9 px-3.5 text-sm", icon: "h-9 w-9 p-0" };
-    return <button ref={ref} type={type} className={cn("inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
+    const hoverName = title ?? (size === "icon" && typeof ariaLabel === "string" ? ariaLabel : undefined);
+    return <button ref={ref} type={type} title={hoverName} aria-label={ariaLabel} className={cn("inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50", variants[variant], sizes[size], className)} {...props} />;
   },
 );
 Button.displayName = "Button";
@@ -130,10 +131,10 @@ function trapKeyDown(event: React.KeyboardEvent<HTMLDivElement>, onClose?: () =>
   }
 }
 
-export function Dialog({ open, onOpenChange, title, description, children }: PropsWithChildren<{ open: boolean; onOpenChange(open: boolean): void; title: string; description?: string }>) {
+export function Dialog({ open, onOpenChange, title, description, children, className }: PropsWithChildren<{ open: boolean; onOpenChange(open: boolean): void; title: string; description?: string; className?: string }>) {
   const ref = useFocusTrap(open);
   if (!open) return null;
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onOpenChange(false); }}><div ref={ref} tabIndex={-1} onKeyDown={(event) => trapKeyDown(event, () => onOpenChange(false))} className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-popover shadow-2xl" role="dialog" aria-modal="true" aria-label={title}><div className="border-b px-5 py-4"><div className="font-semibold">{title}</div>{description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p> : null}</div><div className="p-5">{children}</div></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onOpenChange(false); }}><div ref={ref} tabIndex={-1} onKeyDown={(event) => trapKeyDown(event, () => onOpenChange(false))} className={cn("max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-popover shadow-2xl", className)} role="dialog" aria-modal="true" aria-label={title}><div className="border-b px-5 py-4"><div className="font-semibold">{title}</div>{description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p> : null}</div><div className="p-5">{children}</div></div></div>;
 }
 
 export function AlertDialog(props: PropsWithChildren<{ open: boolean; onOpenChange(open: boolean): void; title: string; description?: string }>) {
