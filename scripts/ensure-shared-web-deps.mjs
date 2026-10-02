@@ -12,6 +12,7 @@ const requiredPackages = [
   "codemirror",
   "@codemirror/autocomplete",
   "@codemirror/lang-markdown",
+  "@codemirror/view",
 ];
 
 const dependenciesReady = requiredPackages.every((packageName) =>
