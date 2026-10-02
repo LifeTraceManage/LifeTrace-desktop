@@ -5,9 +5,20 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDir, "../vendor/web");
-const routerPackage = path.join(webRoot, "node_modules", "react-router-dom", "package.json");
+const requiredPackages = [
+  "react-router-dom",
+  "react-markdown",
+  "remark-gfm",
+  "codemirror",
+  "@codemirror/autocomplete",
+  "@codemirror/lang-markdown",
+];
 
-if (!existsSync(routerPackage)) {
+const dependenciesReady = requiredPackages.every((packageName) =>
+  existsSync(path.join(webRoot, "node_modules", ...packageName.split("/"), "package.json")),
+);
+
+if (!dependenciesReady) {
   const npmCli = process.env.npm_execpath;
   if (!npmCli) {
     throw new Error("npm_execpath is unavailable; run this bootstrap through an npm lifecycle script.");
@@ -15,7 +26,7 @@ if (!existsSync(routerPackage)) {
 
   execFileSync(
     process.execPath,
-    [npmCli, "install", "--prefix", webRoot, "--no-audit", "--no-fund"],
+    [npmCli, "install", "--prefix", webRoot, "--no-audit", "--no-fund", "--package-lock=false"],
     { stdio: "inherit" },
   );
 }
