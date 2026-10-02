@@ -1,0 +1,159 @@
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
+use serde::Deserialize;
+use serde::Serialize;
+
+use crate::database::repositories::travel::{
+    self, NewPlace, NewTrip, NewVisit,
+};
+
+use super::AppState;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ErrorResponse {
+    error: String,
+    code: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisitQuery {
+    pub trip_id: Option<String>,
+    pub place_id: Option<String>,
+}
+
+fn lock_error() -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse {
+            error: "SQLite 锁已损坏".to_owned(),
+            code: "TRAVEL_DATABASE_LOCK_FAILURE",
+        }),
+    )
+        .into_response()
+}
+
+fn travel_error(message: String) -> Response {
+    let status = if message.contains("不能为空")
+        || message.contains("必须")
+        || message.contains("不受支持")
+    {
+        StatusCode::BAD_REQUEST
+    } else if message.contains("不存在") {
+        StatusCode::NOT_FOUND
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
+    };
+    (
+        status,
+        Json(ErrorResponse {
+            error: message,
+            code: if status == StatusCode::BAD_REQUEST {
+                "TRAVEL_VALIDATION"
+            } else if status == StatusCode::NOT_FOUND {
+                "TRAVEL_NOT_FOUND"
+            } else {
+                "TRAVEL_STORAGE_FAILURE"
+            },
+        }),
+    )
+        .into_response()
+}
+
+pub async fn summary(State(state): State<AppState>) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::summary(&connection) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn list_places(State(state): State<AppState>) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::list_places(&connection) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn create_place(
+    State(state): State<AppState>,
+    Json(input): Json<NewPlace>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::create_place(&connection, input) {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn list_trips(State(state): State<AppState>) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::list_trips(&connection) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn create_trip(
+    State(state): State<AppState>,
+    Json(input): Json<NewTrip>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::create_trip(&connection, input) {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn list_visits(
+    State(state): State<AppState>,
+    Query(query): Query<VisitQuery>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::list_visits(
+        &connection,
+        query.trip_id.as_deref(),
+        query.place_id.as_deref(),
+    ) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn create_visit(
+    State(state): State<AppState>,
+    Json(input): Json<NewVisit>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::create_visit(&connection, input) {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
