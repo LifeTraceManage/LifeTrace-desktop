@@ -191,7 +191,6 @@ export function ProjectScheduleSelector({ draft, update }: { draft: PersistProje
 
 const SYNC_SOURCES: { value: ActivitySyncSource; label: string; description: string }[] = [
   { value: "fitness", label: "健身训练", description: "训记导入或训练完成后记录" },
-  { value: "english", label: "每日英语", description: "完成阅读、总结与 AI 反馈后记录" },
 ];
 
 export function CheckinMethodSelector({ draft, update, error }: { draft: PersistProjectDraft; update: (patch: Partial<PersistProjectDraft>) => void; error?: string }) {
