@@ -26,7 +26,6 @@ test("desktop native shell owns navigation while web owns feature pages", () => 
     "/app/fitness",
     "/app/health",
     "/app/notes",
-    "/app/english",
     "/app/review",
     "/app/finance",
     "/app/assistant",
