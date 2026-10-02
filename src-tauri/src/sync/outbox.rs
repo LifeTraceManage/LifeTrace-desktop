@@ -141,18 +141,6 @@ pub fn enqueue_existing_profile(
             EntityType::WORKOUT_IMPORT,
             crate::database::repositories::workouts::list_imports(connection)?,
         ),
-        (
-            EntityType::ENGLISH_LEARNING_RECORD,
-            crate::database::repositories::english::list(connection, "records")?,
-        ),
-        (
-            EntityType::ENGLISH_HIGHLIGHT,
-            crate::database::repositories::english::list(connection, "highlights")?,
-        ),
-        (
-            EntityType::ENGLISH_VOCABULARY,
-            crate::database::repositories::english::list(connection, "vocabulary")?,
-        ),
     ];
     for (entity_type, values) in sources {
         for mut value in values {
