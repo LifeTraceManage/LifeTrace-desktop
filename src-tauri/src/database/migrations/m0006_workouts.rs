@@ -321,7 +321,7 @@ mod tests {
     use super::*;
     use crate::database::migration_runner::run;
     use crate::database::migrations::{
-        M0001Framework, M0002Finance, M0003HabitsReviews, M0004Notes, M0005English,
+        M0001Framework, M0002Finance, M0003HabitsReviews, M0004Notes,
     };
     use rusqlite::Connection;
     use serde_json::json;
@@ -413,7 +413,6 @@ mod tests {
             Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
             Box::new(M0004Notes),
-            Box::new(M0005English),
             Box::new(M0006Workouts),
         ];
         run(&mut connection, &context, &migrations).unwrap();
