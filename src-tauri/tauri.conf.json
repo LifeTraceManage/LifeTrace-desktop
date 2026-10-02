@@ -35,10 +35,7 @@
     "createUpdaterArtifacts": true,
     "icon": [
       "../public/icons/icon-512.png"
-    ],
-    "resources": {
-      "../xunji_service/data/dictionary.db": "dictionary/dictionary.db"
-    }
+    ]
   },
   "plugins": {
     "updater": {
