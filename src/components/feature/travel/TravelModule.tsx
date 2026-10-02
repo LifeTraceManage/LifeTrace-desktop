@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   CalendarDays,
   Camera,
@@ -46,7 +46,7 @@ function TravelCoordinateMap({
 }) {
   const plotted = useMemo(() => places.map((place) => ({ place, point: coords(place) })).filter((item) => item.point), [places]);
 
-  const handleDoubleClick = (event: PointerEvent<SVGSVGElement>) => {
+  const handleDoubleClick = (event: ReactMouseEvent<SVGSVGElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - box.left) / box.width) * 1000;
     const y = ((event.clientY - box.top) / box.height) * 520;
