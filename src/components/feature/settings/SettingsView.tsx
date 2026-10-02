@@ -3,7 +3,6 @@ import { useLifeStore } from "@/src/stores/useLifeStore";
 import { noteApi } from "@/src/services/noteApi";
 import CloudAccountPanel from "@/src/components/CloudAccountPanel";
 import AISettingsPanel from "@/src/components/AISettingsPanel";
-import TranslationSettingsPanel from "@/src/components/TranslationSettingsPanel";
 import AboutLifeTracePanel from "@/src/components/AboutLifeTracePanel";
 import { PanelHead } from "@/src/components/common";
 
@@ -40,7 +39,6 @@ export default function SettingsView() {
       <div className="hx-settings-grid">
         <CloudAccountPanel />
         <AISettingsPanel />
-        <TranslationSettingsPanel />
         <AboutLifeTracePanel />
         <article className="hx-panel">
           <PanelHead kicker="数据备份" title="数据备份" />

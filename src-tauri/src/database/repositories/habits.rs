@@ -14,7 +14,7 @@ const ACTIVITY_TYPES: [&str; 5] = ["duration", "count", "completion", "weekly", 
 const TARGET_PERIODS: [&str; 2] = ["daily", "weekly"];
 const SCHEDULE_TYPES: [&str; 3] = ["daily", "weekly", "custom"];
 const CHECKIN_METHODS: [&str; 2] = ["manual", "automatic"];
-const SYNC_SOURCES: [&str; 2] = ["fitness", "english"];
+const SYNC_SOURCES: [&str; 1] = ["fitness"];
 const LOG_STATUSES: [&str; 3] = ["completed", "partial", "skipped"];
 
 fn now() -> String {

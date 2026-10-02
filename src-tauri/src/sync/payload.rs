@@ -172,7 +172,7 @@ pub fn legacy_to_wire(
             "scheduleType": object.get("scheduleType").cloned().unwrap_or(Value::Null),
             "startDate": object.get("startDate").cloned().unwrap_or(Value::Null),
             "checkinMethod": object.get("checkinMethod").cloned().unwrap_or(Value::Null),
-            "syncSource": object.get("syncSource").cloned().unwrap_or(Value::Null),
+            "syncSource": object.get("syncSource").and_then(Value::as_str).filter(|value| *value == "fitness").map(|value| json!(value)).unwrap_or(Value::Null),
             "description": object.get("description").cloned().unwrap_or(Value::Null),
             "isArchived": object.get("isArchived").and_then(Value::as_bool).unwrap_or(false)
         }),
