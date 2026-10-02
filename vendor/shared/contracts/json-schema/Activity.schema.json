@@ -6,11 +6,11 @@
       "type": "string"
     },
     "ActivityScheduleType": {
-      "description": "Habit schedule type. Known values: daily, weekly, custom. Unknown values are preserved (forward compatible).",
+      "description": "Habit schedule type. Known values: daily, weekly, custom, interval, monthly. Unknown values are preserved (forward compatible).",
       "type": "string"
     },
     "ActivitySyncSource": {
-      "description": "Habit sync source. Known values: fitness, english. Unknown values are preserved (forward compatible).",
+      "description": "Habit sync source. Known values: fitness. Unknown values are preserved (forward compatible).",
       "type": "string"
     },
     "ActivityType": {
