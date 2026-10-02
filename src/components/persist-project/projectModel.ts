@@ -74,8 +74,7 @@ const inferIcon = (activity?: Activity): ProjectIconId => {
 };
 
 const inferAutomaticSource = (activity: Activity): ActivitySyncSource | "" => {
-  if (activity.syncSource) return activity.syncSource;
-  if (activity.id === "system-daily-english" || /英语/.test(activity.name)) return "english";
+  if (activity.syncSource === "fitness") return "fitness";
   if (activity.id === "system-fitness-training" || /健身|训练/.test(activity.name)) return "fitness";
   return "";
 };
