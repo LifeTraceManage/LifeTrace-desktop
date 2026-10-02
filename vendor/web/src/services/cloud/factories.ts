@@ -45,6 +45,9 @@ export interface HabitInput {
   normalTarget?: number | null;
   targetPeriod?: "daily" | "weekly" | string;
   targetDays?: number[];
+  scheduleType?: "daily" | "weekly" | "custom" | "interval" | "monthly" | string;
+  startDate?: string | null;
+  checkinMethod?: "manual" | "automatic" | string;
   icon?: string | null;
   color?: string | null;
   description?: string | null;
@@ -59,7 +62,8 @@ export function createHabitActivity(userId: string, deviceId: string, input: Hab
     minimumTarget: input.minimumTarget ?? null, normalTarget: input.normalTarget ?? 1,
     targetPeriod: input.targetPeriod ?? "daily", targetDays: input.targetDays ?? [],
     icon: input.icon ?? name.slice(0, 1), color: input.color ?? "#0f766e",
-    scheduleType: "flexible", startDate: localDate(), checkinMethod: "manual",
+    scheduleType: input.scheduleType ?? "daily", startDate: input.startDate ?? localDate(),
+    checkinMethod: input.checkinMethod ?? "manual",
     syncSource: "web", description: input.description?.trim() || null, isArchived: false,
   };
 }
@@ -133,16 +137,60 @@ export function createTrainingNote(userId: string, deviceId: string, title: stri
   return { meta: baseMeta(userId, deviceId), title: title.trim() || "训练笔记", content: content.trim(), workoutId, source: "manual", noteDate: localDate() };
 }
 
-export function createNoteFolder(userId: string, deviceId: string, name: string, sortOrder = 0): JsonEntity {
-  return { meta: baseMeta(userId, deviceId), name: name.trim(), icon: "folder", color: "#8a765b", sortOrder };
+export function createNoteFolder(
+  userId: string,
+  deviceId: string,
+  name: string,
+  sortOrder = 0,
+  parentFolderId: string | null = null,
+): JsonEntity {
+  return {
+    meta: baseMeta(userId, deviceId),
+    name: name.trim(),
+    icon: "folder",
+    color: "#8a765b",
+    parentFolderId,
+    sortOrder,
+  };
 }
 
 export function createNoteTag(userId: string, deviceId: string, name: string): JsonEntity {
   return { meta: baseMeta(userId, deviceId), name: name.trim(), color: "#49715d" };
 }
 
+export function createNoteRevision(
+  userId: string,
+  deviceId: string,
+  note: JsonEntity,
+  revisionVersion: number,
+): JsonEntity {
+  return {
+    meta: baseMeta(userId, deviceId),
+    noteId: note.meta.id,
+    revisionVersion,
+    title: typeof note.title === "string" ? note.title : null,
+    contentJson: note.contentJson ?? {},
+    contentHtml: typeof note.contentHtml === "string" ? note.contentHtml : "",
+    contentMarkdown: typeof note.contentMarkdown === "string"
+      ? note.contentMarkdown
+      : typeof note.contentText === "string"
+        ? note.contentText
+        : "",
+  };
+}
+
 export function createNoteTagRelation(userId: string, deviceId: string, noteId: string, tagId: string): JsonEntity {
   return { meta: baseMeta(userId, deviceId, `${noteId}:${tagId}`), noteId, tagId };
+}
+
+export function createNoteRelation(userId: string, deviceId: string, noteId: string, targetNoteId: string): JsonEntity {
+  return {
+    meta: baseMeta(userId, deviceId, `${noteId}:${targetNoteId}`),
+    noteId,
+    entityType: "note.note",
+    entityId: targetNoteId,
+    relationType: "wiki_link",
+  };
 }
 
 export interface NoteContent { html: string; text: string; json: unknown; markdown?: string; }
@@ -164,34 +212,27 @@ export function createNote(userId: string, deviceId: string, title: string, cont
   };
 }
 
-export function createVocabulary(userId: string, deviceId: string, word: string, definition: string): JsonEntity {
-  const displayWord = word.trim();
-  if (!displayWord) throw new Error("请输入单词");
-  const cleanDefinition = definition.trim();
-  return {
-    meta: baseMeta(userId, deviceId), normalizedWord: displayWord.toLocaleLowerCase("en-US"), displayWord,
-    definition: cleanDefinition, phonetic: "", partOfSpeech: "", selectedMeanings: cleanDefinition ? [cleanDefinition] : [],
-    lemma: displayWord.toLocaleLowerCase("en-US"), notes: "", masteryLevel: 0, reviewStage: 0,
-    reviewCount: 0, correctCount: 0, incorrectCount: 0, encounterCount: 1, status: "LEARNING",
-    tags: [], sourceArticleId: null, sourceArticleTitle: null, sourceSentence: null,
-    frequencyRank: null, lastReviewedAt: null, nextReviewAt: null, metadata: null,
-  };
-}
-
-export function createEnglishHighlight(userId: string, deviceId: string, articleId: string, selectedText: string, note = ""): JsonEntity {
-  return { meta: baseMeta(userId, deviceId), articleId, blockId: null, selectedText: selectedText.trim(), startOffset: null, endOffset: null, prefix: null, suffix: null, color: "yellow", note: note.trim() || null };
-}
-
-export function createEnglishNote(userId: string, deviceId: string, articleId: string, content: string, quote = ""): JsonEntity {
-  return { meta: baseMeta(userId, deviceId), articleId, quote: quote.trim() || null, content: content.trim(), blockId: null, startOffset: null, endOffset: null, selectedText: quote.trim() || null, prefix: null, suffix: null, highlightId: null };
-}
-
-export function createEnglishLearningRecord(userId: string, deviceId: string, articleId: string, summary: string, readingTimeSeconds: number, newWords: string[] = []): JsonEntity {
-  return { meta: baseMeta(userId, deviceId), articleId, analysisId: null, recordDate: localDate(), readingTimeSeconds: Math.max(0, Math.round(readingTimeSeconds)), summary: summary.trim(), newWords, completionStatus: "completed", readingStatus: "completed", startedAt: null, completedAt: new Date().toISOString(), score: null };
-}
-
 export function createPreference(userId: string, deviceId: string, preferenceKey: string, value: unknown): JsonEntity {
   return { meta: baseMeta(userId, deviceId), preferenceKey, value };
+}
+
+export function createEntityLink(
+  userId: string,
+  deviceId: string,
+  sourceType: string,
+  sourceId: string,
+  relationType: string,
+  targetType: string,
+  targetId: string,
+  metadata: unknown = null,
+): JsonEntity {
+  return {
+    meta: baseMeta(userId, deviceId),
+    source: { entityType: sourceType, entityId: sourceId },
+    target: { entityType: targetType, entityId: targetId },
+    relationType,
+    metadata,
+  };
 }
 
 export function createFileMetadata(userId: string, deviceId: string, file: { name: string; type: string; size: number; sha256: string }): JsonEntity {

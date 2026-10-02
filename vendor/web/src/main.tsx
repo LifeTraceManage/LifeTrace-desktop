@@ -3,17 +3,22 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { AppProvider } from "./app/AppContext";
 import { ErrorBoundary } from "./app/ErrorBoundary";
+import { AgentSidebarProvider } from "./features/assistant/AgentSidebarContext";
 import { router } from "./app/router";
 import { installGlobalErrorHandlers } from "./services/clientObservability";
+import { installButtonHoverNames } from "./services/buttonHoverNames";
 import "./styles/globals.css";
 
 installGlobalErrorHandlers();
+installButtonHoverNames();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <AppProvider>
-        <RouterProvider router={router} />
+        <AgentSidebarProvider>
+          <RouterProvider router={router} />
+        </AgentSidebarProvider>
       </AppProvider>
     </ErrorBoundary>
   </StrictMode>,
