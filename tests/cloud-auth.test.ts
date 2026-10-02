@@ -14,6 +14,23 @@ class MemoryStorage {
   get length() { return this.values.size; }
 }
 
+const desktopScopes = [
+  "account:read", "account:write",
+  "devices:read", "devices:write",
+  "sessions:read", "sessions:write",
+  "sync:read", "sync:write",
+  "finance:read", "finance:write",
+  "notes:read", "notes:write",
+  "files:read", "files:write",
+  "habits:read", "habits:write",
+  "reviews:read", "reviews:write",
+  "workouts:read", "workouts:write",
+  "execution:read", "execution:write",
+  "assets:read", "assets:write",
+  "links:read", "links:write",
+  "mail:read", "mail:write",
+];
+
 const tokenFor = (userId: string): CloudTokenResponse => ({
   accessToken: `access-${userId}`,
   refreshToken: `refresh-${userId}`,
@@ -22,7 +39,7 @@ const tokenFor = (userId: string): CloudTokenResponse => ({
   refreshExpiresIn: 86400,
   user: { id: userId, email: `${userId}@example.com`, displayName: userId.toUpperCase(), state: "active" },
   session: { id: `session-${userId}`, appId: "lifetrace-desktop", deviceId: "device", status: "active", createdAt: new Date(0).toISOString(), lastSeenAt: new Date(0).toISOString(), absoluteExpiresAt: new Date(86400000).toISOString() },
-  scopes: [],
+  scopes: [...desktopScopes],
 });
 
 function installBrowserMocks(syncApi: NonNullable<Window["syncApi"]>, token: CloudTokenResponse) {
