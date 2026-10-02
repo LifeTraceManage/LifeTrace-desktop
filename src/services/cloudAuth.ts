@@ -84,8 +84,6 @@ const DESKTOP_SCOPES = [
   "notes:write",
   "files:read",
   "files:write",
-  "english:read",
-  "english:write",
   "habits:read",
   "habits:write",
   "reviews:read",
