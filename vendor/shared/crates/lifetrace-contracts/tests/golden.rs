@@ -105,22 +105,35 @@ fn golden_capabilities_parses() {
     assert_eq!(capabilities.maximum_push_batch_size, 500);
     assert_eq!(capabilities.maximum_atomic_group_size, 50);
     assert_eq!(capabilities.tombstone_retention_days, 90);
-    // Frozen v1 fixture intentionally keeps the historical capability list.
-    assert_eq!(capabilities.supported_entity_types.len(), 44);
+    // The frozen fixture keeps only currently supported domains plus the three retired memo types.
+    assert_eq!(capabilities.supported_entity_types.len(), 37);
 }
 
 #[test]
-fn golden_capabilities_remain_a_supported_registry_subset() {
-    let capabilities: CapabilitiesResponseV1 = serde_json::from_value(fixture("capabilities.json")).unwrap();
+fn golden_capabilities_distinguish_retired_entity_types() {
+    let capabilities: CapabilitiesResponseV1 =
+        serde_json::from_value(fixture("capabilities.json")).unwrap();
     let registered: std::collections::HashSet<&str> = lifetrace_contracts::registry::REGISTRY
         .iter()
         .map(|descriptor| descriptor.entity_type)
         .collect();
+    const RETIRED: [&str; 3] = [
+        "execution.memo",
+        "execution.memo_tag",
+        "execution.memo_tag_relation",
+    ];
     for entity_type in &capabilities.supported_entity_types {
-        assert!(
-            registered.contains(entity_type.as_str()),
-            "frozen capability {entity_type} must remain registered"
-        );
+        if RETIRED.contains(&entity_type.as_str()) {
+            assert!(
+                !registered.contains(entity_type.as_str()),
+                "retired capability {entity_type} must not remain registered"
+            );
+        } else {
+            assert!(
+                registered.contains(entity_type.as_str()),
+                "frozen capability {entity_type} must remain registered"
+            );
+        }
     }
     assert!(registered.contains(EntityType::FINANCE_LEDGER));
     assert!(registered.contains(EntityType::FINANCE_BUDGET));
