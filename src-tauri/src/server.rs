@@ -13,6 +13,7 @@ pub(crate) mod migration;
 mod notes;
 pub(crate) mod photo;
 mod state;
+mod travel;
 mod xunji;
 
 use std::{
@@ -145,6 +146,10 @@ pub async fn serve(
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/state", get(state::get).post(state::mutate))
+        .route("/api/travel/summary", get(travel::summary))
+        .route("/api/travel/places", get(travel::list_places).post(travel::create_place))
+        .route("/api/travel/trips", get(travel::list_trips).post(travel::create_trip))
+        .route("/api/travel/visits", get(travel::list_visits).post(travel::create_visit))
         .route("/api/analytics/status", get(analytics::status))
         .route(
             "/api/analytics/rebuild",
