@@ -101,8 +101,6 @@ pub fn run() {
         .setup(|app| {
             let (data_dir, default_data_dir, storage_config_path) =
                 storage::bootstrap(app.handle()).map_err(std::io::Error::other)?;
-            let resource_dir = app.path().resource_dir()?;
-
             app.manage(storage::StorageState::new(
                 data_dir.clone(),
                 default_data_dir,
@@ -143,7 +141,7 @@ pub fn run() {
             });
             tauri::async_runtime::spawn(async move {
                 if let Err(error) =
-                    server::serve(data_dir, resource_dir, photo_runtime, sync_state).await
+                    server::serve(data_dir, photo_runtime, sync_state).await
                 {
                     eprintln!("LifeTrace local service stopped: {error}");
                 }

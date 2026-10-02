@@ -1,7 +1,5 @@
 mod analytics;
 mod assistant;
-mod dictionary;
-mod english;
 mod execution;
 mod execution_calendar;
 mod execution_cloud;
@@ -15,7 +13,6 @@ pub(crate) mod migration;
 mod notes;
 pub(crate) mod photo;
 mod state;
-mod translation;
 mod xunji;
 
 use std::{
@@ -42,7 +39,6 @@ use crate::database;
 #[derive(Clone)]
 pub(crate) struct AppState {
     data_dir: PathBuf,
-    dictionary_path: PathBuf,
     database: Arc<Mutex<Connection>>,
     photo_runtime: Arc<photo::Runtime>,
 }
@@ -84,7 +80,6 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
 
 pub async fn serve(
     data_dir: PathBuf,
-    resource_dir: PathBuf,
     photo_runtime: Arc<photo::Runtime>,
     sync_state: crate::sync::SyncDesktopState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -118,8 +113,6 @@ pub async fn serve(
     assistant::ensure_schema(&connection)?;
     imports::ensure_schema(&connection)?;
     crate::database::repositories::notes::seed_default_folders(&connection)?;
-    translation::ensure_schema(&connection)?;
-    english::ensure_schema(&connection)?;
     photo::ensure_schema(&connection)?;
     match crate::database::legacy::d1_import::import_once(&mut connection, &data_dir) {
         Ok(count) if count > 0 => eprintln!("LifeTrace migrated {count} legacy records"),
@@ -128,7 +121,6 @@ pub async fn serve(
     }
     let state = AppState {
         data_dir,
-        dictionary_path: dictionary::resolve_path(&resource_dir),
         database: Arc::new(Mutex::new(connection)),
         photo_runtime,
     };
@@ -412,23 +404,8 @@ pub async fn serve(
                 .delete(imports::remove),
         )
         .route("/api/notes", get(notes::get).post(notes::mutate))
-        .route("/api/english/dictionary/lookup", get(dictionary::lookup))
         .route("/api/xunji/parse", axum::routing::post(xunji::parse))
         .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
-        .route(
-            "/api/settings/translation",
-            get(translation::settings_get)
-                .post(translation::settings_save)
-                .delete(translation::settings_remove),
-        )
-        .route(
-            "/api/english/translate",
-            axum::routing::post(translation::translate),
-        )
-        .route(
-            "/api/english/{*path}",
-            axum::routing::any(english::dispatch),
-        )
         .route(
             "/api/photo-sync/dashboard",
             get(photo::dashboard_get).post(photo::dashboard_post),
