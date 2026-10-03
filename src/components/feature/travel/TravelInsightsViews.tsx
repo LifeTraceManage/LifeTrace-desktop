@@ -1,6 +1,10 @@
-import { Camera, CalendarDays, MapPinned, Plane } from "lucide-react";
+import { Camera, CalendarDays, MapPinned, Plane, Sparkles } from "lucide-react";
 import type { TravelPhotoLink, TravelPlace, TravelTrip } from "@/src/services/travelApi";
-import type { TravelStats, TravelTimelineItem } from "@/src/components/feature/travel/travelInsights";
+import type {
+  TravelStats,
+  TravelTimelineItem,
+  TravelTripSuggestion,
+} from "@/src/components/feature/travel/travelInsights";
 
 function formatMonth(monthKey: string) {
   const [year, month] = monthKey.split("-");
@@ -163,6 +167,73 @@ export function TravelStatsView({ stats }: { stats: TravelStats }) {
           </div>
         ) : <p className="empty">还没有到访记录。</p>}
       </section>
+    </div>
+  );
+}
+
+
+export function TravelTripSuggestionsView({
+  suggestions,
+  saving,
+  onAccept,
+}: {
+  suggestions: TravelTripSuggestion[];
+  saving: boolean;
+  onAccept: (suggestion: TravelTripSuggestion) => void;
+}) {
+  if (!suggestions.length) {
+    return (
+      <div className="lt-travel-insight-empty">
+        <Sparkles />
+        <h2>暂时没有可创建的旅行建议</h2>
+        <p>未归属 Trip 的到访记录或 GPS 照片形成连续时间段后，会在这里生成候选旅行。</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lt-travel-suggestions">
+      <header className="lt-travel-insight-heading">
+        <span>Suggestions</span>
+        <h2>自动旅行建议</h2>
+        <p>只分析本机尚未归属 Trip 的时间与 GPS 数据。建议不会自动写入，确认后才创建旅行。</p>
+      </header>
+
+      <div className="lt-travel-suggestion-list">
+        {suggestions.map((suggestion) => (
+          <article key={suggestion.id} className="lt-travel-suggestion-card">
+            <div className="lt-travel-suggestion-icon"><Sparkles /></div>
+            <div className="lt-travel-suggestion-copy">
+              <h3>{suggestion.title}</h3>
+              <p>
+                {suggestion.startAt.slice(0, 10)}
+                {suggestion.endAt.slice(0, 10) !== suggestion.startAt.slice(0, 10)
+                  ? " → " + suggestion.endAt.slice(0, 10)
+                  : ""}
+              </p>
+              {suggestion.labels.length ? (
+                <div className="lt-travel-suggestion-labels">
+                  {suggestion.labels.slice(0, 5).map((label) => <span key={label}>{label}</span>)}
+                </div>
+              ) : null}
+              <div className="lt-travel-suggestion-metrics">
+                <span><strong>{suggestion.locationCount}</strong><small>定位点</small></span>
+                <span><strong>{suggestion.visitIds.length}</strong><small>到访</small></span>
+                <span><strong>{suggestion.photoLinkIds.length}</strong><small>照片</small></span>
+                <span><strong>{suggestion.routeDistanceKm}</strong><small>约 km</small></span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="lt-travel-suggestion-accept"
+              disabled={saving}
+              onClick={() => onAccept(suggestion)}
+            >
+              <Plane />创建旅行
+            </button>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
