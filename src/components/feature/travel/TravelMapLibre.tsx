@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
-import type { TravelPhotoLink, TravelPlace, TravelVisit } from "@/src/services/travelApi";
+import { buildOfflinePmtilesStyle } from "@/src/components/feature/travel/offlinePmtiles";
+import type {
+  TravelOfflineMapStatus,
+  TravelPhotoLink,
+  TravelPlace,
+  TravelVisit,
+} from "@/src/services/travelApi";
 
 type TravelMapLibreProps = {
   places: TravelPlace[];
@@ -10,6 +16,7 @@ type TravelMapLibreProps = {
   selectedPhotoLinkId?: string | null;
   routeTripId?: string | null;
   routeCoordinates?: [number, number][] | null;
+  offlineMapStatus?: TravelOfflineMapStatus | null;
   showPhotos?: boolean;
   onSelectPlace: (place: TravelPlace) => void;
   onSelectPhoto: (photo: TravelPhotoLink) => void;
@@ -334,6 +341,7 @@ export default function TravelMapLibre({
   selectedPhotoLinkId,
   routeTripId,
   routeCoordinates,
+  offlineMapStatus,
   showPhotos = false,
   onSelectPlace,
   onSelectPhoto,
@@ -352,6 +360,12 @@ export default function TravelMapLibre({
   const syncPhotoMarkersRef = useRef<(() => void) | null>(null);
   const [styleReady, setStyleReady] = useState(false);
   const [mapError, setMapError] = useState("");
+  const [offlineActive, setOfflineActive] = useState(false);
+  const [mapConfig, setMapConfig] = useState<{
+    style: unknown;
+    center: [number, number];
+    zoom: number;
+  } | null>(null);
 
   const route = useMemo(
     () => routeFeatures(visits, routeTripId, routeCoordinates),
@@ -378,13 +392,62 @@ export default function TravelMapLibre({
   ]);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    let cancelled = false;
+    setMapConfig(null);
+    setStyleReady(false);
+    setOfflineActive(false);
+
+    const resolveStyle = async () => {
+      if (offlineMapStatus?.available && offlineMapStatus.archiveUrl) {
+        try {
+          const offline = await buildOfflinePmtilesStyle(offlineMapStatus);
+          if (cancelled) return;
+          setMapConfig({
+            style: offline.style,
+            center: offline.center,
+            zoom: offline.zoom,
+          });
+          setOfflineActive(true);
+          setMapError("");
+          return;
+        } catch (error) {
+          if (!cancelled) {
+            setMapError(
+              error instanceof Error
+                ? `离线地图加载失败：${error.message}；已回退在线底图。`
+                : "离线地图加载失败；已回退在线底图。",
+            );
+          }
+        }
+      }
+      if (!cancelled) {
+        setMapConfig({
+          style: DEFAULT_MAP_STYLE,
+          center: [108.5, 34.5],
+          zoom: 3.4,
+        });
+      }
+    };
+
+    void resolveStyle();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    offlineMapStatus?.archiveUrl,
+    offlineMapStatus?.available,
+    offlineMapStatus?.modifiedAtMillis,
+    offlineMapStatus?.sizeBytes,
+  ]);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current || !mapConfig) return;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: DEFAULT_MAP_STYLE,
-      center: [108.5, 34.5],
-      zoom: 3.4,
+      style: mapConfig.style,
+      center: mapConfig.center,
+      zoom: mapConfig.zoom,
       attributionControl: true,
     });
     mapRef.current = map;
@@ -545,7 +608,7 @@ export default function TravelMapLibre({
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [mapConfig]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -613,6 +676,7 @@ export default function TravelMapLibre({
     <div className="lt-travel-maplibre-shell">
       <div ref={containerRef} className="lt-travel-maplibre" />
       <div className="lt-travel-map-hint">
+        {offlineActive ? <strong>离线 PMTiles · </strong> : null}
         {showPhotos
           ? `照片地图 · 放大到街区级显示缩略图 · 同屏最多 ${MAX_VISIBLE_PHOTO_MARKERS} 张`
           : "双击地图添加地点 · 支持缩放、聚合与旅行路线"}
