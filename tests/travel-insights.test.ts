@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildTravelTimeline,
+  buildTripSuggestions,
   filterTravelData,
   summarizeTravel,
   travelMonthKey,
@@ -163,4 +164,65 @@ test("stats count countries cities revisits and yearly activity", () => {
   assert.equal(stats.revisitedPlaceCount, 1);
   assert.deepEqual(stats.mostVisitedPlace, { placeId: "xm", name: "厦门", count: 2 });
   assert.deepEqual(stats.yearStats[0], { year: "2026", trips: 1, visits: 2, photos: 1 });
+});
+
+
+test("trip suggestions cluster nearby-in-time unassigned GPS evidence", () => {
+  const unassignedVisits: TravelVisit[] = [
+    {
+      ...visits[0],
+      id: "auto-v1",
+      tripId: null,
+      arrivedAt: "2026-10-01T08:00:00",
+      latitude: 24.47,
+      longitude: 118.08,
+      placeName: "厦门",
+    },
+    {
+      ...visits[0],
+      id: "auto-v2",
+      tripId: null,
+      arrivedAt: "2026-10-02T10:00:00",
+      latitude: 31.23,
+      longitude: 121.47,
+      placeName: "上海",
+    },
+    {
+      ...visits[0],
+      id: "auto-v3",
+      tripId: null,
+      arrivedAt: "2026-10-08T10:00:00",
+      latitude: 22.31,
+      longitude: 114.17,
+      placeName: "香港",
+    },
+  ];
+  const unassignedPhotos: TravelPhotoLink[] = [{
+    ...photoLinks[0],
+    id: "auto-p1",
+    tripId: null,
+    placeId: null,
+    placeName: null,
+    capturedAt: "2026-10-02T18:00:00",
+    latitude: 31.24,
+    longitude: 121.49,
+  }];
+
+  const suggestions = buildTripSuggestions({
+    visits: unassignedVisits,
+    photoLinks: unassignedPhotos,
+  });
+
+  assert.equal(suggestions.length, 1);
+  assert.deepEqual(suggestions[0].visitIds, ["auto-v1", "auto-v2"]);
+  assert.deepEqual(suggestions[0].photoLinkIds, ["auto-p1"]);
+  assert.equal(suggestions[0].eventCount, 3);
+  assert.equal(suggestions[0].locationCount, 2);
+  assert.match(suggestions[0].title, /厦门/);
+  assert.ok(suggestions[0].routeDistanceKm > 500);
+});
+
+test("trip suggestions ignore evidence already assigned to trips", () => {
+  const suggestions = buildTripSuggestions({ visits, photoLinks });
+  assert.deepEqual(suggestions, []);
 });
