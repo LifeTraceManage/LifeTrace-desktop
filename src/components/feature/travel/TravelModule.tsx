@@ -612,7 +612,7 @@ export default function TravelModule() {
                   </button>
                 )) : <p className="empty">{hasFilters ? "没有符合当前筛选条件的旅行。" : "还没有旅行。先创建一次行程，再把地点的访问记录加入旅行。"}</p>}
               </div>
-              {selectedTrip ? (
+              {selectedTrip && filteredTrips.some((trip) => trip.id === selectedTrip.id) ? (
                 <div className="lt-travel-trip-summary">
                   <h3>{selectedTrip.title}</h3>
                   <p>{selectedTrip.description || "这次旅行还没有备注。"}</p>
@@ -631,7 +631,7 @@ export default function TravelModule() {
                 <div><span>Photo Map</span><h2>照片地图</h2><p>照片本体仍由相册管理，这里只保存地点关联。</p></div>
                 <button type="button" onClick={() => void openGpsPhotoPicker()} title="导入带 GPS 的照片"><Plus /></button>
               </div>
-              {selectedPhoto ? (
+              {selectedPhoto && filteredPhotoLinks.some((photo) => photo.id === selectedPhoto.id) ? (
                 <article className="lt-travel-photo-detail">
                   <img src={selectedPhoto.thumbnailUrl} alt="" />
                   <h3>{selectedPhoto.originalFileName}</h3>
@@ -670,7 +670,7 @@ export default function TravelModule() {
                 旅行
                 <select value={selectedTripId} onChange={(event) => setSelectedTripId(event.target.value)}>
                   <option value="">选择旅行</option>
-                  {filteredTrips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
+                  {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
                 </select>
               </label>
               {selectedTrip ? (
