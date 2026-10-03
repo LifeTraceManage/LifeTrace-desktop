@@ -245,6 +245,8 @@ export default function TravelModule() {
         placeId: selected.id,
         tripId: photoTripId || null,
         capturedAt: candidate.capturedAt || null,
+        latitude: candidate.latitude ?? null,
+        longitude: candidate.longitude ?? null,
       });
       await load();
       setSelectedPhoto(created);
@@ -656,7 +658,11 @@ export default function TravelModule() {
                           title={linked ? "这张照片已关联到当前地点" : candidate.originalFileName}
                         >
                           <img src={candidate.thumbnailUrl} alt="" loading="lazy" />
-                          <span>{linked ? "已关联" : shortDate(candidate.capturedAt || candidate.importedAt)}</span>
+                          <span>
+                            {linked
+                              ? "已关联"
+                              : `${candidate.latitude != null && candidate.longitude != null ? "有定位 · " : ""}${shortDate(candidate.capturedAt || candidate.importedAt)}`}
+                          </span>
                         </button>
                       );
                     })}
