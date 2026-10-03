@@ -862,4 +862,62 @@ mod tests {
         delete_place(&connection, &xiamen.id).unwrap();
         assert!(list_places(&connection).unwrap().is_empty());
     }
+
+    #[test]
+    fn standalone_photo_can_be_assigned_to_place_without_duplication() {
+        let connection = db("photo-map");
+        crate::server::photo::ensure_schema(&connection).unwrap();
+        let profile = profile::active_profile_id(&connection).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,media_type,
+               file_size,captured_at,latitude,longitude,exif_scanned_at,imported_at,processing_status
+             ) VALUES(
+               'photo-map-1','hash-map-1','xiamen.jpg','xiamen.jpg','originals/xiamen.jpg',
+               'image',123,'2026-09-27T18:42:03',24.4798,118.0894,
+               '2026-10-03T00:00:00Z','2026-10-03T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+
+        let link = create_photo_link(&connection, NewPhotoLink {
+            photo_id: "photo-map-1".to_owned(),
+            trip_id: None,
+            visit_id: None,
+            place_id: None,
+            latitude: None,
+            longitude: None,
+            captured_at: None,
+        }).unwrap();
+        assert!(link.place_id.is_none());
+        assert_eq!(link.latitude, Some(24.4798));
+        assert_eq!(link.longitude, Some(118.0894));
+
+        let duplicate = create_photo_link(&connection, NewPhotoLink {
+            photo_id: "photo-map-1".to_owned(),
+            trip_id: None,
+            visit_id: None,
+            place_id: None,
+            latitude: Some(24.4798),
+            longitude: Some(118.0894),
+            captured_at: None,
+        }).unwrap_err();
+        assert!(duplicate.contains("已经加入旅行地图"));
+
+        let xiamen = place(&connection, "厦门", 24.4798, 118.0894);
+        let assigned = assign_photo_link_place(&connection, &link.id, AssignPhotoPlace {
+            place_id: xiamen.id.clone(),
+        }).unwrap();
+        assert_eq!(assigned.place_id.as_deref(), Some(xiamen.id.as_str()));
+        assert_eq!(assigned.place_name.as_deref(), Some("厦门"));
+
+        let active_links: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM travel_photo_links
+             WHERE user_id=?1 AND photo_id='photo-map-1' AND deleted_at IS NULL",
+            [&profile],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(active_links, 1);
+    }
+
 }
