@@ -284,6 +284,8 @@ fn travel_error(message: String) -> Response {
         || message.contains("至少需要")
         || message.contains("仍有关联")
         || message.contains("顺序必须")
+        || message.contains("不合法")
+        || message.contains("最多支持")
     {
         StatusCode::BAD_REQUEST
     } else if message.contains("不存在") {
@@ -736,5 +738,47 @@ mod reverse_geocode_tests {
         });
         assert_eq!(result.name.as_deref(), Some("环岛南路"));
         assert_eq!(result.country_code.as_deref(), Some("CN"));
+    }
+
+    #[test]
+    fn osrm_route_parser_keeps_geojson_order_and_metrics() {
+        let result = parse_osrm_route(OsrmRouteResponse {
+            code: "Ok".to_owned(),
+            message: None,
+            routes: vec![OsrmRoute {
+                distance: 12345.6,
+                duration: 987.0,
+                geometry: OsrmGeometry {
+                    coordinates: vec![
+                        [118.0894, 24.4798],
+                        [118.1200, 24.5000],
+                        [118.1500, 24.5200],
+                    ],
+                },
+            }],
+        }).unwrap();
+
+        assert_eq!(result.coordinates.len(), 3);
+        assert_eq!(result.coordinates[0], [118.0894, 24.4798]);
+        assert_eq!(result.distance_meters, 12345.6);
+        assert_eq!(result.duration_seconds, 987.0);
+        assert_eq!(result.provider, "OSRM-compatible");
+    }
+
+    #[test]
+    fn osrm_route_parser_rejects_no_route_response() {
+        let error = parse_osrm_route(OsrmRouteResponse {
+            code: "NoRoute".to_owned(),
+            message: Some("No route found".to_owned()),
+            routes: vec![],
+        }).unwrap_err();
+        assert_eq!(error, "No route found");
+    }
+
+    #[test]
+    fn route_profile_rejects_path_injection() {
+        assert_eq!(validate_route_profile(None).unwrap(), "driving");
+        assert!(validate_route_profile(Some("../route".to_owned())).is_err());
+        assert!(validate_route_profile(Some("driving-car".to_owned())).is_ok());
     }
 }
