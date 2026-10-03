@@ -122,8 +122,6 @@ export function filterTravelData(input: {
     ]);
   });
 
-  const visitIds = new Set(visits.map((visit) => visit.id));
-
   const trips = input.trips.filter((trip) => {
     const relatedVisits = input.visits.filter((visit) => visit.tripId === trip.id);
     const queryMatches = matchesQuery(query, [
@@ -140,8 +138,6 @@ export function filterTravelData(input: {
     return queryMatches && yearMatches;
   });
 
-  const tripIds = new Set(trips.map((trip) => trip.id));
-
   const photoLinks = input.photoLinks.filter((photo) => {
     const trip = photo.tripId ? tripById.get(photo.tripId) : null;
     const place = photo.placeId ? placeById.get(photo.placeId) : null;
@@ -156,8 +152,6 @@ export function filterTravelData(input: {
     ]);
     return queryMatches && matchesYear(input.year, [photo.capturedAt]);
   });
-
-  const photoIds = new Set(photoLinks.map((photo) => photo.id));
 
   const places = input.places.filter((place) => {
     const relatedVisits = visitsByPlace.get(place.id) ?? [];
@@ -182,20 +176,7 @@ export function filterTravelData(input: {
     return queryMatches && yearMatches;
   });
 
-  // Keep explicitly matched child entities visible in aggregate views even when the
-  // parent entity matched through a different field.
-  const scopedVisits = input.visits.filter((visit) =>
-    visitIds.has(visit.id)
-    || tripIds.has(visit.tripId || "")
-    || places.some((place) => place.id === visit.placeId)
-  );
-  const scopedPhotos = input.photoLinks.filter((photo) =>
-    photoIds.has(photo.id)
-    || tripIds.has(photo.tripId || "")
-    || places.some((place) => place.id === photo.placeId)
-  );
-
-  return { places, trips, visits: scopedVisits, photoLinks: scopedPhotos };
+  return { places, trips, visits, photoLinks };
 }
 
 export function buildTravelTimeline(input: {
