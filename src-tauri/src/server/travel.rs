@@ -171,6 +171,11 @@ async fn reverse_geocode_lookup(
     }
 
     let geocoder = reverse_geocoder();
+    if geocoder.endpoint.eq_ignore_ascii_case("off")
+        || geocoder.endpoint.eq_ignore_ascii_case("disabled")
+    {
+        return Err("地点自动识别已禁用".to_owned());
+    }
     let key = format!("{latitude:.5},{longitude:.5}");
     let mut state = geocoder.state.lock().await;
     if let Some(cached) = state.cache.get(&key) {
@@ -184,6 +189,7 @@ async fn reverse_geocode_lookup(
         }
     }
 
+    state.last_request = Some(Instant::now());
     let response = geocoder.client
         .get(&geocoder.endpoint)
         .query(&[
@@ -197,8 +203,6 @@ async fn reverse_geocode_lookup(
         .send()
         .await
         .map_err(|error| format!("地点自动识别请求失败: {error}"))?;
-
-    state.last_request = Some(Instant::now());
 
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Err("该坐标附近没有可识别的地点".to_owned());
