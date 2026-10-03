@@ -245,7 +245,7 @@ pub(crate) fn backfill_exif_metadata(
 ) -> rusqlite::Result<usize> {
     let limit = limit.clamp(1, 100);
     let mut statement = connection.prepare(
-        "SELECT id,original_path,captured_at,latitude,longitude
+        "SELECT id,original_path
          FROM photos
          WHERE deleted_at IS NULL
            AND media_type='image'
@@ -256,27 +256,18 @@ pub(crate) fn backfill_exif_metadata(
     )?;
     let candidates = statement
         .query_map([limit], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<f64>>(3)?,
-                row.get::<_, Option<f64>>(4)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
 
     let root = data_dir.join("photos");
     let mut changed = 0usize;
-    for (id, relative_path, existing_captured_at, existing_latitude, existing_longitude) in candidates {
+    for (id, relative_path) in candidates {
         let Ok(bytes) = std::fs::read(root.join(relative_path)) else {
             continue;
         };
         let metadata = read_exif_metadata(&bytes);
-        if existing_captured_at.is_some() && existing_latitude.is_some() && existing_longitude.is_some() {
-            continue;
-        }
         let updated = connection.execute(
             "UPDATE photos
              SET captured_at=COALESCE(captured_at,?1),
