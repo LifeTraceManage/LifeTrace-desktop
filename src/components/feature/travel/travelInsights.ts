@@ -46,6 +46,30 @@ export type TravelFilterResult = {
   photoLinks: TravelPhotoLink[];
 };
 
+export type TravelTripSuggestion = {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  visitIds: string[];
+  photoLinkIds: string[];
+  eventCount: number;
+  locationCount: number;
+  routeDistanceKm: number;
+  labels: string[];
+};
+
+type TripEvidence = {
+  id: string;
+  kind: "visit" | "photo";
+  occurredAt: string;
+  timestamp: number;
+  latitude: number;
+  longitude: number;
+  label?: string | null;
+};
+
+
 function lower(value?: string | null) {
   return value?.trim().toLocaleLowerCase() || "";
 }
@@ -244,6 +268,124 @@ export function buildTravelTimeline(input: {
   });
 
   return items.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+}
+
+function travelTimestamp(value: string): number {
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+  return Date.parse(hasZone ? value : `${value}Z`);
+}
+
+function distanceKm(left: TripEvidence, right: TripEvidence) {
+  const radiusKm = 6371;
+  const radians = (value: number) => value * Math.PI / 180;
+  const dLat = radians(right.latitude - left.latitude);
+  const dLng = radians(right.longitude - left.longitude);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(radians(left.latitude))
+      * Math.cos(radians(right.latitude))
+      * Math.sin(dLng / 2) ** 2;
+  return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function suggestionTitle(events: TripEvidence[], labels: string[]) {
+  const date = events[0].occurredAt.slice(0, 10);
+  if (!labels.length) return `${date} 旅行`;
+  if (labels.length === 1) return `${labels[0]} · ${date}`;
+  if (labels.length === 2) return `${labels[0]} → ${labels[1]}`;
+  return `${labels[0]} 等 ${labels.length} 地`;
+}
+
+export function buildTripSuggestions(input: {
+  visits: TravelVisit[];
+  photoLinks: TravelPhotoLink[];
+}): TravelTripSuggestion[] {
+  const evidence: TripEvidence[] = [];
+
+  input.visits.forEach((visit) => {
+    const occurredAt = visit.arrivedAt || visit.createdAt;
+    if (
+      visit.tripId
+      || typeof visit.latitude !== "number"
+      || typeof visit.longitude !== "number"
+    ) return;
+    const timestamp = travelTimestamp(occurredAt);
+    if (!Number.isFinite(timestamp)) return;
+    evidence.push({
+      id: visit.id,
+      kind: "visit",
+      occurredAt,
+      timestamp,
+      latitude: visit.latitude,
+      longitude: visit.longitude,
+      label: visit.placeName,
+    });
+  });
+
+  input.photoLinks.forEach((photo) => {
+    const occurredAt = photo.capturedAt || photo.createdAt;
+    if (
+      photo.tripId
+      || typeof photo.latitude !== "number"
+      || typeof photo.longitude !== "number"
+    ) return;
+    const timestamp = travelTimestamp(occurredAt);
+    if (!Number.isFinite(timestamp)) return;
+    evidence.push({
+      id: photo.id,
+      kind: "photo",
+      occurredAt,
+      timestamp,
+      latitude: photo.latitude,
+      longitude: photo.longitude,
+      label: photo.placeName,
+    });
+  });
+
+  evidence.sort((left, right) => left.timestamp - right.timestamp);
+  const clusters: TripEvidence[][] = [];
+
+  evidence.forEach((event) => {
+    const current = clusters.at(-1);
+    const previous = current?.at(-1);
+    if (!current || !previous) {
+      clusters.push([event]);
+      return;
+    }
+    const gapHours = Math.max(0, (event.timestamp - previous.timestamp) / 3_600_000);
+    const gapDistanceKm = distanceKm(previous, event);
+    const sameTrip = gapHours <= 36 || (gapHours <= 72 && gapDistanceKm <= 300);
+    if (sameTrip) current.push(event);
+    else clusters.push([event]);
+  });
+
+  return clusters
+    .filter((events) => events.length >= 2)
+    .map((events) => {
+      const labels = [...new Set(
+        events.map((event) => event.label?.trim()).filter((value): value is string => Boolean(value)),
+      )];
+      const locationKeys = new Set(events.map((event) =>
+        `${event.latitude.toFixed(2)},${event.longitude.toFixed(2)}`
+      ));
+      const routeDistanceKm = events.slice(1).reduce(
+        (total, event, index) => total + distanceKm(events[index], event),
+        0,
+      );
+      return {
+        id: `suggestion:${events[0].kind}:${events[0].id}:${events.at(-1)?.id}`,
+        title: suggestionTitle(events, labels),
+        startAt: events[0].occurredAt,
+        endAt: events.at(-1)?.occurredAt || events[0].occurredAt,
+        visitIds: events.filter((event) => event.kind === "visit").map((event) => event.id),
+        photoLinkIds: events.filter((event) => event.kind === "photo").map((event) => event.id),
+        eventCount: events.length,
+        locationCount: locationKeys.size,
+        routeDistanceKm: Math.round(routeDistanceKm),
+        labels,
+      };
+    })
+    .sort((left, right) => right.startAt.localeCompare(left.startAt))
+    .slice(0, 20);
 }
 
 export function summarizeTravel(input: {
