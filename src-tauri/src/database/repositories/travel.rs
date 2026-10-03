@@ -702,3 +702,105 @@ pub fn reorder_visits(
     tx.commit().map_err(|e| e.to_string())?;
     list_visits(connection, Some(trip_id), None)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::migration_runner::{run, MigrationContext};
+    use crate::database::migrations::all;
+    use rusqlite::Connection;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn db(label: &str) -> Connection {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("lifetrace-travel-repo-{label}-{unique}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        run(&mut connection, &MigrationContext::new(dir), &all()).unwrap();
+        connection
+    }
+
+    fn place(connection: &Connection, name: &str, latitude: f64, longitude: f64) -> TravelPlace {
+        create_place(connection, NewPlace {
+            name: name.to_owned(),
+            country: Some("China".to_owned()),
+            country_code: Some("CN".to_owned()),
+            province: None,
+            city: Some(name.to_owned()),
+            latitude: Some(latitude),
+            longitude: Some(longitude),
+            place_type: Some("city".to_owned()),
+        }).unwrap()
+    }
+
+    #[test]
+    fn trip_reorder_persists_and_delete_only_detaches_visits() {
+        let connection = db("trip");
+        let xiamen = place(&connection, "厦门", 24.4798, 118.0894);
+        let changsha = place(&connection, "长沙", 28.2278, 112.9389);
+        let trip = create_trip(&connection, NewTrip {
+            title: "2026 旅行".to_owned(),
+            start_at: Some("2026-09-27T00:00:00Z".to_owned()),
+            end_at: None,
+            description: None,
+            cover_photo_id: None,
+        }).unwrap();
+        let first = create_visit(&connection, NewVisit {
+            trip_id: Some(trip.id.clone()),
+            place_id: xiamen.id.clone(),
+            arrived_at: Some("2026-09-27T00:00:00Z".to_owned()),
+            left_at: None,
+            note: None,
+            sequence: Some(0),
+        }).unwrap();
+        let second = create_visit(&connection, NewVisit {
+            trip_id: Some(trip.id.clone()),
+            place_id: changsha.id.clone(),
+            arrived_at: Some("2026-09-28T00:00:00Z".to_owned()),
+            left_at: None,
+            note: None,
+            sequence: Some(1),
+        }).unwrap();
+
+        let reordered = reorder_visits(&connection, &trip.id, ReorderVisits {
+            visit_ids: vec![second.id.clone(), first.id.clone()],
+        }).unwrap();
+        assert_eq!(
+            reordered.iter().map(|visit| visit.id.as_str()).collect::<Vec<_>>(),
+            vec![second.id.as_str(), first.id.as_str()]
+        );
+        assert_eq!(reordered[0].sequence, Some(0));
+        assert_eq!(reordered[1].sequence, Some(1));
+
+        delete_trip(&connection, &trip.id).unwrap();
+        assert!(list_trips(&connection).unwrap().is_empty());
+        let remaining = list_visits(&connection, None, None).unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().all(|visit| visit.trip_id.is_none()));
+        assert_eq!(list_places(&connection).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn place_with_active_visit_requires_explicit_visit_removal_first() {
+        let connection = db("place-delete");
+        let xiamen = place(&connection, "厦门", 24.4798, 118.0894);
+        let visit = create_visit(&connection, NewVisit {
+            trip_id: None,
+            place_id: xiamen.id.clone(),
+            arrived_at: Some("2026-09-27T00:00:00Z".to_owned()),
+            left_at: None,
+            note: None,
+            sequence: None,
+        }).unwrap();
+
+        assert!(delete_place(&connection, &xiamen.id).is_err());
+        delete_visit(&connection, &visit.id).unwrap();
+        delete_place(&connection, &xiamen.id).unwrap();
+        assert!(list_places(&connection).unwrap().is_empty());
+    }
+}
