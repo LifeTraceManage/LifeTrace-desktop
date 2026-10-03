@@ -90,6 +90,8 @@ export type TravelPhotoCandidate = {
   mediaType: string;
   capturedAt?: string | null;
   importedAt: string;
+  latitude?: number | null;
+  longitude?: number | null;
   thumbnailUrl: string;
 };
 
