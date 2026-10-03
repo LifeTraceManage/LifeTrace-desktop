@@ -94,6 +94,14 @@ export type NewTravelTrip = {
   coverPhotoId?: string | null;
 };
 
+export type TravelTripSuggestionAcceptance = {
+  title: string;
+  startAt?: string | null;
+  endAt?: string | null;
+  visitIds: string[];
+  photoLinkIds: string[];
+};
+
 export type TravelPhotoCandidate = {
   photoId: string;
   originalFileName: string;
@@ -175,6 +183,8 @@ export const travelApi = {
   trips: {
     list: () => request<TravelTrip[]>("/api/travel/trips"),
     create: (input: NewTravelTrip) => request<TravelTrip>("/api/travel/trips", json(input)),
+    acceptSuggestion: (input: TravelTripSuggestionAcceptance) =>
+      request<TravelTrip>("/api/travel/trips/from-suggestion", json(input)),
     update: (id: string, input: NewTravelTrip) =>
       request<TravelTrip>(`/api/travel/trips/${encodeURIComponent(id)}`, json(input, "PUT")),
     remove: (id: string) =>
