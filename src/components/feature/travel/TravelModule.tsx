@@ -9,6 +9,7 @@ import {
   Plane,
   Plus,
   Route,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -41,6 +42,14 @@ function dateToIso(value: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function travelYear(value?: string | null) {
+  if (!value) return null;
+  const direct = value.match(/^(\d{4})/);
+  if (direct) return direct[1];
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : String(date.getFullYear());
+}
+
 function sortVisits(values: TravelVisit[]) {
   return [...values].sort((left, right) => {
     const sequenceDelta = (left.sequence ?? Number.MAX_SAFE_INTEGER) - (right.sequence ?? Number.MAX_SAFE_INTEGER);
@@ -61,6 +70,8 @@ export default function TravelModule() {
   const [selectedTripId, setSelectedTripId] = useState("");
   const [mode, setMode] = useState<TravelMode>("map");
   const [panel, setPanel] = useState<Panel>("none");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
   const [editingPlaceId, setEditingPlaceId] = useState("");
   const [editingTripId, setEditingTripId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -375,6 +386,82 @@ export default function TravelModule() {
     }
   };
 
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+    const collect = (value?: string | null) => {
+      const year = travelYear(value);
+      if (year) years.add(year);
+    };
+    trips.forEach((trip) => {
+      collect(trip.startAt);
+      collect(trip.endAt);
+    });
+    visits.forEach((visit) => {
+      collect(visit.arrivedAt);
+      collect(visit.leftAt);
+    });
+    photoLinks.forEach((photo) => collect(photo.capturedAt));
+    return [...years].sort((left, right) => Number(right) - Number(left));
+  }, [photoLinks, trips, visits]);
+
+  const filteredTrips = useMemo(() => trips.filter((trip) => {
+    const tripVisits = visits.filter((visit) => visit.tripId === trip.id);
+    const queryValues = [
+      trip.title,
+      trip.description,
+      ...tripVisits.map((visit) => visit.placeName),
+    ];
+    const queryMatches = !normalizedSearch || queryValues.some((value) =>
+      value?.toLocaleLowerCase().includes(normalizedSearch)
+    );
+    const yearMatches = yearFilter === "all" || [
+      trip.startAt,
+      trip.endAt,
+      ...tripVisits.flatMap((visit) => [visit.arrivedAt, visit.leftAt]),
+    ].some((value) => travelYear(value) === yearFilter);
+    return queryMatches && yearMatches;
+  }), [normalizedSearch, trips, visits, yearFilter]);
+
+  const filteredPhotoLinks = useMemo(() => photoLinks.filter((photo) => {
+    const tripTitle = photo.tripId ? trips.find((trip) => trip.id === photo.tripId)?.title : null;
+    const queryMatches = !normalizedSearch || [
+      photo.originalFileName,
+      photo.placeName,
+      tripTitle,
+    ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch));
+    const yearMatches = yearFilter === "all" || travelYear(photo.capturedAt) === yearFilter;
+    return queryMatches && yearMatches;
+  }), [normalizedSearch, photoLinks, trips, yearFilter]);
+
+  const filteredPlaces = useMemo(() => places.filter((place) => {
+    const placeVisits = visits.filter((visit) => visit.placeId === place.id);
+    const placePhotos = photoLinks.filter((photo) => photo.placeId === place.id);
+    const tripTitles = placeVisits
+      .map((visit) => visit.tripId ? trips.find((trip) => trip.id === visit.tripId)?.title : null)
+      .filter(Boolean);
+    const queryMatches = !normalizedSearch || [
+      place.name,
+      place.city,
+      place.province,
+      place.country,
+      ...tripTitles,
+      ...placePhotos.map((photo) => photo.originalFileName),
+    ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch));
+    const yearValues = [
+      ...placeVisits.flatMap((visit) => [visit.arrivedAt, visit.leftAt]),
+      ...placePhotos.map((photo) => photo.capturedAt),
+      ...placeVisits.flatMap((visit) => {
+        const trip = visit.tripId ? trips.find((item) => item.id === visit.tripId) : null;
+        return trip ? [trip.startAt, trip.endAt] : [];
+      }),
+    ];
+    const yearMatches = yearFilter === "all" || yearValues.some((value) => travelYear(value) === yearFilter);
+    return queryMatches && yearMatches;
+  }), [normalizedSearch, photoLinks, places, trips, visits, yearFilter]);
+
+  const hasFilters = Boolean(normalizedSearch) || yearFilter !== "all";
+
   const selectedVisits = useMemo(
     () => selected ? sortVisits(visits.filter((visit) => visit.placeId === selected.id)) : [],
     [selected, visits],
@@ -432,6 +519,45 @@ export default function TravelModule() {
         </div>
       </header>
 
+      <div className="lt-travel-filters">
+        <label className="lt-travel-search">
+          <Search />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="搜索地点、城市、旅行或照片"
+            aria-label="搜索旅行足迹"
+          />
+          {searchQuery ? (
+            <button type="button" onClick={() => setSearchQuery("")} aria-label="清除搜索"><X /></button>
+          ) : null}
+        </label>
+        <select
+          className="lt-travel-year-filter"
+          value={yearFilter}
+          onChange={(event) => setYearFilter(event.target.value)}
+          aria-label="按年份筛选"
+        >
+          <option value="all">全部年份</option>
+          {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
+        <span className="lt-travel-filter-count">
+          {filteredPlaces.length} 地点 · {filteredTrips.length} 旅行 · {filteredPhotoLinks.length} 照片
+        </span>
+        {hasFilters ? (
+          <button
+            type="button"
+            className="lt-travel-clear-filters"
+            onClick={() => {
+              setSearchQuery("");
+              setYearFilter("all");
+            }}
+          >
+            清除筛选
+          </button>
+        ) : null}
+      </div>
+
       {error ? <div className="lt-travel-error" role="alert">{error}</div> : null}
 
       <div className="lt-travel-layout">
@@ -440,9 +566,9 @@ export default function TravelModule() {
             <div className="lt-travel-loading">正在读取本机旅行足迹…</div>
           ) : (
             <TravelMapLibre
-              places={places}
+              places={filteredPlaces}
               visits={visits}
-              photoLinks={photoLinks}
+              photoLinks={filteredPhotoLinks}
               selectedPlaceId={selected?.id}
               selectedPhotoLinkId={selectedPhoto?.id}
               routeTripId={mode === "route" ? selectedTripId : null}
@@ -474,7 +600,7 @@ export default function TravelModule() {
                 <button type="button" onClick={openNewTrip}><Plus /></button>
               </div>
               <div className="lt-travel-trip-list">
-                {trips.length ? trips.map((trip) => (
+                {filteredTrips.length ? filteredTrips.map((trip) => (
                   <button
                     type="button"
                     key={trip.id}
@@ -484,7 +610,7 @@ export default function TravelModule() {
                     <span><strong>{trip.title}</strong><small>{shortDate(trip.startAt)}{trip.endAt ? ` → ${shortDate(trip.endAt)}` : ""}</small></span>
                     <em>{trip.visitCount} 站</em>
                   </button>
-                )) : <p className="empty">还没有旅行。先创建一次行程，再把地点的访问记录加入旅行。</p>}
+                )) : <p className="empty">{hasFilters ? "没有符合当前筛选条件的旅行。" : "还没有旅行。先创建一次行程，再把地点的访问记录加入旅行。"}</p>}
               </div>
               {selectedTrip ? (
                 <div className="lt-travel-trip-summary">
@@ -521,14 +647,14 @@ export default function TravelModule() {
                 </article>
               ) : (
                 <div className="lt-travel-photo-list">
-                  {photoLinks.length ? photoLinks.slice(0, 40).map((photo) => (
+                  {filteredPhotoLinks.length ? filteredPhotoLinks.slice(0, 40).map((photo) => (
                     <button type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)}>
                       <img src={photo.thumbnailUrl} alt="" loading="lazy" />
                       <span><strong>{photo.placeName || photo.originalFileName}</strong><small>{shortDate(photo.capturedAt)}</small></span>
                     </button>
                   )) : (
                     <div className="empty">
-                      <p>还没有地图照片。可以直接导入相册里带 GPS 的照片，或先选择地点再关联照片。</p>
+                      <p>{hasFilters ? "没有符合当前筛选条件的地图照片。" : "还没有地图照片。可以直接导入相册里带 GPS 的照片，或先选择地点再关联照片。"}</p>
                       <button type="button" onClick={() => void openGpsPhotoPicker()}><Camera />导入定位照片</button>
                     </div>
                   )}
@@ -544,7 +670,7 @@ export default function TravelModule() {
                 旅行
                 <select value={selectedTripId} onChange={(event) => setSelectedTripId(event.target.value)}>
                   <option value="">选择旅行</option>
-                  {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
+                  {filteredTrips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
                 </select>
               </label>
               {selectedTrip ? (
@@ -635,7 +761,7 @@ export default function TravelModule() {
               <MapPinned />
               <h2>选择一个足迹</h2>
               <p>点击地图上的地点查看多次访问记录。双击真实地图也可以直接按经纬度创建地点。</p>
-              {places.slice(0, 7).map((place) => (
+              {filteredPlaces.slice(0, 7).map((place) => (
                 <button type="button" key={place.id} onClick={() => setSelected(place)}>
                   <span>{place.name}</span>
                   <small>{place.visitCount ? `${place.visitCount} 次到访` : "仅保存地点"}</small>
