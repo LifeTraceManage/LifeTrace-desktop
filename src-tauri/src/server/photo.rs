@@ -250,7 +250,7 @@ pub(crate) fn backfill_exif_metadata(
          WHERE deleted_at IS NULL
            AND media_type='image'
            AND processing_status='completed'
-           AND (captured_at IS NULL OR latitude IS NULL OR longitude IS NULL)
+           AND exif_scanned_at IS NULL
          ORDER BY imported_at DESC
          LIMIT ?1"
     )?;
@@ -281,9 +281,16 @@ pub(crate) fn backfill_exif_metadata(
             "UPDATE photos
              SET captured_at=COALESCE(captured_at,?1),
                  latitude=COALESCE(latitude,?2),
-                 longitude=COALESCE(longitude,?3)
-             WHERE id=?4",
-            params![metadata.captured_at, metadata.latitude, metadata.longitude, id],
+                 longitude=COALESCE(longitude,?3),
+                 exif_scanned_at=?4
+             WHERE id=?5",
+            params![
+                metadata.captured_at,
+                metadata.latitude,
+                metadata.longitude,
+                Utc::now().to_rfc3339(),
+                id
+            ],
         )?;
         changed += updated;
     }
@@ -312,7 +319,7 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            id TEXT PRIMARY KEY,content_hash TEXT NOT NULL UNIQUE,original_file_name TEXT NOT NULL,
            stored_file_name TEXT NOT NULL,original_path TEXT NOT NULL,thumbnail_path TEXT,
            media_type TEXT NOT NULL,mime_type TEXT,file_size INTEGER NOT NULL,width INTEGER,
-           height INTEGER,duration_ms INTEGER,captured_at TEXT,latitude REAL,longitude REAL,imported_at TEXT NOT NULL,
+           height INTEGER,duration_ms INTEGER,captured_at TEXT,latitude REAL,longitude REAL,exif_scanned_at TEXT,imported_at TEXT NOT NULL,
            processing_status TEXT NOT NULL,processing_error TEXT,source_device_id TEXT,deleted_at TEXT
          );
          CREATE TABLE IF NOT EXISTS photo_sync_devices(
@@ -338,6 +345,7 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
     for (column, ddl) in [
         ("latitude", "ALTER TABLE photos ADD COLUMN latitude REAL"),
         ("longitude", "ALTER TABLE photos ADD COLUMN longitude REAL"),
+        ("exif_scanned_at", "ALTER TABLE photos ADD COLUMN exif_scanned_at TEXT"),
     ] {
         let exists: i64 = connection.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name=?1",
@@ -1053,9 +1061,16 @@ async fn complete_upload(state: &AppState, device_id: &str, upload_id: &str) -> 
                 "UPDATE photos
                  SET captured_at=COALESCE(captured_at,?1),
                      latitude=COALESCE(latitude,?2),
-                     longitude=COALESCE(longitude,?3)
-                 WHERE id=?4",
-                params![captured_at, exif_metadata.latitude, exif_metadata.longitude, photo_id],
+                     longitude=COALESCE(longitude,?3),
+                     exif_scanned_at=COALESCE(exif_scanned_at,?4)
+                 WHERE id=?5",
+                params![
+                    captured_at,
+                    exif_metadata.latitude,
+                    exif_metadata.longitude,
+                    Utc::now().to_rfc3339(),
+                    photo_id
+                ],
             ).ok();
             connection.execute(
             "INSERT INTO photo_device_assets(device_id,client_asset_id,photo_id,synced_at) VALUES(?1,?2,?3,?4)
@@ -1144,9 +1159,14 @@ async fn complete_upload(state: &AppState, device_id: &str, upload_id: &str) -> 
     };
     let result = (|| -> rusqlite::Result<()> {
         transaction.execute(
-            "INSERT INTO photos(id,content_hash,original_file_name,stored_file_name,original_path,thumbnail_path,media_type,mime_type,file_size,width,height,captured_at,latitude,longitude,imported_at,processing_status,source_device_id)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'completed',?16)",
-            params![photo_id, content_hash, original_name, stored_name, original_relative, thumbnail_relative, media_type, mime_type, received, width, height, captured_at, exif_metadata.latitude, exif_metadata.longitude, imported_at, device_id],
+            "INSERT INTO photos(id,content_hash,original_file_name,stored_file_name,original_path,thumbnail_path,media_type,mime_type,file_size,width,height,captured_at,latitude,longitude,exif_scanned_at,imported_at,processing_status,source_device_id)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,'completed',?17)",
+            params![
+                photo_id, content_hash, original_name, stored_name, original_relative,
+                thumbnail_relative, media_type, mime_type, received, width, height,
+                captured_at, exif_metadata.latitude, exif_metadata.longitude,
+                imported_at, imported_at, device_id
+            ],
         )?;
         transaction.execute(
             "INSERT INTO photo_device_assets(device_id,client_asset_id,photo_id,synced_at) VALUES(?1,?2,?3,?4)",
