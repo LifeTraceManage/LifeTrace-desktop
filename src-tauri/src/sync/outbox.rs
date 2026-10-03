@@ -112,7 +112,7 @@ pub fn enqueue_existing_profile(
     profile_id: &str,
 ) -> Result<usize, String> {
     let mut total = 0usize;
-    let sources: [(&str, Vec<Value>); 10] = [
+    let sources: [(&str, Vec<Value>); 7] = [
         (
             EntityType::FINANCE_ACCOUNT,
             crate::database::repositories::finance::list_accounts(connection)?,
