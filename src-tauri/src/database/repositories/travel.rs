@@ -1009,4 +1009,72 @@ mod tests {
         assert_eq!(active_links, 1);
     }
 
+
+    #[test]
+    fn trip_suggestion_acceptance_assigns_unowned_visits_in_order() {
+        let connection = db("trip-suggestion");
+        let xiamen = place(&connection, "厦门", 24.4798, 118.0894);
+        let shanghai = place(&connection, "上海", 31.2304, 121.4737);
+        let first = create_visit(&connection, NewVisit {
+            trip_id: None,
+            place_id: xiamen.id,
+            arrived_at: Some("2026-10-01T08:00:00Z".to_owned()),
+            left_at: None,
+            note: None,
+            sequence: None,
+        }).unwrap();
+        let second = create_visit(&connection, NewVisit {
+            trip_id: None,
+            place_id: shanghai.id,
+            arrived_at: Some("2026-10-02T10:00:00Z".to_owned()),
+            left_at: None,
+            note: None,
+            sequence: None,
+        }).unwrap();
+
+        let trip = create_trip_from_suggestion(&connection, AcceptTripSuggestion {
+            title: "厦门 → 上海".to_owned(),
+            start_at: Some("2026-10-01T08:00:00Z".to_owned()),
+            end_at: Some("2026-10-02T10:00:00Z".to_owned()),
+            visit_ids: vec![first.id.clone(), second.id.clone()],
+            photo_link_ids: vec![],
+        }).unwrap();
+
+        let assigned = list_visits(&connection, Some(&trip.id), None).unwrap();
+        assert_eq!(assigned.len(), 2);
+        assert_eq!(assigned[0].id, first.id);
+        assert_eq!(assigned[0].sequence, Some(0));
+        assert_eq!(assigned[1].id, second.id);
+        assert_eq!(assigned[1].sequence, Some(1));
+    }
+
+    #[test]
+    fn trip_suggestion_acceptance_is_atomic_on_invalid_evidence() {
+        let connection = db("trip-suggestion-rollback");
+        let xiamen = place(&connection, "厦门", 24.4798, 118.0894);
+        let visit = create_visit(&connection, NewVisit {
+            trip_id: None,
+            place_id: xiamen.id,
+            arrived_at: Some("2026-10-01T08:00:00Z".to_owned()),
+            left_at: None,
+            note: None,
+            sequence: None,
+        }).unwrap();
+
+        let error = create_trip_from_suggestion(&connection, AcceptTripSuggestion {
+            title: "无效建议".to_owned(),
+            start_at: Some("2026-10-01T08:00:00Z".to_owned()),
+            end_at: Some("2026-10-02T10:00:00Z".to_owned()),
+            visit_ids: vec![visit.id.clone(), "missing-visit".to_owned()],
+            photo_link_ids: vec![],
+        }).unwrap_err();
+
+        assert!(error.contains("已归属或不存在"));
+        assert!(list_trips(&connection).unwrap().is_empty());
+        let remaining = list_visits(&connection, None, None).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining[0].trip_id.is_none());
+        assert!(remaining[0].sequence.is_none());
+    }
+
 }
