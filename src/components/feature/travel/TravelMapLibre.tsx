@@ -144,7 +144,7 @@ function routeFeatures(
   };
 }
 
-function ensureTravelLayers(map: any) {
+function ensureTravelLayers(map: any, includeTextLayers = true) {
   if (!map.getSource("travel-places")) {
     map.addSource("travel-places", {
       type: "geojson",
@@ -169,7 +169,7 @@ function ensureTravelLayers(map: any) {
       },
     });
   }
-  if (!map.getLayer("travel-cluster-count")) {
+  if (includeTextLayers && !map.getLayer("travel-cluster-count")) {
     map.addLayer({
       id: "travel-cluster-count",
       type: "symbol",
@@ -196,7 +196,7 @@ function ensureTravelLayers(map: any) {
       },
     });
   }
-  if (!map.getLayer("travel-point-labels")) {
+  if (includeTextLayers && !map.getLayer("travel-point-labels")) {
     map.addLayer({
       id: "travel-point-labels",
       type: "symbol",
@@ -242,7 +242,7 @@ function ensureTravelLayers(map: any) {
       },
     });
   }
-  if (!map.getLayer("travel-photo-cluster-count")) {
+  if (includeTextLayers && !map.getLayer("travel-photo-cluster-count")) {
     map.addLayer({
       id: "travel-photo-cluster-count",
       type: "symbol",
@@ -313,7 +313,7 @@ function ensureTravelLayers(map: any) {
       },
     });
   }
-  if (!map.getLayer("travel-route-stop-labels")) {
+  if (includeTextLayers && !map.getLayer("travel-route-stop-labels")) {
     map.addLayer({
       id: "travel-route-stop-labels",
       type: "symbol",
@@ -365,6 +365,7 @@ export default function TravelMapLibre({
     style: unknown;
     center: [number, number];
     zoom: number;
+    offline: boolean;
   } | null>(null);
 
   const route = useMemo(
@@ -406,6 +407,7 @@ export default function TravelMapLibre({
             style: offline.style,
             center: offline.center,
             zoom: offline.zoom,
+            offline: true,
           });
           setOfflineActive(true);
           setMapError("");
@@ -425,6 +427,7 @@ export default function TravelMapLibre({
           style: DEFAULT_MAP_STYLE,
           center: [108.5, 34.5],
           zoom: 3.4,
+          offline: false,
         });
       }
     };
@@ -550,7 +553,7 @@ export default function TravelMapLibre({
     syncPhotoMarkersRef.current = syncPhotoMarkers;
 
     map.on("load", () => {
-      ensureTravelLayers(map);
+      ensureTravelLayers(map, !mapConfig.offline);
       syncPhotoMarkers();
       setStyleReady(true);
       setMapError("");
@@ -613,7 +616,7 @@ export default function TravelMapLibre({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
-    ensureTravelLayers(map);
+    ensureTravelLayers(map, !mapConfig?.offline);
     map.getSource("travel-places")?.setData(pointCollection(places, selectedPlaceId));
     map.getSource("travel-photos")?.setData(photoCollection(photoLinks, selectedPhotoLinkId));
     map.getSource("travel-route")?.setData(route.line);
@@ -670,6 +673,7 @@ export default function TravelMapLibre({
     selectedPlaceId,
     showPhotos,
     styleReady,
+    mapConfig,
   ]);
 
   return (
