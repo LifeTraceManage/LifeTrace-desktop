@@ -28,6 +28,7 @@
     "codemirror": "^6.0.2",
     "lucide-react": "^0.468.0",
     "maplibre-gl": "^6.11.2",
+    "pmtiles": "^4.5.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
