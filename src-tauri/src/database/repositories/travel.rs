@@ -65,6 +65,16 @@ pub struct NewTrip {
     pub cover_photo_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptTripSuggestion {
+    pub title: String,
+    pub start_at: Option<String>,
+    pub end_at: Option<String>,
+    pub visit_ids: Vec<String>,
+    pub photo_link_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TravelVisit {
@@ -205,6 +215,85 @@ pub fn create_trip(connection: &Connection, input: NewTrip) -> Result<TravelTrip
         params![id,user_id,title,input.start_at,input.end_at,input.description,input.cover_photo_id,stamp],
     ).map_err(|e| e.to_string())?;
     list_trips(connection)?.into_iter().find(|item| item.id == id).ok_or_else(|| "旅行创建后无法读取".to_owned())
+}
+
+pub fn create_trip_from_suggestion(
+    connection: &Connection,
+    input: AcceptTripSuggestion,
+) -> Result<TravelTrip, String> {
+    let title = input.title.trim();
+    if title.is_empty() {
+        return Err("旅行标题不能为空".to_owned());
+    }
+    if input.visit_ids.len() + input.photo_link_ids.len() < 2 {
+        return Err("自动旅行建议至少需要两条未归属记录".to_owned());
+    }
+
+    let visit_set = input.visit_ids.iter().cloned().collect::<HashSet<_>>();
+    let photo_set = input.photo_link_ids.iter().cloned().collect::<HashSet<_>>();
+    if visit_set.len() != input.visit_ids.len() || photo_set.len() != input.photo_link_ids.len() {
+        return Err("自动旅行建议记录不能重复".to_owned());
+    }
+
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let trip_id = Uuid::new_v4().to_string();
+    let tx = connection.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    for visit_id in &input.visit_ids {
+        let available = tx.query_row(
+            "SELECT 1 FROM travel_visits
+             WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL AND trip_id IS NULL",
+            params![visit_id,user_id],
+            |_| Ok(()),
+        ).optional().map_err(|e| e.to_string())?.is_some();
+        if !available {
+            return Err("自动旅行建议包含已归属或不存在的访问记录".to_owned());
+        }
+    }
+
+    for photo_link_id in &input.photo_link_ids {
+        let available = tx.query_row(
+            "SELECT 1 FROM travel_photo_links
+             WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL AND trip_id IS NULL",
+            params![photo_link_id,user_id],
+            |_| Ok(()),
+        ).optional().map_err(|e| e.to_string())?.is_some();
+        if !available {
+            return Err("自动旅行建议包含已归属或不存在的照片记录".to_owned());
+        }
+    }
+
+    tx.execute(
+        "INSERT INTO travel_trips(
+           id,user_id,title,start_at,end_at,description,cover_photo_id,created_at,updated_at
+         ) VALUES(?1,?2,?3,?4,?5,NULL,NULL,?6,?6)",
+        params![trip_id,user_id,title,input.start_at,input.end_at,stamp],
+    ).map_err(|e| e.to_string())?;
+
+    for (index, visit_id) in input.visit_ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE travel_visits
+             SET trip_id=?1,sequence=?2,updated_at=?3,version=version+1
+             WHERE id=?4 AND user_id=?5 AND deleted_at IS NULL AND trip_id IS NULL",
+            params![trip_id,index as i64,stamp,visit_id,user_id],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    for photo_link_id in &input.photo_link_ids {
+        tx.execute(
+            "UPDATE travel_photo_links
+             SET trip_id=?1,updated_at=?2,version=version+1
+             WHERE id=?3 AND user_id=?4 AND deleted_at IS NULL AND trip_id IS NULL",
+            params![trip_id,stamp,photo_link_id,user_id],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    list_trips(connection)?
+        .into_iter()
+        .find(|item| item.id == trip_id)
+        .ok_or_else(|| "旅行创建后无法读取".to_owned())
 }
 
 pub fn list_visits(connection: &Connection, trip_id: Option<&str>, place_id: Option<&str>) -> Result<Vec<TravelVisit>, String> {
