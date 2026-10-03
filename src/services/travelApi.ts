@@ -73,6 +73,14 @@ export type TravelRoadRoute = {
   provider: string;
 };
 
+export type TravelOfflineMapStatus = {
+  available: boolean;
+  sizeBytes?: number | null;
+  modifiedAtMillis?: number | null;
+  archiveUrl?: string | null;
+  fileName?: string | null;
+};
+
 export type NewTravelPlace = {
   name: string;
   country?: string | null;
@@ -172,6 +180,9 @@ function json(body: unknown, method = "POST"): RequestInit {
 
 export const travelApi = {
   summary: () => request<TravelSummary>("/api/travel/summary"),
+  offlineMap: {
+    status: () => request<TravelOfflineMapStatus>("/api/travel/offline-map/status"),
+  },
   reverseGeocode: (latitude: number, longitude: number) => {
     const params = new URLSearchParams({
       latitude: String(latitude),
