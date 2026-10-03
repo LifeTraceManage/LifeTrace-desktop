@@ -395,12 +395,6 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            synced_at TEXT NOT NULL,UNIQUE(device_id,client_asset_id)
          );
          CREATE INDEX IF NOT EXISTS photos_captured_at_idx ON photos(captured_at);
-         CREATE INDEX IF NOT EXISTS photos_exif_pending_idx
-           ON photos(imported_at DESC)
-           WHERE exif_scanned_at IS NULL
-             AND deleted_at IS NULL
-             AND media_type='image'
-             AND processing_status='completed';
          CREATE INDEX IF NOT EXISTS photo_tasks_status_idx ON photo_upload_tasks(status);",
     )?;
     for (column, ddl) in [
@@ -417,6 +411,16 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
             connection.execute_batch(ddl)?;
         }
     }
+    // Existing databases receive the EXIF columns above before this partial index
+    // is created, so upgrades never reference a column that is not present yet.
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS photos_exif_pending_idx
+           ON photos(imported_at DESC)
+           WHERE exif_scanned_at IS NULL
+             AND deleted_at IS NULL
+             AND media_type='image'
+             AND processing_status='completed';"
+    )?;
     // 上次隐藏任务被中断（例如加密完成前应用退出）时，把卡在“隐藏中”的照片
     // 恢复为可见：文件仍在磁盘，不丢数据，等待用户再次隐藏。
     connection.execute(
