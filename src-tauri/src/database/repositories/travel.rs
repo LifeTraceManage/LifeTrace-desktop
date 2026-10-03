@@ -261,6 +261,8 @@ pub struct TravelPhotoCandidate {
     pub media_type: String,
     pub captured_at: Option<String>,
     pub imported_at: String,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
     pub thumbnail_url: String,
 }
 
@@ -301,7 +303,7 @@ pub fn list_photo_candidates(
 ) -> Result<Vec<TravelPhotoCandidate>, String> {
     let limit = limit.clamp(1, 500);
     let mut statement = connection.prepare(
-        "SELECT id,original_file_name,media_type,captured_at,imported_at
+        "SELECT id,original_file_name,media_type,captured_at,imported_at,latitude,longitude
          FROM photos
          WHERE deleted_at IS NULL AND processing_status='completed'
          ORDER BY COALESCE(captured_at,imported_at) DESC
@@ -318,6 +320,8 @@ pub fn list_photo_candidates(
             media_type: row.get(2)?,
             captured_at: row.get(3)?,
             imported_at: row.get(4)?,
+            latitude: row.get(5)?,
+            longitude: row.get(6)?,
         })
     }).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -370,10 +374,14 @@ pub fn create_photo_link(
     let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
 
     let photo = connection.query_row(
-        "SELECT captured_at FROM photos
+        "SELECT captured_at,latitude,longitude FROM photos
          WHERE id=?1 AND deleted_at IS NULL AND processing_status='completed'",
         [&input.photo_id],
-        |row| row.get::<_, Option<String>>(0),
+        |row| Ok((
+            row.get::<_, Option<String>>(0)?,
+            row.get::<_, Option<f64>>(1)?,
+            row.get::<_, Option<f64>>(2)?,
+        )),
     ).optional().map_err(|e| e.to_string())?
       .ok_or_else(|| "照片不存在或尚未处理完成".to_owned())?;
 
@@ -402,8 +410,8 @@ pub fn create_photo_link(
         if !exists { return Err("旅行不存在".to_owned()); }
     }
 
-    let mut latitude = input.latitude;
-    let mut longitude = input.longitude;
+    let mut latitude = input.latitude.or(photo.1);
+    let mut longitude = input.longitude.or(photo.2);
     if let Some(id) = place_id.as_deref() {
         let place = connection.query_row(
             "SELECT latitude,longitude FROM travel_places
@@ -422,7 +430,7 @@ pub fn create_photo_link(
 
     let id = Uuid::new_v4().to_string();
     let stamp = now();
-    let captured_at = input.captured_at.or(photo);
+    let captured_at = input.captured_at.or(photo.0);
     connection.execute(
         "INSERT INTO travel_photo_links(
            id,user_id,photo_id,trip_id,visit_id,place_id,latitude,longitude,captured_at,
