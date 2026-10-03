@@ -147,6 +147,8 @@ pub async fn serve(
         .route("/api/health", get(health))
         .route("/api/state", get(state::get).post(state::mutate))
         .route("/api/travel/summary", get(travel::summary))
+        .route("/api/travel/offline-map/status", get(travel::offline_map_status))
+        .route("/api/travel/offline-map/archive", get(travel::offline_map_archive))
         .route("/api/travel/reverse-geocode", get(travel::reverse_geocode))
         .route("/api/travel/route", axum::routing::post(travel::road_route))
         .route("/api/travel/places", get(travel::list_places).post(travel::create_place))
