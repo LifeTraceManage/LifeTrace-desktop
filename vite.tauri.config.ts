@@ -15,6 +15,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": projectRoot,
+      "maplibre-gl": path.join(webRoot, "node_modules", "maplibre-gl"),
+      "pmtiles": path.join(webRoot, "node_modules", "pmtiles"),
     },
     dedupe: ["react", "react-dom"],
   },

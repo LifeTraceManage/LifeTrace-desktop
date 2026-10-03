@@ -112,7 +112,7 @@ pub fn enqueue_existing_profile(
     profile_id: &str,
 ) -> Result<usize, String> {
     let mut total = 0usize;
-    let sources: [(&str, Vec<Value>); 10] = [
+    let sources: [(&str, Vec<Value>); 7] = [
         (
             EntityType::FINANCE_ACCOUNT,
             crate::database::repositories::finance::list_accounts(connection)?,
@@ -141,18 +141,6 @@ pub fn enqueue_existing_profile(
             EntityType::WORKOUT_IMPORT,
             crate::database::repositories::workouts::list_imports(connection)?,
         ),
-        (
-            EntityType::ENGLISH_LEARNING_RECORD,
-            crate::database::repositories::english::list(connection, "records")?,
-        ),
-        (
-            EntityType::ENGLISH_HIGHLIGHT,
-            crate::database::repositories::english::list(connection, "highlights")?,
-        ),
-        (
-            EntityType::ENGLISH_VOCABULARY,
-            crate::database::repositories::english::list(connection, "vocabulary")?,
-        ),
     ];
     for (entity_type, values) in sources {
         for mut value in values {
@@ -174,6 +162,11 @@ pub fn enqueue_existing_profile(
         }
     }
     for (entity_type, value) in super::execution::existing_entities(connection, profile_id)? {
+        if enqueue_upsert(connection, entity_type, &value, None, MutationOrigin::Local)?.is_some() {
+            total += 1;
+        }
+    }
+    for (entity_type, value) in super::travel::existing_entities(connection, profile_id)? {
         if enqueue_upsert(connection, entity_type, &value, None, MutationOrigin::Local)?.is_some() {
             total += 1;
         }
@@ -239,4 +232,88 @@ pub fn enqueue_existing_profile(
         }
     }
     Ok(total)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::migration_runner::{run, MigrationContext};
+    use crate::database::migrations::all;
+    use rusqlite::Connection;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn db() -> (Connection, String) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("lifetrace-sync-outbox-travel-{unique}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        run(&mut connection, &MigrationContext::new(dir), &all()).unwrap();
+        let profile = crate::database::profile::active_profile_id(&connection).unwrap();
+        (connection, profile)
+    }
+
+    #[test]
+    fn existing_profile_bootstrap_includes_travel_entities() {
+        let (connection, profile) = db();
+
+        connection.execute(
+            "INSERT INTO travel_places(
+               id,user_id,name,place_type,created_at,updated_at
+             ) VALUES(
+               'place-bootstrap',?1,'厦门','city',
+               '2026-10-03T00:00:00Z','2026-10-03T00:00:00Z'
+             )",
+            [&profile],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO travel_trips(
+               id,user_id,title,created_at,updated_at
+             ) VALUES(
+               'trip-bootstrap',?1,'厦门旅行',
+               '2026-10-03T00:00:00Z','2026-10-03T00:00:00Z'
+             )",
+            [&profile],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO travel_visits(
+               id,user_id,trip_id,place_id,created_at,updated_at
+             ) VALUES(
+               'visit-bootstrap',?1,'trip-bootstrap','place-bootstrap',
+               '2026-10-03T00:00:00Z','2026-10-03T00:00:00Z'
+             )",
+            [&profile],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO travel_photo_links(
+               id,user_id,photo_id,trip_id,place_id,created_at,updated_at
+             ) VALUES(
+               'photo-link-bootstrap',?1,'photo-remote','trip-bootstrap','place-bootstrap',
+               '2026-10-03T00:00:00Z','2026-10-03T00:00:00Z'
+             )",
+            [&profile],
+        ).unwrap();
+
+        connection.execute("DELETE FROM sync_outbox", []).unwrap();
+        enqueue_existing_profile(&connection, &profile).unwrap();
+
+        for (entity_type, entity_id) in [
+            ("travel.place", "place-bootstrap"),
+            ("travel.trip", "trip-bootstrap"),
+            ("travel.visit", "visit-bootstrap"),
+            ("travel.photo_link", "photo-link-bootstrap"),
+        ] {
+            let count: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM sync_outbox
+                 WHERE entity_type=?1 AND entity_id=?2 AND operation='upsert'",
+                params![entity_type, entity_id],
+                |row| row.get(0),
+            ).unwrap();
+            assert_eq!(count, 1, "missing bootstrap outbox row for {entity_type}");
+        }
+    }
 }

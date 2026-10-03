@@ -15,4 +15,5 @@ pub mod finance;
 pub mod habits;
 pub mod notes;
 pub mod state_compat;
+pub mod travel;
 pub mod workouts;

@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    io::Cursor,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::{
@@ -16,7 +17,8 @@ use axum::{
     routing::{any, get},
     Json, Router,
 };
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
+use exif::{In, Reader as ExifReader, Tag, Value as ExifValue};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -160,6 +162,215 @@ impl Runtime {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct PhotoExifMetadata {
+    captured_at: Option<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+}
+
+fn exif_ascii(value: &ExifValue) -> Option<String> {
+    match value {
+        ExifValue::Ascii(values) => values
+            .first()
+            .map(|value| String::from_utf8_lossy(value).trim().to_owned())
+            .filter(|value| !value.is_empty()),
+        _ => None,
+    }
+}
+
+fn normalize_exif_datetime(value: &str) -> Option<String> {
+    NaiveDateTime::parse_from_str(value.trim(), "%Y:%m:%d %H:%M:%S")
+        .ok()
+        .map(|value| value.format("%Y-%m-%dT%H:%M:%S").to_string())
+}
+
+fn gps_coordinate(value: &ExifValue, reference: &str) -> Option<f64> {
+    let ExifValue::Rational(parts) = value else {
+        return None;
+    };
+    if parts.len() < 3 || parts.iter().take(3).any(|part| part.denom == 0) {
+        return None;
+    }
+    let coordinate = parts[0].to_f64()
+        + parts[1].to_f64() / 60.0
+        + parts[2].to_f64() / 3600.0;
+    let sign = match reference.trim().to_ascii_uppercase().as_str() {
+        "S" | "W" => -1.0,
+        "N" | "E" => 1.0,
+        _ => return None,
+    };
+    Some(coordinate * sign)
+}
+
+fn photo_exif_metadata(exif: &exif::Exif) -> PhotoExifMetadata {
+    let captured_at = exif
+        .get_field(Tag::DateTimeOriginal, In::PRIMARY)
+        .or_else(|| exif.get_field(Tag::DateTime, In::PRIMARY))
+        .and_then(|field| exif_ascii(&field.value))
+        .and_then(|value| normalize_exif_datetime(&value));
+
+    let latitude_ref = exif
+        .get_field(Tag::GPSLatitudeRef, In::PRIMARY)
+        .and_then(|field| exif_ascii(&field.value));
+    let longitude_ref = exif
+        .get_field(Tag::GPSLongitudeRef, In::PRIMARY)
+        .and_then(|field| exif_ascii(&field.value));
+
+    let latitude = exif
+        .get_field(Tag::GPSLatitude, In::PRIMARY)
+        .and_then(|field| {
+            latitude_ref
+                .as_deref()
+                .and_then(|reference| gps_coordinate(&field.value, reference))
+        })
+        .filter(|value| (-90.0..=90.0).contains(value));
+    let longitude = exif
+        .get_field(Tag::GPSLongitude, In::PRIMARY)
+        .and_then(|field| {
+            longitude_ref
+                .as_deref()
+                .and_then(|reference| gps_coordinate(&field.value, reference))
+        })
+        .filter(|value| (-180.0..=180.0).contains(value));
+
+    PhotoExifMetadata {
+        captured_at,
+        latitude,
+        longitude,
+    }
+}
+
+fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
+    let mut cursor = Cursor::new(bytes);
+    let Ok(exif) = ExifReader::new().read_from_container(&mut cursor) else {
+        return PhotoExifMetadata::default();
+    };
+    photo_exif_metadata(&exif)
+}
+
+fn read_exif_metadata_from_path(path: &Path) -> PhotoExifMetadata {
+    let Ok(file) = std::fs::File::open(path) else {
+        return PhotoExifMetadata::default();
+    };
+    let mut reader = std::io::BufReader::new(file);
+    let Ok(exif) = ExifReader::new().read_from_container(&mut reader) else {
+        return PhotoExifMetadata::default();
+    };
+    photo_exif_metadata(&exif)
+}
+
+#[derive(Debug, Clone)]
+struct PhotoExifCandidate {
+    id: String,
+    relative_path: String,
+}
+
+fn pending_exif_candidates(
+    connection: &Connection,
+    limit: i64,
+) -> rusqlite::Result<Vec<PhotoExifCandidate>> {
+    let limit = limit.clamp(1, 100);
+    let mut statement = connection.prepare(
+        "SELECT id,original_path
+         FROM photos
+         WHERE deleted_at IS NULL
+           AND media_type='image'
+           AND processing_status='completed'
+           AND exif_scanned_at IS NULL
+         ORDER BY imported_at DESC
+         LIMIT ?1"
+    )?;
+    let rows = statement.query_map([limit], |row| {
+        Ok(PhotoExifCandidate {
+            id: row.get(0)?,
+            relative_path: row.get(1)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+}
+
+fn apply_exif_metadata(
+    connection: &Connection,
+    photo_id: &str,
+    metadata: &PhotoExifMetadata,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "UPDATE photos
+         SET captured_at=COALESCE(captured_at,?1),
+             latitude=COALESCE(latitude,?2),
+             longitude=COALESCE(longitude,?3),
+             exif_scanned_at=?4
+         WHERE id=?5
+           AND deleted_at IS NULL
+           AND exif_scanned_at IS NULL",
+        params![
+            metadata.captured_at,
+            metadata.latitude,
+            metadata.longitude,
+            Utc::now().to_rfc3339(),
+            photo_id
+        ],
+    )
+}
+
+async fn index_exif_batch(state: &AppState, limit: i64) -> Result<usize, String> {
+    let candidates = {
+        let connection = state
+            .database
+            .lock()
+            .map_err(|_| "照片数据库锁已损坏".to_owned())?;
+        pending_exif_candidates(&connection, limit).map_err(|error| error.to_string())?
+    };
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    let mut inspected = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let path = state.data_dir.join("photos").join(&candidate.relative_path);
+        let metadata = tokio::task::spawn_blocking(move || read_exif_metadata_from_path(&path))
+            .await
+            .map_err(|error| format!("EXIF 解析任务失败：{error}"))?;
+        // A permanently missing/corrupt local file resolves to empty metadata and is
+        // still marked scanned below, so it cannot pin the indexer to one batch.
+        inspected.push((candidate.id, metadata));
+    }
+
+    let connection = state
+        .database
+        .lock()
+        .map_err(|_| "照片数据库锁已损坏".to_owned())?;
+    let mut changed = 0usize;
+    for (photo_id, metadata) in inspected {
+        changed += apply_exif_metadata(&connection, &photo_id, &metadata)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(changed)
+}
+
+pub(crate) async fn run_exif_background_indexer(state: AppState) {
+    // Let migrations, local HTTP, and the first UI paint complete before historical
+    // photo scanning begins.
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    loop {
+        match index_exif_batch(&state, 12).await {
+            Ok(0) => {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+            Ok(_) => {
+                // Yield between batches so large libraries never monopolize disk/CPU.
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            Err(error) => {
+                eprintln!("LifeTrace EXIF background index skipped: {error}");
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+        }
+    }
+}
+
 fn lan_addresses() -> Vec<String> {
     let mut addresses = Vec::new();
     if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
@@ -182,7 +393,7 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            id TEXT PRIMARY KEY,content_hash TEXT NOT NULL UNIQUE,original_file_name TEXT NOT NULL,
            stored_file_name TEXT NOT NULL,original_path TEXT NOT NULL,thumbnail_path TEXT,
            media_type TEXT NOT NULL,mime_type TEXT,file_size INTEGER NOT NULL,width INTEGER,
-           height INTEGER,duration_ms INTEGER,captured_at TEXT,imported_at TEXT NOT NULL,
+           height INTEGER,duration_ms INTEGER,captured_at TEXT,latitude REAL,longitude REAL,exif_scanned_at TEXT,imported_at TEXT NOT NULL,
            processing_status TEXT NOT NULL,processing_error TEXT,source_device_id TEXT,deleted_at TEXT
          );
          CREATE TABLE IF NOT EXISTS photo_sync_devices(
@@ -204,6 +415,30 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
          );
          CREATE INDEX IF NOT EXISTS photos_captured_at_idx ON photos(captured_at);
          CREATE INDEX IF NOT EXISTS photo_tasks_status_idx ON photo_upload_tasks(status);",
+    )?;
+    for (column, ddl) in [
+        ("latitude", "ALTER TABLE photos ADD COLUMN latitude REAL"),
+        ("longitude", "ALTER TABLE photos ADD COLUMN longitude REAL"),
+        ("exif_scanned_at", "ALTER TABLE photos ADD COLUMN exif_scanned_at TEXT"),
+    ] {
+        let exists: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name=?1",
+            [column],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            connection.execute_batch(ddl)?;
+        }
+    }
+    // Existing databases receive the EXIF columns above before this partial index
+    // is created, so upgrades never reference a column that is not present yet.
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS photos_exif_pending_idx
+           ON photos(imported_at DESC)
+           WHERE exif_scanned_at IS NULL
+             AND deleted_at IS NULL
+             AND media_type='image'
+             AND processing_status='completed';"
     )?;
     // 上次隐藏任务被中断（例如加密完成前应用退出）时，把卡在“隐藏中”的照片
     // 恢复为可见：文件仍在磁盘，不丢数据，等待用户再次隐藏。
@@ -871,6 +1106,12 @@ async fn complete_upload(state: &AppState, device_id: &str, upload_id: &str) -> 
             )
         }
     };
+    let exif_metadata = if media_type == "image" {
+        read_exif_metadata(&bytes)
+    } else {
+        PhotoExifMetadata::default()
+    };
+    let captured_at = captured_at.or_else(|| exif_metadata.captured_at.clone());
     let content_hash = format!("{:x}", Sha256::digest(&bytes));
     let duplicate = {
         let connection = match state.database.lock() {
@@ -900,6 +1141,21 @@ async fn complete_upload(state: &AppState, device_id: &str, upload_id: &str) -> 
                     )
                 }
             };
+            connection.execute(
+                "UPDATE photos
+                 SET captured_at=COALESCE(captured_at,?1),
+                     latitude=COALESCE(latitude,?2),
+                     longitude=COALESCE(longitude,?3),
+                     exif_scanned_at=COALESCE(exif_scanned_at,?4)
+                 WHERE id=?5",
+                params![
+                    captured_at,
+                    exif_metadata.latitude,
+                    exif_metadata.longitude,
+                    Utc::now().to_rfc3339(),
+                    photo_id
+                ],
+            ).ok();
             connection.execute(
             "INSERT INTO photo_device_assets(device_id,client_asset_id,photo_id,synced_at) VALUES(?1,?2,?3,?4)
              ON CONFLICT(device_id,client_asset_id) DO UPDATE SET photo_id=excluded.photo_id,synced_at=excluded.synced_at",
@@ -987,9 +1243,14 @@ async fn complete_upload(state: &AppState, device_id: &str, upload_id: &str) -> 
     };
     let result = (|| -> rusqlite::Result<()> {
         transaction.execute(
-            "INSERT INTO photos(id,content_hash,original_file_name,stored_file_name,original_path,thumbnail_path,media_type,mime_type,file_size,width,height,captured_at,imported_at,processing_status,source_device_id)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'completed',?14)",
-            params![photo_id, content_hash, original_name, stored_name, original_relative, thumbnail_relative, media_type, mime_type, received, width, height, captured_at, imported_at, device_id],
+            "INSERT INTO photos(id,content_hash,original_file_name,stored_file_name,original_path,thumbnail_path,media_type,mime_type,file_size,width,height,captured_at,latitude,longitude,exif_scanned_at,imported_at,processing_status,source_device_id)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,'completed',?17)",
+            params![
+                photo_id, content_hash, original_name, stored_name, original_relative,
+                thumbnail_relative, media_type, mime_type, received, width, height,
+                captured_at, exif_metadata.latitude, exif_metadata.longitude,
+                imported_at, imported_at, device_id
+            ],
         )?;
         transaction.execute(
             "INSERT INTO photo_device_assets(device_id,client_asset_id,photo_id,synced_at) VALUES(?1,?2,?3,?4)",
@@ -1057,4 +1318,170 @@ pub async fn serve_media(state: AppState) -> Result<(), Box<dyn std::error::Erro
     let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 3444))).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+
+#[cfg(test)]
+mod exif_tests {
+    use super::*;
+    use exif::Rational;
+
+    fn dms(degrees: u32, minutes: u32, seconds_x100: u32) -> ExifValue {
+        ExifValue::Rational(vec![
+            Rational { num: degrees, denom: 1 },
+            Rational { num: minutes, denom: 1 },
+            Rational { num: seconds_x100, denom: 100 },
+        ])
+    }
+
+    #[test]
+    fn gps_coordinates_respect_hemisphere() {
+        let latitude = gps_coordinate(&dms(24, 28, 788), "N").unwrap();
+        let longitude = gps_coordinate(&dms(118, 5, 2184), "E").unwrap();
+        assert!((latitude - 24.4688555).abs() < 0.00001);
+        assert!((longitude - 118.0894).abs() < 0.00001);
+
+        let south = gps_coordinate(&dms(33, 51, 0), "S").unwrap();
+        let west = gps_coordinate(&dms(118, 15, 0), "W").unwrap();
+        assert!(south < 0.0);
+        assert!(west < 0.0);
+    }
+
+    #[test]
+    fn invalid_gps_reference_is_rejected() {
+        assert!(gps_coordinate(&dms(1, 2, 300), "X").is_none());
+        let zero_denominator = ExifValue::Rational(vec![
+            Rational { num: 1, denom: 1 },
+            Rational { num: 2, denom: 0 },
+            Rational { num: 3, denom: 1 },
+        ]);
+        assert!(gps_coordinate(&zero_denominator, "N").is_none());
+    }
+
+    #[test]
+    fn exif_datetime_is_normalized_without_inventing_timezone() {
+        assert_eq!(
+            normalize_exif_datetime("2026:09:27 18:42:03").as_deref(),
+            Some("2026-09-27T18:42:03")
+        );
+        assert!(normalize_exif_datetime("not-a-date").is_none());
+    }
+
+    #[test]
+    fn pending_exif_candidates_only_returns_unscanned_images() {
+        let connection = Connection::open_in_memory().unwrap();
+        ensure_schema(&connection).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,
+               media_type,file_size,imported_at,processing_status
+             ) VALUES(
+               'photo-1','hash-1','one.jpg','one.jpg','one.jpg',
+               'image',123,'2026-10-01T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,
+               media_type,file_size,exif_scanned_at,imported_at,processing_status
+             ) VALUES(
+               'photo-2','hash-2','two.jpg','two.jpg','two.jpg',
+               'image',456,'2026-10-02T00:00:00Z','2026-10-02T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+
+        let candidates = pending_exif_candidates(&connection, 20).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "photo-1");
+        assert_eq!(candidates[0].relative_path, "one.jpg");
+    }
+
+    #[test]
+    fn ensure_schema_upgrades_legacy_photo_table_before_exif_index() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE photos(
+               id TEXT PRIMARY KEY,
+               content_hash TEXT NOT NULL UNIQUE,
+               original_file_name TEXT NOT NULL,
+               stored_file_name TEXT NOT NULL,
+               original_path TEXT NOT NULL,
+               thumbnail_path TEXT,
+               media_type TEXT NOT NULL,
+               mime_type TEXT,
+               file_size INTEGER NOT NULL,
+               width INTEGER,
+               height INTEGER,
+               duration_ms INTEGER,
+               captured_at TEXT,
+               imported_at TEXT NOT NULL,
+               processing_status TEXT NOT NULL,
+               processing_error TEXT,
+               source_device_id TEXT,
+               deleted_at TEXT
+             );"
+        ).unwrap();
+
+        ensure_schema(&connection).unwrap();
+
+        for column in ["latitude", "longitude", "exif_scanned_at"] {
+            let exists: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name=?1",
+                [column],
+                |row| row.get(0),
+            ).unwrap();
+            assert_eq!(exists, 1, "missing upgraded column {column}");
+        }
+        let index_exists: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='index' AND name='photos_exif_pending_idx'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(index_exists, 1);
+    }
+
+    #[test]
+    fn apply_exif_metadata_marks_scan_complete_without_overwriting_existing_values() {
+        let connection = Connection::open_in_memory().unwrap();
+        ensure_schema(&connection).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,
+               media_type,file_size,captured_at,latitude,longitude,imported_at,processing_status
+             ) VALUES(
+               'photo-1','hash-1','one.jpg','one.jpg','one.jpg',
+               'image',123,'2026-09-01T12:00:00',10.0,20.0,
+               '2026-10-01T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+
+        let metadata = PhotoExifMetadata {
+            captured_at: Some("2026-09-02T13:00:00".to_owned()),
+            latitude: Some(30.0),
+            longitude: Some(40.0),
+        };
+        assert_eq!(apply_exif_metadata(&connection, "photo-1", &metadata).unwrap(), 1);
+
+        let (captured_at, latitude, longitude, scanned_at): (
+            Option<String>,
+            Option<f64>,
+            Option<f64>,
+            Option<String>,
+        ) = connection.query_row(
+            "SELECT captured_at,latitude,longitude,exif_scanned_at
+             FROM photos WHERE id='photo-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).unwrap();
+
+        assert_eq!(captured_at.as_deref(), Some("2026-09-01T12:00:00"));
+        assert_eq!(latitude, Some(10.0));
+        assert_eq!(longitude, Some(20.0));
+        assert!(scanned_at.is_some());
+        assert!(pending_exif_candidates(&connection, 20).unwrap().is_empty());
+    }
 }

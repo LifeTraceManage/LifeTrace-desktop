@@ -6,6 +6,7 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::database::legacy::json_parser;
@@ -233,11 +234,13 @@ pub fn find_or_create_category(
     {
         return Ok(id);
     }
-    let id = format!(
-        "cat-{}-{}",
-        category_type,
-        &format!("{:x}", md5::compute(normalized.as_bytes()))[..16]
-    );
+    let digest = Sha256::digest(normalized.as_bytes());
+    let digest_prefix = digest
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let id = format!("cat-{category_type}-{digest_prefix}");
     let stamp = now();
     connection
         .execute(

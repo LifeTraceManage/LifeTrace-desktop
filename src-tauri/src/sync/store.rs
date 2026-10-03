@@ -16,7 +16,7 @@ use lifetrace_sync_client::{
     PersistedConflict, RetryPolicy, SyncError, SyncScope, SyncStatus, SyncStore,
 };
 
-use crate::database::repositories::{english, finance, habits, notes, workouts};
+use crate::database::repositories::{finance, habits, notes, workouts};
 
 use super::outbox::{enqueue_upsert, MutationOrigin};
 use super::payload::wire_to_legacy;
@@ -60,6 +60,15 @@ impl SqliteSyncStore {
             )
             .map_err(Self::db_error);
         }
+        if super::travel::is_travel(entity_type) {
+            return super::travel::load_local_entity(
+                connection,
+                profile,
+                entity_type,
+                entity_id,
+            )
+            .map_err(Self::db_error);
+        }
         let value = match entity_type {
             "finance.account" => Self::list_find(finance::list_accounts(connection).map_err(Self::db_error)?, entity_id),
             "finance.transaction" => Self::list_find(finance::list_transactions(connection).map_err(Self::db_error)?, entity_id),
@@ -69,10 +78,6 @@ impl SqliteSyncStore {
             "workout.workout" => workouts::get_workout(connection, entity_id).map_err(Self::db_error)?,
             "workout.import" => workouts::get_import(connection, entity_id).map_err(Self::db_error)?,
             "note.note" => notes::get_note(connection, entity_id).map_err(Self::db_error)?,
-            "english.learning_record" => english::get(connection, "records", entity_id).map_err(Self::db_error)?,
-            "english.highlight" => english::get(connection, "highlights", entity_id).map_err(Self::db_error)?,
-            "english.note" => english::get(connection, "notes", entity_id).map_err(Self::db_error)?,
-            "english.vocabulary" => english::get(connection, "vocabulary", entity_id).map_err(Self::db_error)?,
             "note.folder" => connection.query_row(
                 "SELECT id,user_id,name,icon,color,parent_folder_id,sort_order,created_at,updated_at FROM note_folders WHERE id=?1 AND user_id=?2",
                 params![entity_id,profile], |row| Ok(json!({
@@ -261,6 +266,10 @@ impl SqliteSyncStore {
             return super::execution::apply_upsert(connection, profile, entity_type, &legacy)
                 .map_err(Self::db_error);
         }
+        if super::travel::is_travel(entity_type) {
+            return super::travel::apply_upsert(connection, profile, entity_type, &legacy)
+                .map_err(Self::db_error);
+        }
         let result = match entity_type {
             "finance.account" => finance::save_account(connection, &legacy),
             "finance.transaction" => finance::save_transaction(connection, &legacy),
@@ -273,10 +282,6 @@ impl SqliteSyncStore {
             "note.note" => notes::save_note(connection, &legacy, true, false).map(|_| ()),
             "note.folder" => notes::save_folder(connection, &legacy).map(|_| ()),
             "note.tag" => notes::save_tag(connection, &legacy).map(|_| ()),
-            "english.learning_record" => english::put(connection, "records", &legacy),
-            "english.highlight" => english::put(connection, "highlights", &legacy),
-            "english.note" => english::put(connection, "notes", &legacy),
-            "english.vocabulary" => english::put(connection, "vocabulary", &legacy),
             _ => {
                 let entity_id = payload
                     .get("meta")
@@ -305,6 +310,10 @@ impl SqliteSyncStore {
             return super::execution::apply_delete(connection, profile, entity_type, entity_id)
                 .map_err(Self::db_error);
         }
+        if super::travel::is_travel(entity_type) {
+            return super::travel::apply_delete(connection, profile, entity_type, entity_id)
+                .map_err(Self::db_error);
+        }
         let result = match entity_type {
             "finance.account" => finance::delete_account(connection, entity_id),
             "finance.transaction" => finance::delete_transaction(connection, entity_id),
@@ -312,10 +321,6 @@ impl SqliteSyncStore {
             "note.note" => notes::set_deleted(connection, entity_id, true),
             "note.folder" => notes::delete_folder(connection, entity_id),
             "note.tag" => notes::delete_tag(connection, entity_id),
-            "english.learning_record" => english::remove(connection, "records", entity_id).map(|_| ()),
-            "english.highlight" => english::remove(connection, "highlights", entity_id).map(|_| ()),
-            "english.note" => english::remove(connection, "notes", entity_id).map(|_| ()),
-            "english.vocabulary" => english::remove(connection, "vocabulary", entity_id).map(|_| ()),
             "habit.activity" => connection.execute(
                 "UPDATE activities SET deleted_at=?1,updated_at=?1,version=version+1 WHERE id=?2 AND user_id=?3",
                 params![Utc::now().to_rfc3339(), entity_id, profile]

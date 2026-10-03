@@ -5,6 +5,7 @@ mod payload;
 pub(crate) mod photo_staging;
 pub mod runtime;
 mod store;
+mod travel;
 mod transport;
 
 pub use runtime::SyncDesktopState;

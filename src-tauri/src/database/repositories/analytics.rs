@@ -306,23 +306,6 @@ fn project_events(connection: &Connection, user_id: &str, stamp: &str) -> Result
              projection_version,projected_at
            )
            SELECT
-             'english:learning_record:'||r.id,r.user_id,
-             COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ',COALESCE(r.completed_at,r.started_at,r.created_at)),
-                      COALESCE(r.completed_at,r.started_at,r.created_at)),NULL,r.record_date,NULL,
-             'english','english_learning',COALESCE(a.title,'英语学习'),COALESCE(r.summary,''),
-             'english_learning_record',r.id,r.updated_at,
-             json_object('articleId',r.article_id,'readingTimeSeconds',r.reading_time_seconds,
-                         'score',r.score,'completionStatus',r.completion_status),
-             '[]',trim(COALESCE(a.title,'')||' '||COALESCE(r.summary,'')),1,?2
-             FROM english_learning_records r
-             LEFT JOIN english_articles a ON a.id=r.article_id
-            WHERE r.user_id=?1 AND r.deleted_at IS NULL"#,
-        r#"INSERT INTO analytics_events(
-             id,user_id,occurred_at,ended_at,local_date,timezone,domain,event_type,title,summary,
-             entity_type,entity_id,source_updated_at,metrics_json,tags_json,search_text,
-             projection_version,projected_at
-           )
-           SELECT
              'fitness:workout:'||w.id,w.user_id,
              COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ',w.occurred_at),w.occurred_at),NULL,w.local_date,NULL,
              'fitness','workout',w.name,'','workout',w.id,w.updated_at,
@@ -414,29 +397,6 @@ fn project_search_documents(
              trim(COALESCE(n.summary,'')||' '||COALESCE(n.content_markdown,'')),
              COALESCE(n.ai_tags_json,'[]'),n.created_at,n.updated_at,1,?2
              FROM notes n WHERE n.user_id=?1 AND n.deleted_at IS NULL"#,
-        r#"INSERT INTO analytics_search_documents(
-             id,user_id,domain,entity_type,entity_id,title,body,keywords,tags_json,occurred_at,
-             updated_at,projection_version,projected_at
-           )
-           SELECT 'english:article:'||a.id,r.user_id,'english','english_article',a.id,a.title,a.content,
-             trim(COALESCE(a.summary,'')||' '||COALESCE(a.category,'')||' '||COALESCE(a.level,'')),
-             '[]',COALESCE(a.published_at,a.created_at),a.updated_at,1,?2
-             FROM english_articles a
-             JOIN (SELECT user_id,article_id FROM english_learning_records
-                    WHERE user_id=?1 AND deleted_at IS NULL AND article_id IS NOT NULL
-                    GROUP BY user_id,article_id) r ON r.article_id=a.id
-            WHERE a.deleted_at IS NULL"#,
-        r#"INSERT INTO analytics_search_documents(
-             id,user_id,domain,entity_type,entity_id,title,body,keywords,tags_json,occurred_at,
-             updated_at,projection_version,projected_at
-           )
-           SELECT 'english:vocabulary:'||v.id,v.user_id,'english','vocabulary',v.id,v.display_word,
-             trim(COALESCE(v.definition,'')||' '||COALESCE(v.notes,'')||' '||
-                  COALESCE(v.source_sentence,'')),
-             trim(COALESCE(v.lemma,'')||' '||COALESCE(v.part_of_speech,'')||' '||
-                  COALESCE(v.source_article_title,'')),COALESCE(v.tags_json,'[]'),v.created_at,
-             v.updated_at,1,?2
-             FROM english_vocabulary v WHERE v.user_id=?1 AND v.deleted_at IS NULL"#,
         r#"INSERT INTO analytics_search_documents(
              id,user_id,domain,entity_type,entity_id,title,body,keywords,tags_json,occurred_at,
              updated_at,projection_version,projected_at
@@ -735,29 +695,10 @@ pub fn generate_report(
         )
         .map_err(|error| error.to_string())?;
 
-    let english_row = connection
-        .query_row(
-            "SELECT COUNT(*),COALESCE(SUM(reading_time_seconds),0),
-                    COALESCE(SUM(CASE WHEN completion_status='completed' OR completed_at IS NOT NULL THEN 1 ELSE 0 END),0)
-               FROM english_learning_records
-              WHERE user_id=?1 AND record_date BETWEEN ?2 AND ?3 AND deleted_at IS NULL",
-            params![user_id, period_start, period_end],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            },
-        )
-        .map_err(|error| error.to_string())?;
-
-    let vocabulary_count = count(
-        connection,
-        "SELECT COUNT(*) FROM english_vocabulary
-          WHERE user_id=?1 AND substr(created_at,1,10) BETWEEN ?2 AND ?3 AND deleted_at IS NULL",
-        &params_range,
-    )?;
+    // English learning was removed from Desktop; retain zero-valued report fields
+    // for DTO compatibility without querying deleted legacy tables.
+    let english_row = (0_i64, 0_i64, 0_i64);
+    let vocabulary_count = 0_i64;
     let note_count = count(
         connection,
         "SELECT COUNT(*) FROM notes
@@ -959,45 +900,6 @@ pub fn generate_insights(
             }),
             sample_size: overlap.0,
             confidence: json!({ "level": confidence, "causal": false }),
-            algorithm_version: INSIGHT_ALGORITHM_VERSION.to_owned(),
-        });
-    }
-
-    let english_notes = connection
-        .query_row(
-            "WITH learned AS (
-               SELECT DISTINCT article_id FROM english_learning_records
-                WHERE user_id=?1 AND record_date BETWEEN ?2 AND ?3
-                  AND deleted_at IS NULL AND article_id IS NOT NULL
-             ), noted AS (
-               SELECT DISTINCT n.article_id FROM english_notes n
-                JOIN learned l ON l.article_id=n.article_id
-               WHERE n.user_id=?1 AND n.deleted_at IS NULL
-             )
-             SELECT (SELECT COUNT(*) FROM learned),(SELECT COUNT(*) FROM noted)",
-            params![user_id, period_start, period_end],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-        )
-        .map_err(|error| error.to_string())?;
-    if english_notes.0 >= 3 {
-        let ratio = english_notes.1 as f64 / english_notes.0 as f64;
-        insights.push(InsightSnapshot {
-            id: format!("insight:{user_id}:english-notes:{period_start}:{period_end}"),
-            insight_type: "english_reading_notes".to_owned(),
-            period_start: period_start.to_owned(),
-            period_end: period_end.to_owned(),
-            title: "英语阅读与学习笔记关联".to_owned(),
-            summary: format!(
-                "本周期学习了 {} 篇文章，其中 {} 篇留下了英语学习笔记。",
-                english_notes.0, english_notes.1
-            ),
-            evidence: json!({
-                "learnedArticleCount": english_notes.0,
-                "notedArticleCount": english_notes.1,
-                "noteCoverage": ratio
-            }),
-            sample_size: english_notes.0,
-            confidence: json!({ "level": "descriptive", "causal": false }),
             algorithm_version: INSIGHT_ALGORITHM_VERSION.to_owned(),
         });
     }

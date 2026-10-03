@@ -132,9 +132,16 @@ pub const REGISTRY: &[EntityDescriptor] = &[
     user_owned(EntityType::EXECUTION_CALENDAR_OCCURRENCE, false),
     user_owned(EntityType::EXECUTION_IMPORTANT_DATE, false),
     user_owned(EntityType::EXECUTION_FOCUS_SESSION, false),
+    user_owned(EntityType::EXECUTION_MEMO, false),
+    user_owned(EntityType::EXECUTION_MEMO_TAG, false),
+    user_owned(EntityType::EXECUTION_MEMO_TAG_RELATION, false),
     user_owned(EntityType::EXECUTION_REMINDER, false),
     user_owned(EntityType::EXECUTION_COMPLETION_RESULT, false),
     user_owned(EntityType::EXECUTION_ENTITY_LINK, false),
+    user_owned(EntityType::TRAVEL_TRIP, false),
+    user_owned(EntityType::TRAVEL_PLACE, false),
+    user_owned(EntityType::TRAVEL_VISIT, false),
+    user_owned(EntityType::TRAVEL_PHOTO_LINK, false),
     user_owned(EntityType::FILE_METADATA, true),
     user_owned(EntityType::ENTITY_LINK, false),
     user_owned(EntityType::USER_PREFERENCE, false),
@@ -192,9 +199,16 @@ impl EntityType {
     pub const EXECUTION_CALENDAR_OCCURRENCE: &'static str = "execution.calendar_occurrence";
     pub const EXECUTION_IMPORTANT_DATE: &'static str = "execution.important_date";
     pub const EXECUTION_FOCUS_SESSION: &'static str = "execution.focus_session";
+    pub const EXECUTION_MEMO: &'static str = "execution.memo";
+    pub const EXECUTION_MEMO_TAG: &'static str = "execution.memo_tag";
+    pub const EXECUTION_MEMO_TAG_RELATION: &'static str = "execution.memo_tag_relation";
     pub const EXECUTION_REMINDER: &'static str = "execution.reminder";
     pub const EXECUTION_COMPLETION_RESULT: &'static str = "execution.completion_result";
     pub const EXECUTION_ENTITY_LINK: &'static str = "execution.entity_link";
+    pub const TRAVEL_TRIP: &'static str = "travel.trip";
+    pub const TRAVEL_PLACE: &'static str = "travel.place";
+    pub const TRAVEL_VISIT: &'static str = "travel.visit";
+    pub const TRAVEL_PHOTO_LINK: &'static str = "travel.photo_link";
     pub const FILE_METADATA: &'static str = "file.metadata";
     pub const ENTITY_LINK: &'static str = "entity.link";
     pub const USER_PREFERENCE: &'static str = "user.preference";
@@ -244,9 +258,16 @@ impl EntityType {
             Self::EXECUTION_CALENDAR_OCCURRENCE,
             Self::EXECUTION_IMPORTANT_DATE,
             Self::EXECUTION_FOCUS_SESSION,
+            Self::EXECUTION_MEMO,
+            Self::EXECUTION_MEMO_TAG,
+            Self::EXECUTION_MEMO_TAG_RELATION,
             Self::EXECUTION_REMINDER,
             Self::EXECUTION_COMPLETION_RESULT,
             Self::EXECUTION_ENTITY_LINK,
+            Self::TRAVEL_TRIP,
+            Self::TRAVEL_PLACE,
+            Self::TRAVEL_VISIT,
+            Self::TRAVEL_PHOTO_LINK,
             Self::FILE_METADATA,
             Self::ENTITY_LINK,
             Self::USER_PREFERENCE,

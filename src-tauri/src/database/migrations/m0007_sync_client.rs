@@ -182,11 +182,6 @@ impl Migration for M0007SyncClient {
             "note_folders",
             "note_tags",
             "notes",
-            "english_learning_records",
-            "english_highlights",
-            "english_notes",
-            "english_vocabulary",
-            "english_ai_analysis",
             "workouts",
             "workout_imports",
             "training_notes",
@@ -223,7 +218,7 @@ mod tests {
     use super::*;
     use crate::database::migration_runner::{run, Migration};
     use crate::database::migrations::{
-        M0001Framework, M0002Finance, M0003HabitsReviews, M0004Notes, M0005English, M0006Workouts,
+        M0001Framework, M0002Finance, M0003HabitsReviews, M0004Notes, M0006Workouts,
     };
     use rusqlite::Connection;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -244,7 +239,6 @@ mod tests {
             Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
             Box::new(M0004Notes),
-            Box::new(M0005English),
             Box::new(M0006Workouts),
             Box::new(M0007SyncClient),
         ];
