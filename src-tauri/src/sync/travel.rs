@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use rusqlite::{
     params, params_from_iter,
     types::{Value as SqlValue, ValueRef},
-    Connection,
+    Connection, OptionalExtension,
 };
 use serde_json::{Map, Value};
 
