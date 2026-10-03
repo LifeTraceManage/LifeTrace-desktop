@@ -396,12 +396,13 @@ mod tests {
         assert_eq!(row.1, Some(24.4798));
         assert_eq!(row.2, Some(118.0894));
 
-        let local_photo_count: i64 = target.query_row(
-            "SELECT COUNT(*) FROM photos WHERE id='photo-not-on-target'",
+        let photos_table_count: i64 = target.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='table' AND name='photos'",
             [],
             |row| row.get(0),
         ).unwrap();
-        assert_eq!(local_photo_count, 0);
+        assert_eq!(photos_table_count, 0);
     }
 
 }
