@@ -4,6 +4,7 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
+  HardDrive,
   LocateFixed,
   LoaderCircle,
   MapPinned,
@@ -34,6 +35,7 @@ import {
   travelApi,
   type NewTravelPlace,
   type TravelPhotoCandidate,
+  type TravelOfflineMapStatus,
   type TravelPhotoLink,
   type TravelPlace,
   type TravelRoadRoute,
@@ -57,6 +59,14 @@ function dateToIso(value: string): string | null {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function formatBytes(bytes?: number | null) {
+  if (!bytes || !Number.isFinite(bytes)) return "";
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
 }
 
 function formatRoadDistance(meters: number) {
@@ -123,23 +133,36 @@ export default function TravelModule() {
   const [roadRoute, setRoadRoute] = useState<TravelRoadRoute | null>(null);
   const [roadRouteLoading, setRoadRouteLoading] = useState(false);
   const [roadRouteError, setRoadRouteError] = useState("");
+  const [offlineMapStatus, setOfflineMapStatus] = useState<TravelOfflineMapStatus>({
+    available: false,
+  });
+  const [offlineMapBusy, setOfflineMapBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, nextPlaces, nextTrips, nextVisits, nextPhotoLinks] = await Promise.all([
+      const [
+        nextSummary,
+        nextPlaces,
+        nextTrips,
+        nextVisits,
+        nextPhotoLinks,
+        nextOfflineMapStatus,
+      ] = await Promise.all([
         travelApi.summary(),
         travelApi.places.list(),
         travelApi.trips.list(),
         travelApi.visits.list(),
         travelApi.photoLinks.list(),
+        travelApi.offlineMap.status().catch(() => ({ available: false })),
       ]);
       setSummary(nextSummary);
       setPlaces(nextPlaces);
       setTrips(nextTrips);
       setVisits(nextVisits);
       setPhotoLinks(nextPhotoLinks);
+      setOfflineMapStatus(nextOfflineMapStatus);
       setSelected((current) => current ? nextPlaces.find((item) => item.id === current.id) ?? null : null);
       setSelectedPhoto((current) => current ? nextPhotoLinks.find((item) => item.id === current.id) ?? null : null);
       setSelectedTripId((current) => {
@@ -154,6 +177,56 @@ export default function TravelModule() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const refreshOfflineMapStatus = async () => {
+    try {
+      setOfflineMapStatus(await travelApi.offlineMap.status());
+    } catch {
+      setOfflineMapStatus({ available: false });
+    }
+  };
+
+  const installOfflineMap = async () => {
+    const api = window.travelOfflineMapApi;
+    if (!api) {
+      setError("离线地图文件导入只在 Desktop 应用中可用");
+      return;
+    }
+    setOfflineMapBusy(true);
+    setError("");
+    try {
+      const result = await api.chooseAndInstall();
+      if (result.canceled) return;
+      if (!result.ok) throw new Error(result.error || "离线地图导入失败");
+      await refreshOfflineMapStatus();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "离线地图导入失败");
+    } finally {
+      setOfflineMapBusy(false);
+    }
+  };
+
+  const removeOfflineMap = async () => {
+    const api = window.travelOfflineMapApi;
+    if (!api) {
+      setError("离线地图管理只在 Desktop 应用中可用");
+      return;
+    }
+    if (!window.confirm("移除 LifeTrace 已复制的离线地图？原始 PMTiles 文件不会被删除。")) {
+      return;
+    }
+    setOfflineMapBusy(true);
+    setError("");
+    try {
+      const result = await api.remove();
+      if (!result.ok) throw new Error(result.error || "离线地图移除失败");
+      await refreshOfflineMapStatus();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "离线地图移除失败");
+    } finally {
+      setOfflineMapBusy(false);
+    }
+  };
 
   const resolvePlaceCoordinates = (latitude: number, longitude: number) => {
     const requestId = ++geocodeRequestRef.current;
@@ -612,6 +685,34 @@ export default function TravelModule() {
           </button>
         </div>
         <div className="lt-travel-actions">
+          <div className="lt-travel-offline-actions">
+            <button
+              type="button"
+              className={offlineMapStatus.available ? "offline-active" : ""}
+              disabled={offlineMapBusy}
+              onClick={() => void installOfflineMap()}
+              title={
+                offlineMapStatus.available
+                  ? `已启用本机 PMTiles ${formatBytes(offlineMapStatus.sizeBytes)}；点击可更换`
+                  : "导入 .pmtiles 文件作为离线底图"
+              }
+            >
+              {offlineMapBusy ? <LoaderCircle className="spin" /> : <HardDrive />}
+              {offlineMapStatus.available ? "更换离线地图" : "离线地图"}
+            </button>
+            {offlineMapStatus.available ? (
+              <button
+                type="button"
+                className="offline-remove"
+                disabled={offlineMapBusy}
+                onClick={() => void removeOfflineMap()}
+                aria-label="移除离线地图"
+                title="移除 LifeTrace 已复制的离线地图"
+              >
+                <X />
+              </button>
+            ) : null}
+          </div>
           <button type="button" onClick={() => {
             geocodeRequestRef.current += 1;
             setGeocodeStatus("idle");
@@ -700,6 +801,11 @@ export default function TravelModule() {
             <TravelStatsView stats={insightStats} />
           ) : (
             <TravelMapLibre
+              key={
+                offlineMapStatus.available
+                  ? `offline-${offlineMapStatus.modifiedAtMillis ?? 0}-${offlineMapStatus.sizeBytes ?? 0}`
+                  : "online"
+              }
               places={filteredPlaces}
               visits={visits}
               photoLinks={filteredPhotoLinks}
@@ -707,6 +813,7 @@ export default function TravelModule() {
               selectedPhotoLinkId={selectedPhoto?.id}
               routeTripId={mode === "route" ? selectedTripId : null}
               routeCoordinates={mode === "route" ? roadRoute?.coordinates : null}
+              offlineMapStatus={offlineMapStatus}
               showPhotos={mode === "photos"}
               onSelectPlace={(place) => {
                 setSelected(place);
