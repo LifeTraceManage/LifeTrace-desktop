@@ -11,7 +11,7 @@ use crate::database::repositories::travel::{
     self, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
 };
 
-use super::AppState;
+use super::{photo, AppState};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -176,6 +176,9 @@ pub async fn list_photo_candidates(
         Ok(value) => value,
         Err(_) => return lock_error(),
     };
+    // Gradually enrich historical local photos without a one-time blocking migration.
+    // New imports already persist EXIF metadata in the photo table.
+    let _ = photo::backfill_exif_metadata(&connection, &state.data_dir, 24);
     match travel::list_photo_candidates(&connection, query.limit.unwrap_or(120)) {
         Ok(value) => Json(value).into_response(),
         Err(error) => travel_error(error),
