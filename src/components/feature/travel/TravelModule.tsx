@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   Camera,
+  ChevronDown,
+  ChevronUp,
   MapPinned,
+  Pencil,
   Plane,
   Plus,
   Route,
@@ -58,6 +61,8 @@ export default function TravelModule() {
   const [selectedTripId, setSelectedTripId] = useState("");
   const [mode, setMode] = useState<TravelMode>("map");
   const [panel, setPanel] = useState<Panel>("none");
+  const [editingPlaceId, setEditingPlaceId] = useState("");
+  const [editingTripId, setEditingTripId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoPickerLoading, setPhotoPickerLoading] = useState(false);
@@ -107,7 +112,23 @@ export default function TravelModule() {
   useEffect(() => { void load(); }, [load]);
 
   const openPlaceAt = (latitude: number, longitude: number) => {
+    setEditingPlaceId("");
     setDraftPlace({ name: "", placeType: "custom", latitude, longitude });
+    setPanel("place");
+  };
+
+  const openEditPlace = (place: TravelPlace) => {
+    setEditingPlaceId(place.id);
+    setDraftPlace({
+      name: place.name,
+      country: place.country,
+      countryCode: place.countryCode,
+      province: place.province,
+      city: place.city,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      placeType: place.placeType,
+    });
     setPanel("place");
   };
 
@@ -116,13 +137,17 @@ export default function TravelModule() {
     setSaving(true);
     setError("");
     try {
-      const created = await travelApi.places.create({
+      const payload = {
         ...draftPlace,
         name: draftPlace.name.trim(),
         city: draftPlace.city?.trim() || draftPlace.name.trim(),
-      });
+      };
+      const saved = editingPlaceId
+        ? await travelApi.places.update(editingPlaceId, payload)
+        : await travelApi.places.create(payload);
       await load();
-      setSelected(created);
+      setSelected(saved);
+      setEditingPlaceId("");
       setMode("map");
       setPanel("none");
     } catch (cause) {
@@ -132,17 +157,37 @@ export default function TravelModule() {
     }
   };
 
+  const openNewTrip = () => {
+    setEditingTripId("");
+    setTripTitle("");
+    setTripStartDate("");
+    setTripEndDate("");
+    setPanel("trip");
+  };
+
+  const openEditTrip = (trip: TravelTrip) => {
+    setEditingTripId(trip.id);
+    setTripTitle(trip.title);
+    setTripStartDate(trip.startAt ? trip.startAt.slice(0, 10) : "");
+    setTripEndDate(trip.endAt ? trip.endAt.slice(0, 10) : "");
+    setPanel("trip");
+  };
+
   const createTrip = async () => {
     if (!tripTitle.trim()) return;
     setSaving(true);
     setError("");
     try {
-      const created = await travelApi.trips.create({
+      const payload = {
         title: tripTitle.trim(),
         startAt: dateToIso(tripStartDate),
         endAt: dateToIso(tripEndDate),
-      });
-      setSelectedTripId(created.id);
+      };
+      const saved = editingTripId
+        ? await travelApi.trips.update(editingTripId, payload)
+        : await travelApi.trips.create(payload);
+      setSelectedTripId(saved.id);
+      setEditingTripId("");
       setTripTitle("");
       setTripStartDate("");
       setTripEndDate("");
@@ -225,6 +270,69 @@ export default function TravelModule() {
     }
   };
 
+  const deleteSelectedPlace = async () => {
+    if (!selected || !window.confirm(`删除地点“${selected.name}”？`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await travelApi.places.remove(selected.id);
+      setSelected(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "地点删除失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteSelectedTrip = async () => {
+    if (!selectedTrip || !window.confirm(`删除旅行“${selectedTrip.title}”？访问记录和照片会保留，只解除旅行归属。`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await travelApi.trips.remove(selectedTrip.id);
+      setSelectedTripId("");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "旅行删除失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteVisit = async (visit: TravelVisit) => {
+    if (!window.confirm(`删除 ${visit.placeName} 的这次到访记录？`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await travelApi.visits.remove(visit.id);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "访问记录删除失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const moveVisit = async (visitId: string, direction: -1 | 1) => {
+    if (!selectedTrip) return;
+    const ordered = selectedTripVisits.map((visit) => visit.id);
+    const index = ordered.indexOf(visitId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= ordered.length) return;
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    setSaving(true);
+    setError("");
+    try {
+      await travelApi.trips.reorder(selectedTrip.id, ordered);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "路线顺序保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const selectedVisits = useMemo(
     () => selected ? sortVisits(visits.filter((visit) => visit.placeId === selected.id)) : [],
     [selected, visits],
@@ -270,12 +378,13 @@ export default function TravelModule() {
         </div>
         <div className="lt-travel-actions">
           <button type="button" onClick={() => {
+            setEditingPlaceId("");
             setDraftPlace({ name: "", placeType: "custom" });
             setPanel("place");
           }}>
             <Plus />添加地点
           </button>
-          <button type="button" className="primary" onClick={() => setPanel("trip")}>
+          <button type="button" className="primary" onClick={openNewTrip}>
             <Plus />新建旅行
           </button>
         </div>
@@ -320,7 +429,7 @@ export default function TravelModule() {
             <div className="lt-travel-trip-panel">
               <div className="lt-travel-panel-heading">
                 <div><span>Trips</span><h2>旅行</h2><p>把多次访问组织成一次完整行程。</p></div>
-                <button type="button" onClick={() => setPanel("trip")}><Plus /></button>
+                <button type="button" onClick={openNewTrip}><Plus /></button>
               </div>
               <div className="lt-travel-trip-list">
                 {trips.length ? trips.map((trip) => (
@@ -340,7 +449,11 @@ export default function TravelModule() {
                   <h3>{selectedTrip.title}</h3>
                   <p>{selectedTrip.description || "这次旅行还没有备注。"}</p>
                   <div><span>{selectedTripVisits.length}</span><small>已记录站点</small></div>
-                  <button type="button" onClick={() => setMode("route")}><Route />查看路线</button>
+                  <div className="lt-travel-trip-actions">
+                    <button type="button" onClick={() => setMode("route")}><Route />查看路线</button>
+                    <button type="button" onClick={() => openEditTrip(selectedTrip)}><Pencil />编辑</button>
+                    <button type="button" className="danger" disabled={saving} onClick={() => void deleteSelectedTrip()}><Trash2 />删除</button>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -401,6 +514,10 @@ export default function TravelModule() {
                       >
                         <b>{index + 1}</b>
                         <span><strong>{visit.placeName}</strong><small>{shortDate(visit.arrivedAt)}</small></span>
+                        <i className="lt-travel-route-order" onClick={(event) => event.stopPropagation()}>
+                          <button type="button" disabled={saving || index === 0} onClick={() => void moveVisit(visit.id, -1)} aria-label="上移"><ChevronUp /></button>
+                          <button type="button" disabled={saving || index === selectedTripVisits.length - 1} onClick={() => void moveVisit(visit.id, 1)} aria-label="下移"><ChevronDown /></button>
+                        </i>
                       </button>
                     )) : <p className="empty">这次旅行还没有站点。在地点详情里点击“记录这次到访”，并选择这次旅行。</p>}
                   </div>
@@ -416,6 +533,10 @@ export default function TravelModule() {
                   <p>{[selected.city, selected.province, selected.country].filter(Boolean).join(" · ") || "尚未补充地区信息"}</p>
                 </div>
                 <button type="button" aria-label="关闭地点详情" onClick={() => setSelected(null)}><X /></button>
+              </div>
+              <div className="lt-travel-detail-actions">
+                <button type="button" onClick={() => openEditPlace(selected)}><Pencil />编辑地点</button>
+                <button type="button" className="danger" disabled={saving} onClick={() => void deleteSelectedPlace()}><Trash2 />删除</button>
               </div>
               <div className="lt-travel-place-metrics">
                 <span><strong>{selected.visitCount}</strong><small>访问次数</small></span>
@@ -451,6 +572,7 @@ export default function TravelModule() {
                     <span>{shortDate(visit.arrivedAt)}</span>
                     <strong>{trips.find((trip) => trip.id === visit.tripId)?.title || "独立足迹"}</strong>
                     {visit.note ? <p>{visit.note}</p> : null}
+                    <button type="button" disabled={saving} onClick={() => void deleteVisit(visit)}><Trash2 />删除记录</button>
                   </article>
                 )) : <p className="empty">还没有访问记录，地点已经保存到足迹库。</p>}
               </div>
@@ -478,8 +600,8 @@ export default function TravelModule() {
               <div>
                 <span>Travel</span>
                 <h2>
-                  {panel === "place" ? "添加地点"
-                    : panel === "trip" ? "新建旅行"
+                  {panel === "place" ? (editingPlaceId ? "编辑地点" : "添加地点")
+                    : panel === "trip" ? (editingTripId ? "编辑旅行" : "新建旅行")
                       : panel === "photo" ? "关联照片"
                         : "记录到访"}
                 </h2>
@@ -495,7 +617,7 @@ export default function TravelModule() {
                   <label>经度<input type="number" step="0.00001" value={draftPlace.longitude ?? ""} onChange={(event) => setDraftPlace((value) => ({ ...value, longitude: event.target.value === "" ? null : Number(event.target.value) }))} /></label>
                 </div>
                 <button type="button" className="primary" disabled={saving || !draftPlace.name.trim()} onClick={() => void createPlace()}>
-                  {saving ? "保存中…" : "保存地点"}
+                  {saving ? "保存中…" : editingPlaceId ? "保存修改" : "保存地点"}
                 </button>
               </div>
             ) : panel === "trip" ? (
@@ -506,7 +628,7 @@ export default function TravelModule() {
                   <label>结束日期<input type="date" value={tripEndDate} onChange={(event) => setTripEndDate(event.target.value)} /></label>
                 </div>
                 <button type="button" className="primary" disabled={saving || !tripTitle.trim()} onClick={() => void createTrip()}>
-                  {saving ? "创建中…" : "创建旅行"}
+                  {saving ? "保存中…" : editingTripId ? "保存修改" : "创建旅行"}
                 </button>
               </div>
             ) : panel === "photo" ? (
