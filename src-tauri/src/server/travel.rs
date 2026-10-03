@@ -6,6 +6,12 @@ use axum::{
 };
 use serde::Deserialize;
 use serde::Serialize;
+use std::{
+    collections::HashMap,
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::database::repositories::travel::{
     self, AssignPhotoPlace, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
@@ -31,6 +37,186 @@ pub struct VisitQuery {
 #[serde(rename_all = "camelCase")]
 pub struct PhotoCandidateQuery {
     pub limit: Option<i64>,
+}
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseGeocodeQuery {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseGeocodeResult {
+    pub name: Option<String>,
+    pub city: Option<String>,
+    pub province: Option<String>,
+    pub country: Option<String>,
+    pub country_code: Option<String>,
+    pub display_name: Option<String>,
+    pub attribution: &'static str,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct NominatimAddress {
+    road: Option<String>,
+    pedestrian: Option<String>,
+    neighbourhood: Option<String>,
+    suburb: Option<String>,
+    city: Option<String>,
+    town: Option<String>,
+    village: Option<String>,
+    municipality: Option<String>,
+    county: Option<String>,
+    state_district: Option<String>,
+    state: Option<String>,
+    region: Option<String>,
+    country: Option<String>,
+    country_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct NominatimReverse {
+    name: Option<String>,
+    display_name: Option<String>,
+    #[serde(default)]
+    address: NominatimAddress,
+}
+
+#[derive(Default)]
+struct GeocoderState {
+    last_request: Option<Instant>,
+    cache: HashMap<String, ReverseGeocodeResult>,
+}
+
+struct ReverseGeocoder {
+    client: reqwest::Client,
+    endpoint: String,
+    state: AsyncMutex<GeocoderState>,
+}
+
+static REVERSE_GEOCODER: OnceLock<ReverseGeocoder> = OnceLock::new();
+
+fn reverse_geocoder() -> &'static ReverseGeocoder {
+    REVERSE_GEOCODER.get_or_init(|| {
+        let endpoint = std::env::var("LIFETRACE_TRAVEL_GEOCODER_URL")
+            .unwrap_or_else(|_| "https://nominatim.openstreetmap.org/reverse".to_owned());
+        let user_agent = format!(
+            "LifeTraceDesktop/{} (+https://github.com/LifeTraceManage/LifeTrace-desktop)",
+            env!("CARGO_PKG_VERSION")
+        );
+        let client = reqwest::Client::builder()
+            .user_agent(user_agent)
+            .timeout(Duration::from_secs(8))
+            .build()
+            .expect("build travel reverse geocoder client");
+        ReverseGeocoder {
+            client,
+            endpoint,
+            state: AsyncMutex::new(GeocoderState::default()),
+        }
+    })
+}
+
+fn clean_text(value: Option<String>) -> Option<String> {
+    value.map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
+}
+
+fn parse_reverse_result(value: NominatimReverse) -> ReverseGeocodeResult {
+    let address = value.address;
+    let city = clean_text(
+        address.city
+            .or(address.town)
+            .or(address.village)
+            .or(address.municipality)
+            .or(address.county.clone()),
+    );
+    let province = clean_text(
+        address.state
+            .or(address.state_district)
+            .or(address.region),
+    );
+    let country = clean_text(address.country);
+    let country_code = clean_text(address.country_code)
+        .map(|value| value.to_ascii_uppercase());
+    let name = clean_text(value.name)
+        .or_else(|| clean_text(address.neighbourhood))
+        .or_else(|| clean_text(address.suburb))
+        .or_else(|| city.clone())
+        .or_else(|| clean_text(address.road))
+        .or_else(|| clean_text(address.pedestrian));
+
+    ReverseGeocodeResult {
+        name,
+        city,
+        province,
+        country,
+        country_code,
+        display_name: clean_text(value.display_name),
+        attribution: "© OpenStreetMap contributors",
+    }
+}
+
+async fn reverse_geocode_lookup(
+    latitude: f64,
+    longitude: f64,
+) -> Result<ReverseGeocodeResult, String> {
+    if !(-90.0..=90.0).contains(&latitude) {
+        return Err("纬度必须位于 -90 到 90 之间".to_owned());
+    }
+    if !(-180.0..=180.0).contains(&longitude) {
+        return Err("经度必须位于 -180 到 180 之间".to_owned());
+    }
+
+    let geocoder = reverse_geocoder();
+    let key = format!("{latitude:.5},{longitude:.5}");
+    let mut state = geocoder.state.lock().await;
+    if let Some(cached) = state.cache.get(&key) {
+        return Ok(cached.clone());
+    }
+
+    if let Some(last_request) = state.last_request {
+        let elapsed = last_request.elapsed();
+        if elapsed < Duration::from_secs(1) {
+            tokio::time::sleep(Duration::from_secs(1) - elapsed).await;
+        }
+    }
+
+    let response = geocoder.client
+        .get(&geocoder.endpoint)
+        .query(&[
+            ("format", "jsonv2".to_owned()),
+            ("addressdetails", "1".to_owned()),
+            ("zoom", "18".to_owned()),
+            ("accept-language", "zh-CN,zh,en".to_owned()),
+            ("lat", latitude.to_string()),
+            ("lon", longitude.to_string()),
+        ])
+        .send()
+        .await
+        .map_err(|error| format!("地点自动识别请求失败: {error}"))?;
+
+    state.last_request = Some(Instant::now());
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err("该坐标附近没有可识别的地点".to_owned());
+    }
+    if !response.status().is_success() {
+        return Err(format!("地点自动识别服务返回 {}", response.status()));
+    }
+
+    let payload = response
+        .json::<NominatimReverse>()
+        .await
+        .map_err(|error| format!("地点自动识别结果解析失败: {error}"))?;
+    let result = parse_reverse_result(payload);
+    if state.cache.len() >= 2048 {
+        state.cache.clear();
+    }
+    state.cache.insert(key, result.clone());
+    Ok(result)
 }
 
 fn lock_error() -> Response {
@@ -72,6 +258,15 @@ fn travel_error(message: String) -> Response {
         }),
     )
         .into_response()
+}
+
+pub async fn reverse_geocode(
+    Query(query): Query<ReverseGeocodeQuery>,
+) -> Response {
+    match reverse_geocode_lookup(query.latitude, query.longitude).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
 }
 
 pub async fn summary(State(state): State<AppState>) -> Response {
@@ -339,5 +534,46 @@ pub async fn reorder_visits(
     match travel::reorder_visits(&connection, &id, input) {
         Ok(value) => Json(value).into_response(),
         Err(error) => travel_error(error),
+    }
+}
+
+
+#[cfg(test)]
+mod reverse_geocode_tests {
+    use super::*;
+
+    #[test]
+    fn reverse_geocode_parser_uses_locality_fallbacks() {
+        let result = parse_reverse_result(NominatimReverse {
+            name: None,
+            display_name: Some("鼓浪屿, 厦门市, 福建省, 中国".to_owned()),
+            address: NominatimAddress {
+                neighbourhood: Some("鼓浪屿".to_owned()),
+                city: Some("厦门市".to_owned()),
+                state: Some("福建省".to_owned()),
+                country: Some("中国".to_owned()),
+                country_code: Some("cn".to_owned()),
+                ..Default::default()
+            },
+        });
+        assert_eq!(result.name.as_deref(), Some("鼓浪屿"));
+        assert_eq!(result.city.as_deref(), Some("厦门市"));
+        assert_eq!(result.province.as_deref(), Some("福建省"));
+        assert_eq!(result.country.as_deref(), Some("中国"));
+        assert_eq!(result.country_code.as_deref(), Some("CN"));
+    }
+
+    #[test]
+    fn reverse_geocode_parser_falls_back_to_road() {
+        let result = parse_reverse_result(NominatimReverse {
+            address: NominatimAddress {
+                road: Some("环岛南路".to_owned()),
+                country_code: Some("CN".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        assert_eq!(result.name.as_deref(), Some("环岛南路"));
+        assert_eq!(result.country_code.as_deref(), Some("CN"));
     }
 }
