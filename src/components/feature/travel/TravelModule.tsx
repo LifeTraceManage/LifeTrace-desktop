@@ -15,6 +15,16 @@ import {
 } from "lucide-react";
 import TravelMapLibre from "@/src/components/feature/travel/TravelMapLibre";
 import {
+  TravelStatsView,
+  TravelTimelineView,
+} from "@/src/components/feature/travel/TravelInsightsViews";
+import {
+  buildTravelTimeline,
+  filterTravelData,
+  summarizeTravel,
+  travelYear,
+} from "@/src/components/feature/travel/travelInsights";
+import {
   travelApi,
   type NewTravelPlace,
   type TravelPhotoCandidate,
@@ -28,7 +38,7 @@ import {
 const EMPTY_SUMMARY: TravelSummary = { placeCount: 0, visitCount: 0, tripCount: 0, photoCount: 0, cityCount: 0 };
 
 type Panel = "none" | "place" | "trip" | "visit" | "photo";
-type TravelMode = "map" | "trips" | "photos" | "route";
+type TravelMode = "map" | "trips" | "photos" | "route" | "timeline" | "stats";
 
 function shortDate(value?: string | null) {
   if (!value) return "未记录";
@@ -40,14 +50,6 @@ function dateToIso(value: string): string | null {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function travelYear(value?: string | null) {
-  if (!value) return null;
-  const direct = value.match(/^(\d{4})/);
-  if (direct) return direct[1];
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : String(date.getFullYear());
 }
 
 function sortVisits(values: TravelVisit[]) {
@@ -405,61 +407,29 @@ export default function TravelModule() {
     return [...years].sort((left, right) => Number(right) - Number(left));
   }, [photoLinks, trips, visits]);
 
-  const filteredTrips = useMemo(() => trips.filter((trip) => {
-    const tripVisits = visits.filter((visit) => visit.tripId === trip.id);
-    const queryValues = [
-      trip.title,
-      trip.description,
-      ...tripVisits.map((visit) => visit.placeName),
-    ];
-    const queryMatches = !normalizedSearch || queryValues.some((value) =>
-      value?.toLocaleLowerCase().includes(normalizedSearch)
-    );
-    const yearMatches = yearFilter === "all" || [
-      trip.startAt,
-      trip.endAt,
-      ...tripVisits.flatMap((visit) => [visit.arrivedAt, visit.leftAt]),
-    ].some((value) => travelYear(value) === yearFilter);
-    return queryMatches && yearMatches;
-  }), [normalizedSearch, trips, visits, yearFilter]);
-
-  const filteredPhotoLinks = useMemo(() => photoLinks.filter((photo) => {
-    const tripTitle = photo.tripId ? trips.find((trip) => trip.id === photo.tripId)?.title : null;
-    const queryMatches = !normalizedSearch || [
-      photo.originalFileName,
-      photo.placeName,
-      tripTitle,
-    ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch));
-    const yearMatches = yearFilter === "all" || travelYear(photo.capturedAt) === yearFilter;
-    return queryMatches && yearMatches;
-  }), [normalizedSearch, photoLinks, trips, yearFilter]);
-
-  const filteredPlaces = useMemo(() => places.filter((place) => {
-    const placeVisits = visits.filter((visit) => visit.placeId === place.id);
-    const placePhotos = photoLinks.filter((photo) => photo.placeId === place.id);
-    const tripTitles = placeVisits
-      .map((visit) => visit.tripId ? trips.find((trip) => trip.id === visit.tripId)?.title : null)
-      .filter(Boolean);
-    const queryMatches = !normalizedSearch || [
-      place.name,
-      place.city,
-      place.province,
-      place.country,
-      ...tripTitles,
-      ...placePhotos.map((photo) => photo.originalFileName),
-    ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch));
-    const yearValues = [
-      ...placeVisits.flatMap((visit) => [visit.arrivedAt, visit.leftAt]),
-      ...placePhotos.map((photo) => photo.capturedAt),
-      ...placeVisits.flatMap((visit) => {
-        const trip = visit.tripId ? trips.find((item) => item.id === visit.tripId) : null;
-        return trip ? [trip.startAt, trip.endAt] : [];
-      }),
-    ];
-    const yearMatches = yearFilter === "all" || yearValues.some((value) => travelYear(value) === yearFilter);
-    return queryMatches && yearMatches;
+  const filteredData = useMemo(() => filterTravelData({
+    places,
+    trips,
+    visits,
+    photoLinks,
+    query: normalizedSearch,
+    year: yearFilter,
   }), [normalizedSearch, photoLinks, places, trips, visits, yearFilter]);
-
+  const filteredPlaces = filteredData.places;
+  const filteredTrips = filteredData.trips;
+  const filteredVisits = filteredData.visits;
+  const filteredPhotoLinks = filteredData.photoLinks;
+  const timelineItems = useMemo(() => buildTravelTimeline({
+    trips: filteredTrips,
+    visits: filteredVisits,
+    photoLinks: filteredPhotoLinks,
+  }), [filteredPhotoLinks, filteredTrips, filteredVisits]);
+  const insightStats = useMemo(() => summarizeTravel({
+    places: filteredPlaces,
+    trips: filteredTrips,
+    visits: filteredVisits,
+    photoLinks: filteredPhotoLinks,
+  }), [filteredPhotoLinks, filteredPlaces, filteredTrips, filteredVisits]);
   const hasFilters = Boolean(normalizedSearch) || yearFilter !== "all";
 
   const selectedVisits = useMemo(
@@ -503,6 +473,12 @@ export default function TravelModule() {
           </button>
           <button type="button" className={mode === "route" ? "active" : ""} onClick={() => setMode("route")}>
             <Route />路线
+          </button>
+          <button type="button" className={mode === "timeline" ? "active" : ""} onClick={() => setMode("timeline")}>
+            <CalendarDays />时间线
+          </button>
+          <button type="button" className={mode === "stats" ? "active" : ""} onClick={() => setMode("stats")}>
+            <MapPinned />统计
           </button>
         </div>
         <div className="lt-travel-actions">
@@ -560,10 +536,28 @@ export default function TravelModule() {
 
       {error ? <div className="lt-travel-error" role="alert">{error}</div> : null}
 
-      <div className="lt-travel-layout">
+      <div className={`lt-travel-layout${mode === "timeline" || mode === "stats" ? " insights" : ""}`}>
         <div className="lt-travel-canvas">
           {loading ? (
             <div className="lt-travel-loading">正在读取本机旅行足迹…</div>
+          ) : mode === "timeline" ? (
+            <TravelTimelineView
+              items={timelineItems}
+              places={filteredPlaces}
+              trips={filteredTrips}
+              photoLinks={filteredPhotoLinks}
+              onSelectPlace={(place) => {
+                setSelected(place);
+                setMode("map");
+              }}
+              onSelectTrip={(trip) => selectTrip(trip, "trips")}
+              onSelectPhoto={(photo) => {
+                setSelectedPhoto(photo);
+                setMode("photos");
+              }}
+            />
+          ) : mode === "stats" ? (
+            <TravelStatsView stats={insightStats} />
           ) : (
             <TravelMapLibre
               places={filteredPlaces}
@@ -584,15 +578,17 @@ export default function TravelModule() {
               onCreateAt={openPlaceAt}
             />
           )}
-          <div className="lt-travel-stats">
-            <span><strong>{summary.cityCount}</strong><small>城市</small></span>
-            <span><strong>{summary.tripCount}</strong><small>旅行</small></span>
-            <span><strong>{summary.visitCount}</strong><small>访问</small></span>
-            <span><strong>{summary.photoCount}</strong><small>照片</small></span>
-          </div>
+          {mode !== "timeline" && mode !== "stats" ? (
+            <div className="lt-travel-stats">
+              <span><strong>{summary.cityCount}</strong><small>城市</small></span>
+              <span><strong>{summary.tripCount}</strong><small>旅行</small></span>
+              <span><strong>{summary.visitCount}</strong><small>访问</small></span>
+              <span><strong>{summary.photoCount}</strong><small>照片</small></span>
+            </div>
+          ) : null}
         </div>
 
-        <aside className="lt-travel-detail">
+        {mode !== "timeline" && mode !== "stats" ? <aside className="lt-travel-detail">
           {mode === "trips" ? (
             <div className="lt-travel-trip-panel">
               <div className="lt-travel-panel-heading">
@@ -769,7 +765,7 @@ export default function TravelModule() {
               ))}
             </div>
           )}
-        </aside>
+        </aside> : null}
       </div>
 
       {panel !== "none" ? (
