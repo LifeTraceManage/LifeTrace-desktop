@@ -203,12 +203,7 @@ fn gps_coordinate(value: &ExifValue, reference: &str) -> Option<f64> {
     Some(coordinate * sign)
 }
 
-fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
-    let mut cursor = Cursor::new(bytes);
-    let Ok(exif) = ExifReader::new().read_from_container(&mut cursor) else {
-        return PhotoExifMetadata::default();
-    };
-
+fn photo_exif_metadata(exif: &exif::Exif) -> PhotoExifMetadata {
     let captured_at = exif
         .get_field(Tag::DateTimeOriginal, In::PRIMARY)
         .or_else(|| exif.get_field(Tag::DateTime, In::PRIMARY))
@@ -224,11 +219,19 @@ fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
 
     let latitude = exif
         .get_field(Tag::GPSLatitude, In::PRIMARY)
-        .and_then(|field| latitude_ref.as_deref().and_then(|reference| gps_coordinate(&field.value, reference)))
+        .and_then(|field| {
+            latitude_ref
+                .as_deref()
+                .and_then(|reference| gps_coordinate(&field.value, reference))
+        })
         .filter(|value| (-90.0..=90.0).contains(value));
     let longitude = exif
         .get_field(Tag::GPSLongitude, In::PRIMARY)
-        .and_then(|field| longitude_ref.as_deref().and_then(|reference| gps_coordinate(&field.value, reference)))
+        .and_then(|field| {
+            longitude_ref
+                .as_deref()
+                .and_then(|reference| gps_coordinate(&field.value, reference))
+        })
         .filter(|value| (-180.0..=180.0).contains(value));
 
     PhotoExifMetadata {
@@ -236,6 +239,25 @@ fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
         latitude,
         longitude,
     }
+}
+
+fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
+    let mut cursor = Cursor::new(bytes);
+    let Ok(exif) = ExifReader::new().read_from_container(&mut cursor) else {
+        return PhotoExifMetadata::default();
+    };
+    photo_exif_metadata(&exif)
+}
+
+fn read_exif_metadata_from_path(path: &Path) -> PhotoExifMetadata {
+    let Ok(file) = std::fs::File::open(path) else {
+        return PhotoExifMetadata::default();
+    };
+    let mut reader = std::io::BufReader::new(file);
+    let Ok(exif) = ExifReader::new().read_from_container(&mut reader) else {
+        return PhotoExifMetadata::default();
+    };
+    photo_exif_metadata(&exif)
 }
 
 #[derive(Debug, Clone)]
@@ -307,14 +329,11 @@ async fn index_exif_batch(state: &AppState, limit: i64) -> Result<usize, String>
     let mut inspected = Vec::with_capacity(candidates.len());
     for candidate in candidates {
         let path = state.data_dir.join("photos").join(&candidate.relative_path);
-        let metadata = match fs::read(path).await {
-            Ok(bytes) => tokio::task::spawn_blocking(move || read_exif_metadata(&bytes))
-                .await
-                .map_err(|error| format!("EXIF 解析任务失败：{error}"))?,
-            // A permanently missing/corrupt local file must not pin the background
-            // indexer to the same batch forever. Mark the scan attempt complete.
-            Err(_) => PhotoExifMetadata::default(),
-        };
+        let metadata = tokio::task::spawn_blocking(move || read_exif_metadata_from_path(&path))
+            .await
+            .map_err(|error| format!("EXIF 解析任务失败：{error}"))?;
+        // A permanently missing/corrupt local file resolves to empty metadata and is
+        // still marked scanned below, so it cannot pin the indexer to one batch.
         inspected.push((candidate.id, metadata));
     }
 
