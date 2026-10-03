@@ -13,6 +13,7 @@ const requiredPackages = [
   "@codemirror/autocomplete",
   "@codemirror/lang-markdown",
   "@codemirror/view",
+  "maplibre-gl",
 ];
 
 const dependenciesReady = requiredPackages.every((packageName) =>
