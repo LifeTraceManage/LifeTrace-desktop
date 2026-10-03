@@ -226,3 +226,11 @@
 .lt-travel-road-routing>button svg{width:15px;height:15px}
 .lt-travel-road-routing>p{margin:7px 2px 0;font-size:9px;line-height:1.5;opacity:.58}
 .lt-travel-road-routing>p.error{color:#965341;opacity:.9}
+
+.lt-travel-offline-actions{display:flex;align-items:center;gap:4px}
+.lt-travel-actions .lt-travel-offline-actions>button{min-width:0}
+.lt-travel-actions .lt-travel-offline-actions>button.offline-active{background:#edf5f0;border-color:#a9c2b5;color:#315c49}
+.lt-travel-actions .lt-travel-offline-actions>button.offline-remove{width:34px;padding:0;justify-content:center;background:#fff8f6;border-color:#ead5cf;color:#8a4937}
+.lt-travel-actions .lt-travel-offline-actions>button.offline-remove svg{width:14px;height:14px}
+.lt-travel-map-hint strong{font-weight:750;color:#315c49}
+@media(max-width:900px){.lt-travel-offline-actions{width:100%}.lt-travel-offline-actions>button:first-child{flex:1}}
