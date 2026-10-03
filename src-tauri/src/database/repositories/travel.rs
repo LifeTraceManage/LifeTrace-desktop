@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -457,4 +459,246 @@ pub fn delete_photo_link(connection: &Connection, id: &str) -> Result<(), String
         return Err("照片关联不存在".to_owned());
     }
     Ok(())
+}
+
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderVisits {
+    pub visit_ids: Vec<String>,
+}
+
+pub fn update_place(
+    connection: &Connection,
+    id: &str,
+    input: NewPlace,
+) -> Result<TravelPlace, String> {
+    let name = input.name.trim();
+    if name.is_empty() {
+        return Err("地点名称不能为空".to_owned());
+    }
+    validate_coordinates(input.latitude, input.longitude)?;
+    let kind = input.place_type.unwrap_or_else(|| "custom".to_owned());
+    let allowed = ["country","city","attraction","restaurant","hotel","station","airport","custom"];
+    if !allowed.contains(&kind.as_str()) {
+        return Err("地点类型不受支持".to_owned());
+    }
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let changed = connection.execute(
+        "UPDATE travel_places
+         SET name=?1,country=?2,country_code=?3,province=?4,city=?5,latitude=?6,longitude=?7,
+             place_type=?8,updated_at=?9,version=version+1
+         WHERE id=?10 AND user_id=?11 AND deleted_at IS NULL",
+        params![
+            name,input.country,input.country_code,input.province,input.city,input.latitude,
+            input.longitude,kind,stamp,id,user_id
+        ],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("地点不存在".to_owned());
+    }
+    list_places(connection)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "地点更新后无法读取".to_owned())
+}
+
+pub fn delete_place(connection: &Connection, id: &str) -> Result<(), String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let visit_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM travel_visits
+         WHERE user_id=?1 AND place_id=?2 AND deleted_at IS NULL",
+        params![user_id,id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    let photo_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM travel_photo_links
+         WHERE user_id=?1 AND place_id=?2 AND deleted_at IS NULL",
+        params![user_id,id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    if visit_count > 0 || photo_count > 0 {
+        return Err("地点仍有关联的访问记录或照片，请先移除这些关联".to_owned());
+    }
+    let stamp = now();
+    let changed = connection.execute(
+        "UPDATE travel_places
+         SET deleted_at=?1,updated_at=?1,version=version+1
+         WHERE id=?2 AND user_id=?3 AND deleted_at IS NULL",
+        params![stamp,id,user_id],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("地点不存在".to_owned());
+    }
+    Ok(())
+}
+
+pub fn update_trip(
+    connection: &Connection,
+    id: &str,
+    input: NewTrip,
+) -> Result<TravelTrip, String> {
+    let title = input.title.trim();
+    if title.is_empty() {
+        return Err("旅行标题不能为空".to_owned());
+    }
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let changed = connection.execute(
+        "UPDATE travel_trips
+         SET title=?1,start_at=?2,end_at=?3,description=?4,cover_photo_id=?5,
+             updated_at=?6,version=version+1
+         WHERE id=?7 AND user_id=?8 AND deleted_at IS NULL",
+        params![
+            title,input.start_at,input.end_at,input.description,input.cover_photo_id,
+            stamp,id,user_id
+        ],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("旅行不存在".to_owned());
+    }
+    list_trips(connection)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "旅行更新后无法读取".to_owned())
+}
+
+pub fn delete_trip(connection: &Connection, id: &str) -> Result<(), String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let exists = connection.query_row(
+        "SELECT 1 FROM travel_trips WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+        params![id,user_id],
+        |_| Ok(()),
+    ).optional().map_err(|e| e.to_string())?.is_some();
+    if !exists {
+        return Err("旅行不存在".to_owned());
+    }
+    let stamp = now();
+    let tx = connection.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE travel_visits
+         SET trip_id=NULL,sequence=NULL,updated_at=?1,version=version+1
+         WHERE user_id=?2 AND trip_id=?3 AND deleted_at IS NULL",
+        params![stamp,user_id,id],
+    ).map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE travel_photo_links
+         SET trip_id=NULL,updated_at=?1,version=version+1
+         WHERE user_id=?2 AND trip_id=?3 AND deleted_at IS NULL",
+        params![stamp,user_id,id],
+    ).map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE travel_trips
+         SET deleted_at=?1,updated_at=?1,version=version+1
+         WHERE id=?2 AND user_id=?3 AND deleted_at IS NULL",
+        params![stamp,id,user_id],
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+pub fn update_visit(
+    connection: &Connection,
+    id: &str,
+    input: NewVisit,
+) -> Result<TravelVisit, String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let place_exists = connection.query_row(
+        "SELECT 1 FROM travel_places WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+        params![input.place_id,user_id],
+        |_| Ok(()),
+    ).optional().map_err(|e| e.to_string())?.is_some();
+    if !place_exists {
+        return Err("地点不存在".to_owned());
+    }
+    if let Some(trip_id) = input.trip_id.as_deref() {
+        let trip_exists = connection.query_row(
+            "SELECT 1 FROM travel_trips WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+            params![trip_id,user_id],
+            |_| Ok(()),
+        ).optional().map_err(|e| e.to_string())?.is_some();
+        if !trip_exists {
+            return Err("旅行不存在".to_owned());
+        }
+    }
+    let stamp = now();
+    let changed = connection.execute(
+        "UPDATE travel_visits
+         SET trip_id=?1,place_id=?2,arrived_at=?3,left_at=?4,note=?5,sequence=?6,
+             updated_at=?7,version=version+1
+         WHERE id=?8 AND user_id=?9 AND deleted_at IS NULL",
+        params![
+            input.trip_id,input.place_id,input.arrived_at,input.left_at,input.note,input.sequence,
+            stamp,id,user_id
+        ],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("访问记录不存在".to_owned());
+    }
+    list_visits(connection, None, None)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "访问记录更新后无法读取".to_owned())
+}
+
+pub fn delete_visit(connection: &Connection, id: &str) -> Result<(), String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let exists = connection.query_row(
+        "SELECT 1 FROM travel_visits WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+        params![id,user_id],
+        |_| Ok(()),
+    ).optional().map_err(|e| e.to_string())?.is_some();
+    if !exists {
+        return Err("访问记录不存在".to_owned());
+    }
+    let stamp = now();
+    let tx = connection.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE travel_photo_links
+         SET visit_id=NULL,updated_at=?1,version=version+1
+         WHERE user_id=?2 AND visit_id=?3 AND deleted_at IS NULL",
+        params![stamp,user_id,id],
+    ).map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE travel_visits
+         SET deleted_at=?1,updated_at=?1,version=version+1
+         WHERE id=?2 AND user_id=?3 AND deleted_at IS NULL",
+        params![stamp,id,user_id],
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+pub fn reorder_visits(
+    connection: &Connection,
+    trip_id: &str,
+    input: ReorderVisits,
+) -> Result<Vec<TravelVisit>, String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT id FROM travel_visits
+         WHERE user_id=?1 AND trip_id=?2 AND deleted_at IS NULL"
+    ).map_err(|e| e.to_string())?;
+    let current = statement.query_map(params![user_id,trip_id], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let expected = current.iter().cloned().collect::<HashSet<_>>();
+    let requested = input.visit_ids.iter().cloned().collect::<HashSet<_>>();
+    if expected != requested || requested.len() != input.visit_ids.len() {
+        return Err("访问顺序必须完整包含该旅行的全部站点且不能重复".to_owned());
+    }
+    drop(statement);
+
+    let stamp = now();
+    let tx = connection.unchecked_transaction().map_err(|e| e.to_string())?;
+    for (index, visit_id) in input.visit_ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE travel_visits
+             SET sequence=?1,updated_at=?2,version=version+1
+             WHERE id=?3 AND user_id=?4 AND trip_id=?5 AND deleted_at IS NULL",
+            params![index as i64,stamp,visit_id,user_id,trip_id],
+        ).map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    list_visits(connection, Some(trip_id), None)
 }
