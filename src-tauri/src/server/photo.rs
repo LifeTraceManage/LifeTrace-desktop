@@ -1380,6 +1380,51 @@ mod exif_tests {
     }
 
     #[test]
+    fn ensure_schema_upgrades_legacy_photo_table_before_exif_index() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE photos(
+               id TEXT PRIMARY KEY,
+               content_hash TEXT NOT NULL UNIQUE,
+               original_file_name TEXT NOT NULL,
+               stored_file_name TEXT NOT NULL,
+               original_path TEXT NOT NULL,
+               thumbnail_path TEXT,
+               media_type TEXT NOT NULL,
+               mime_type TEXT,
+               file_size INTEGER NOT NULL,
+               width INTEGER,
+               height INTEGER,
+               duration_ms INTEGER,
+               captured_at TEXT,
+               imported_at TEXT NOT NULL,
+               processing_status TEXT NOT NULL,
+               processing_error TEXT,
+               source_device_id TEXT,
+               deleted_at TEXT
+             );"
+        ).unwrap();
+
+        ensure_schema(&connection).unwrap();
+
+        for column in ["latitude", "longitude", "exif_scanned_at"] {
+            let exists: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name=?1",
+                [column],
+                |row| row.get(0),
+            ).unwrap();
+            assert_eq!(exists, 1, "missing upgraded column {column}");
+        }
+        let index_exists: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='index' AND name='photos_exif_pending_idx'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(index_exists, 1);
+    }
+
+    #[test]
     fn apply_exif_metadata_marks_scan_complete_without_overwriting_existing_values() {
         let connection = Connection::open_in_memory().unwrap();
         ensure_schema(&connection).unwrap();
