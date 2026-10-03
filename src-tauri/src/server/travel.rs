@@ -14,7 +14,7 @@ use std::{
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::database::repositories::travel::{
-    self, AssignPhotoPlace, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
+    self, AcceptTripSuggestion, AssignPhotoPlace, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
 };
 
 use super::{photo, AppState};
@@ -329,6 +329,20 @@ pub async fn create_trip(
         Err(_) => return lock_error(),
     };
     match travel::create_trip(&connection, input) {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn create_trip_from_suggestion(
+    State(state): State<AppState>,
+    Json(input): Json<AcceptTripSuggestion>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::create_trip_from_suggestion(&connection, input) {
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
         Err(error) => travel_error(error),
     }
