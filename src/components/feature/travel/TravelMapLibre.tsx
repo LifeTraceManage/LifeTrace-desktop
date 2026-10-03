@@ -443,6 +443,9 @@ export default function TravelMapLibre({
         image.src = photo.thumbnailUrl;
         image.alt = "";
         image.loading = "lazy";
+        image.addEventListener("error", () => {
+          element.classList.add("image-error");
+        });
         element.appendChild(image);
 
         const pointer = document.createElement("span");
