@@ -18,6 +18,9 @@ type TravelMapLibreProps = {
 const DEFAULT_MAP_STYLE =
   import.meta.env.VITE_TRAVEL_MAP_STYLE_URL || "https://demotiles.maplibre.org/style.json";
 
+const PHOTO_THUMBNAIL_ZOOM = 10;
+const MAX_VISIBLE_PHOTO_MARKERS = 60;
+
 const PLACE_LAYER_IDS = [
   "travel-clusters",
   "travel-cluster-count",
@@ -202,7 +205,7 @@ function ensureTravelLayers(map: any) {
       data: { type: "FeatureCollection", features: [] },
       cluster: true,
       clusterRadius: 48,
-      clusterMaxZoom: 14,
+      clusterMaxZoom: PHOTO_THUMBNAIL_ZOOM - 1,
     });
   }
   if (!map.getLayer("travel-photo-clusters")) {
@@ -331,6 +334,10 @@ export default function TravelMapLibre({
   const selectRef = useRef(onSelectPlace);
   const selectPhotoRef = useRef(onSelectPhoto);
   const createRef = useRef(onCreateAt);
+  const showPhotosRef = useRef(showPhotos);
+  const selectedPhotoIdRef = useRef(selectedPhotoLinkId);
+  const photoMarkersRef = useRef<Map<string, { marker: any; element: HTMLButtonElement }>>(new Map());
+  const syncPhotoMarkersRef = useRef<(() => void) | null>(null);
   const [styleReady, setStyleReady] = useState(false);
   const [mapError, setMapError] = useState("");
 
@@ -342,7 +349,18 @@ export default function TravelMapLibre({
     selectRef.current = onSelectPlace;
     selectPhotoRef.current = onSelectPhoto;
     createRef.current = onCreateAt;
-  }, [onCreateAt, onSelectPhoto, onSelectPlace, photoLinks, places]);
+    showPhotosRef.current = showPhotos;
+    selectedPhotoIdRef.current = selectedPhotoLinkId;
+    syncPhotoMarkersRef.current?.();
+  }, [
+    onCreateAt,
+    onSelectPhoto,
+    onSelectPlace,
+    photoLinks,
+    places,
+    selectedPhotoLinkId,
+    showPhotos,
+  ]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -357,8 +375,102 @@ export default function TravelMapLibre({
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
 
+    const clearPhotoMarkers = () => {
+      photoMarkersRef.current.forEach(({ marker }) => marker.remove());
+      photoMarkersRef.current.clear();
+    };
+
+    const syncPhotoMarkers = () => {
+      if (!map.getLayer("travel-photo-points")) return;
+      const show = showPhotosRef.current;
+      const highZoom = map.getZoom() >= PHOTO_THUMBNAIL_ZOOM;
+      if (!show || !highZoom) {
+        clearPhotoMarkers();
+        map.setLayoutProperty(
+          "travel-photo-points",
+          "visibility",
+          show ? "visible" : "none",
+        );
+        return;
+      }
+
+      const bounds = map.getBounds();
+      const visiblePhotos = photosRef.current.filter((photo) =>
+        typeof photo.latitude === "number"
+        && typeof photo.longitude === "number"
+        && bounds.contains([photo.longitude, photo.latitude])
+      );
+
+      if (visiblePhotos.length === 0 || visiblePhotos.length > MAX_VISIBLE_PHOTO_MARKERS) {
+        clearPhotoMarkers();
+        map.setLayoutProperty("travel-photo-points", "visibility", "visible");
+        return;
+      }
+
+      map.setLayoutProperty("travel-photo-points", "visibility", "none");
+      const visibleIds = new Set(visiblePhotos.map((photo) => photo.id));
+
+      photoMarkersRef.current.forEach(({ marker }, id) => {
+        if (!visibleIds.has(id)) {
+          marker.remove();
+          photoMarkersRef.current.delete(id);
+        }
+      });
+
+      visiblePhotos.forEach((photo) => {
+        const existing = photoMarkersRef.current.get(photo.id);
+        if (existing) {
+          existing.marker.setLngLat([photo.longitude, photo.latitude]);
+          existing.element.classList.toggle(
+            "active",
+            photo.id === selectedPhotoIdRef.current,
+          );
+          return;
+        }
+
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = "lt-travel-photo-marker";
+        element.setAttribute(
+          "aria-label",
+          photo.placeName
+            ? `查看 ${photo.placeName} 的照片`
+            : `查看照片 ${photo.originalFileName}`,
+        );
+        element.classList.toggle("active", photo.id === selectedPhotoIdRef.current);
+
+        const image = document.createElement("img");
+        image.src = photo.thumbnailUrl;
+        image.alt = "";
+        image.loading = "lazy";
+        element.appendChild(image);
+
+        const pointer = document.createElement("span");
+        pointer.className = "lt-travel-photo-marker-pointer";
+        element.appendChild(pointer);
+
+        element.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const current = photosRef.current.find((item) => item.id === photo.id);
+          if (current) selectPhotoRef.current(current);
+        });
+
+        const marker = new maplibregl.Marker({
+          element,
+          anchor: "bottom",
+        })
+          .setLngLat([photo.longitude, photo.latitude])
+          .addTo(map);
+
+        photoMarkersRef.current.set(photo.id, { marker, element });
+      });
+    };
+    syncPhotoMarkersRef.current = syncPhotoMarkers;
+
     map.on("load", () => {
       ensureTravelLayers(map);
+      syncPhotoMarkers();
       setStyleReady(true);
       setMapError("");
     });
@@ -397,6 +509,8 @@ export default function TravelMapLibre({
     };
     map.on("click", "travel-clusters", expandCluster("travel-places"));
     map.on("click", "travel-photo-clusters", expandCluster("travel-photos"));
+    map.on("moveend", syncPhotoMarkers);
+    map.on("zoomend", syncPhotoMarkers);
 
     map.on("dblclick", (event: any) => {
       event.preventDefault();
@@ -408,6 +522,8 @@ export default function TravelMapLibre({
     });
 
     return () => {
+      syncPhotoMarkersRef.current = null;
+      clearPhotoMarkers();
       map.remove();
       mapRef.current = null;
     };
@@ -423,6 +539,7 @@ export default function TravelMapLibre({
     map.getSource("travel-route-stops")?.setData(route.stops);
     setLayerVisibility(map, PLACE_LAYER_IDS, !showPhotos);
     setLayerVisibility(map, PHOTO_LAYER_IDS, showPhotos);
+    syncPhotoMarkersRef.current?.();
 
     if (showPhotos) {
       const photoPoints = photoLinks.filter(
@@ -478,7 +595,9 @@ export default function TravelMapLibre({
     <div className="lt-travel-maplibre-shell">
       <div ref={containerRef} className="lt-travel-maplibre" />
       <div className="lt-travel-map-hint">
-        {showPhotos ? "照片按关联地点显示 · 点击照片点查看预览" : "双击地图添加地点 · 支持缩放、聚合与旅行路线"}
+        {showPhotos
+          ? `照片地图 · 放大到街区级显示缩略图 · 同屏最多 ${MAX_VISIBLE_PHOTO_MARKERS} 张`
+          : "双击地图添加地点 · 支持缩放、聚合与旅行路线"}
       </div>
       {mapError ? (
         <div className="lt-travel-map-warning">
