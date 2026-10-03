@@ -297,6 +297,12 @@ pub struct NewPhotoLink {
     pub captured_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignPhotoPlace {
+    pub place_id: String,
+}
+
 pub fn list_photo_candidates(
     connection: &Connection,
     limit: i64,
@@ -455,6 +461,37 @@ pub fn create_photo_link(
         .into_iter()
         .find(|item| item.id == id)
         .ok_or_else(|| "照片关联创建后无法读取".to_owned())
+}
+
+pub fn assign_photo_link_place(
+    connection: &Connection,
+    id: &str,
+    input: AssignPhotoPlace,
+) -> Result<TravelPhotoLink, String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let place_exists = connection.query_row(
+        "SELECT 1 FROM travel_places
+         WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+        params![input.place_id,user_id],
+        |_| Ok(()),
+    ).optional().map_err(|e| e.to_string())?.is_some();
+    if !place_exists {
+        return Err("地点不存在".to_owned());
+    }
+    let stamp = now();
+    let changed = connection.execute(
+        "UPDATE travel_photo_links
+         SET place_id=?1,updated_at=?2,version=version+1
+         WHERE id=?3 AND user_id=?4 AND deleted_at IS NULL",
+        params![input.place_id,stamp,id,user_id],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("照片关联不存在".to_owned());
+    }
+    list_photo_links(connection)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "照片关联更新后无法读取".to_owned())
 }
 
 pub fn delete_photo_link(connection: &Connection, id: &str) -> Result<(), String> {
