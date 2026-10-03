@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::database::repositories::travel::{
-    self, NewPlace, NewTrip, NewVisit,
+    self, NewPhotoLink, NewPlace, NewTrip, NewVisit,
 };
 
 use super::AppState;
@@ -27,6 +27,12 @@ pub struct VisitQuery {
     pub place_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhotoCandidateQuery {
+    pub limit: Option<i64>,
+}
+
 fn lock_error() -> Response {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -42,6 +48,7 @@ fn travel_error(message: String) -> Response {
     let status = if message.contains("不能为空")
         || message.contains("必须")
         || message.contains("不受支持")
+        || message.contains("至少需要")
     {
         StatusCode::BAD_REQUEST
     } else if message.contains("不存在") {
@@ -154,6 +161,60 @@ pub async fn create_visit(
     };
     match travel::create_visit(&connection, input) {
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+
+pub async fn list_photo_candidates(
+    State(state): State<AppState>,
+    Query(query): Query<PhotoCandidateQuery>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::list_photo_candidates(&connection, query.limit.unwrap_or(120)) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn list_photo_links(State(state): State<AppState>) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::list_photo_links(&connection) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn create_photo_link(
+    State(state): State<AppState>,
+    Json(input): Json<NewPhotoLink>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::create_photo_link(&connection, input) {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn delete_photo_link(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::delete_photo_link(&connection, &id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => travel_error(error),
     }
 }
