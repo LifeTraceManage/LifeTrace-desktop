@@ -1215,3 +1215,51 @@ pub async fn serve_media(state: AppState) -> Result<(), Box<dyn std::error::Erro
     axum::serve(listener, app).await?;
     Ok(())
 }
+
+
+#[cfg(test)]
+mod exif_tests {
+    use super::*;
+    use exif::Rational;
+
+    fn dms(degrees: u32, minutes: u32, seconds_x100: u32) -> ExifValue {
+        ExifValue::Rational(vec![
+            Rational { num: degrees, denom: 1 },
+            Rational { num: minutes, denom: 1 },
+            Rational { num: seconds_x100, denom: 100 },
+        ])
+    }
+
+    #[test]
+    fn gps_coordinates_respect_hemisphere() {
+        let latitude = gps_coordinate(&dms(24, 28, 788), "N").unwrap();
+        let longitude = gps_coordinate(&dms(118, 5, 2184), "E").unwrap();
+        assert!((latitude - 24.4688555).abs() < 0.00001);
+        assert!((longitude - 118.0894).abs() < 0.00001);
+
+        let south = gps_coordinate(&dms(33, 51, 0), "S").unwrap();
+        let west = gps_coordinate(&dms(118, 15, 0), "W").unwrap();
+        assert!(south < 0.0);
+        assert!(west < 0.0);
+    }
+
+    #[test]
+    fn invalid_gps_reference_is_rejected() {
+        assert!(gps_coordinate(&dms(1, 2, 300), "X").is_none());
+        let zero_denominator = ExifValue::Rational(vec![
+            Rational { num: 1, denom: 1 },
+            Rational { num: 2, denom: 0 },
+            Rational { num: 3, denom: 1 },
+        ]);
+        assert!(gps_coordinate(&zero_denominator, "N").is_none());
+    }
+
+    #[test]
+    fn exif_datetime_is_normalized_without_inventing_timezone() {
+        assert_eq!(
+            normalize_exif_datetime("2026:09:27 18:42:03").as_deref(),
+            Some("2026-09-27T18:42:03")
+        );
+        assert!(normalize_exif_datetime("not-a-date").is_none());
+    }
+}
