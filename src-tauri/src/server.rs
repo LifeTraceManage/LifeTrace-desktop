@@ -150,6 +150,9 @@ pub async fn serve(
         .route("/api/travel/places", get(travel::list_places).post(travel::create_place))
         .route("/api/travel/trips", get(travel::list_trips).post(travel::create_trip))
         .route("/api/travel/visits", get(travel::list_visits).post(travel::create_visit))
+        .route("/api/travel/photo-candidates", get(travel::list_photo_candidates))
+        .route("/api/travel/photo-links", get(travel::list_photo_links).post(travel::create_photo_link))
+        .route("/api/travel/photo-links/{id}", axum::routing::delete(travel::delete_photo_link))
         .route("/api/analytics/status", get(analytics::status))
         .route(
             "/api/analytics/rebuild",
