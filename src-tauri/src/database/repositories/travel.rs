@@ -332,8 +332,8 @@ pub fn list_photo_links(connection: &Connection) -> Result<Vec<TravelPhotoLink>,
     let mut statement = connection.prepare(
         "SELECT l.id,l.photo_id,p.original_file_name,p.media_type,l.trip_id,l.visit_id,l.place_id,
                 place.name,
-                COALESCE(l.latitude,place.latitude),
-                COALESCE(l.longitude,place.longitude),
+                COALESCE(l.latitude,p.latitude,place.latitude),
+                COALESCE(l.longitude,p.longitude,place.longitude),
                 COALESCE(l.captured_at,p.captured_at),
                 l.created_at,l.updated_at
          FROM travel_photo_links l
@@ -424,8 +424,11 @@ pub fn create_photo_link(
         if longitude.is_none() { longitude = place.1; }
     }
 
-    if place_id.is_none() && latitude.is_none() && longitude.is_none() {
-        return Err("照片至少需要关联地点或提供坐标".to_owned());
+    match (latitude, longitude) {
+        (Some(_), Some(_)) => {}
+        (None, None) if place_id.is_some() => {}
+        (None, None) => return Err("照片至少需要关联地点或提供坐标".to_owned()),
+        _ => return Err("照片坐标必须同时包含纬度和经度".to_owned()),
     }
 
     let id = Uuid::new_v4().to_string();
