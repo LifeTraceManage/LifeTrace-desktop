@@ -109,3 +109,11 @@
 .lt-travel-route-order{display:flex;gap:3px;z-index:1}
 .lt-travel-route-order button{width:26px;height:26px;border:1px solid var(--border-subtle,#dde4df);border-radius:7px;background:var(--surface,#fff);display:grid;place-items:center;color:inherit;cursor:pointer}
 .lt-travel-route-order button svg{width:13px;height:13px}.lt-travel-route-order button:disabled{opacity:.3;cursor:not-allowed}
+
+.lt-travel-photo-scan{min-height:34px;border:1px dashed var(--border-subtle,#d7dfda);border-radius:9px;background:var(--surface-muted,#f5f7f5);color:inherit;font:inherit;font-size:11px;cursor:pointer}
+.lt-travel-photo-scan:disabled{opacity:.55;cursor:default}
+.lt-travel-photo-picker-grid button.unavailable{opacity:.38;cursor:not-allowed;filter:saturate(.55)}
+.lt-travel-photo-list .empty{display:flex;flex-direction:column;gap:10px}
+.lt-travel-photo-list .empty p{margin:0}
+.lt-travel-photo-list .empty button{align-self:flex-start;min-height:34px;border:1px solid var(--border-subtle,#dfe5e0);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:0 10px;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11px;cursor:pointer}
+.lt-travel-photo-list .empty button svg{width:14px}
