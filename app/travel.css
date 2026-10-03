@@ -177,3 +177,16 @@
 .lt-travel-top-place>svg{width:28px;height:28px;color:#547362}
 .lt-travel-top-place strong,.lt-travel-top-place span{display:block}.lt-travel-top-place strong{font-size:14px}.lt-travel-top-place span{font-size:10px;opacity:.57;margin-top:3px}
 @media(max-width:700px){.lt-travel-timeline-month{grid-template-columns:1fr;gap:5px;padding-left:16px;padding-right:16px}.lt-travel-timeline-month-label{position:static}.lt-travel-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:16px;padding-right:16px}.lt-travel-stat-section{margin-left:16px;margin-right:16px}}
+
+.lt-travel-geocode-state{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;padding:10px 11px;border:1px solid var(--border-subtle,#dfe5e0);border-radius:10px;background:var(--surface-muted,#f6f8f6)}
+.lt-travel-geocode-state>div{display:flex;align-items:center;gap:7px;min-width:0;font-size:11px;line-height:1.45}
+.lt-travel-geocode-state>div svg{width:15px;height:15px;flex:0 0 auto;color:#557565}
+.lt-travel-geocode-state>div span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.lt-travel-geocode-state>button{min-height:30px;padding:0 9px;border:1px solid var(--border-subtle,#dfe5e0);border-radius:8px;background:var(--surface,#fff);color:inherit;font:inherit;font-size:10px;cursor:pointer}
+.lt-travel-geocode-state>button:disabled{opacity:.55;cursor:default}
+.lt-travel-geocode-state>small{grid-column:1/-1;font-size:9px;line-height:1.35;opacity:.52}
+.lt-travel-geocode-state.resolved{border-color:#b9d0c2;background:#f1f7f3}
+.lt-travel-geocode-state.unavailable{border-color:#e6d3b7;background:#fff9ef}
+.lt-travel-geocode-state.unavailable>div svg{color:#9a7040}
+.lt-travel-geocode-state .spin{animation:lt-travel-spin .8s linear infinite}
+@keyframes lt-travel-spin{to{transform:rotate(360deg)}}
