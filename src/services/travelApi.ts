@@ -84,6 +84,42 @@ export type NewTravelTrip = {
   coverPhotoId?: string | null;
 };
 
+export type TravelPhotoCandidate = {
+  photoId: string;
+  originalFileName: string;
+  mediaType: string;
+  capturedAt?: string | null;
+  importedAt: string;
+  thumbnailUrl: string;
+};
+
+export type TravelPhotoLink = {
+  id: string;
+  photoId: string;
+  originalFileName: string;
+  mediaType: string;
+  thumbnailUrl: string;
+  tripId?: string | null;
+  visitId?: string | null;
+  placeId?: string | null;
+  placeName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  capturedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NewTravelPhotoLink = {
+  photoId: string;
+  tripId?: string | null;
+  visitId?: string | null;
+  placeId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  capturedAt?: string | null;
+};
+
 type ApiError = { error?: string; code?: string };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -99,9 +135,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-function json(body: unknown): RequestInit {
+function json(body: unknown, method = "POST"): RequestInit {
   return {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   };
@@ -125,5 +161,15 @@ export const travelApi = {
       return request<TravelVisit[]>(`/api/travel/visits${params.size ? `?${params}` : ""}`);
     },
     create: (input: NewTravelVisit) => request<TravelVisit>("/api/travel/visits", json(input)),
+  },
+  photoCandidates: {
+    list: (limit = 120) => request<TravelPhotoCandidate[]>(`/api/travel/photo-candidates?limit=${limit}`),
+  },
+  photoLinks: {
+    list: () => request<TravelPhotoLink[]>("/api/travel/photo-links"),
+    create: (input: NewTravelPhotoLink) =>
+      request<TravelPhotoLink>("/api/travel/photo-links", json(input)),
+    remove: (id: string) =>
+      request<void>(`/api/travel/photo-links/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
 };
