@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Camera,
   ChevronDown,
   ChevronUp,
+  LocateFixed,
+  LoaderCircle,
   MapPinned,
   Pencil,
   Plane,
@@ -81,6 +83,10 @@ export default function TravelModule() {
   const [photoPickerLoading, setPhotoPickerLoading] = useState(false);
   const [photoPickerMode, setPhotoPickerMode] = useState<"place" | "gps">("place");
   const [pendingPhotoLinkId, setPendingPhotoLinkId] = useState("");
+  const [geocodeStatus, setGeocodeStatus] = useState<"idle" | "loading" | "resolved" | "unavailable">("idle");
+  const [geocodeDisplayName, setGeocodeDisplayName] = useState("");
+  const [geocodeAttribution, setGeocodeAttribution] = useState("");
+  const geocodeRequestRef = useRef(0);
   const [error, setError] = useState("");
   const [draftPlace, setDraftPlace] = useState<NewTravelPlace>({
     name: "",
@@ -126,14 +132,45 @@ export default function TravelModule() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const resolvePlaceCoordinates = (latitude: number, longitude: number) => {
+    const requestId = ++geocodeRequestRef.current;
+    setGeocodeStatus("loading");
+    setGeocodeDisplayName("");
+    setGeocodeAttribution("");
+    void travelApi.reverseGeocode(latitude, longitude)
+      .then((result) => {
+        if (geocodeRequestRef.current !== requestId) return;
+        setDraftPlace((current) => ({
+          ...current,
+          name: current.name.trim() || result.name || result.city || result.province || result.country || "",
+          city: current.city?.trim() || result.city || null,
+          province: current.province?.trim() || result.province || null,
+          country: current.country?.trim() || result.country || null,
+          countryCode: current.countryCode?.trim() || result.countryCode || null,
+        }));
+        setGeocodeDisplayName(result.displayName || "");
+        setGeocodeAttribution(result.attribution || "");
+        setGeocodeStatus("resolved");
+      })
+      .catch(() => {
+        if (geocodeRequestRef.current !== requestId) return;
+        setGeocodeStatus("unavailable");
+      });
+  };
+
   const openPlaceAt = (latitude: number, longitude: number) => {
     setPendingPhotoLinkId("");
     setEditingPlaceId("");
     setDraftPlace({ name: "", placeType: "custom", latitude, longitude });
     setPanel("place");
+    resolvePlaceCoordinates(latitude, longitude);
   };
 
   const openEditPlace = (place: TravelPlace) => {
+    geocodeRequestRef.current += 1;
+    setGeocodeStatus("idle");
+    setGeocodeDisplayName("");
+    setGeocodeAttribution("");
     setPendingPhotoLinkId("");
     setEditingPlaceId(place.id);
     setDraftPlace({
@@ -309,6 +346,7 @@ export default function TravelModule() {
       longitude: photo.longitude,
     });
     setPanel("place");
+    resolvePlaceCoordinates(photo.latitude, photo.longitude);
   };
 
   const unlinkPhoto = async (link: TravelPhotoLink) => {
@@ -483,6 +521,10 @@ export default function TravelModule() {
         </div>
         <div className="lt-travel-actions">
           <button type="button" onClick={() => {
+            geocodeRequestRef.current += 1;
+            setGeocodeStatus("idle");
+            setGeocodeDisplayName("");
+            setGeocodeAttribution("");
             setEditingPlaceId("");
             setDraftPlace({ name: "", placeType: "custom" });
             setPanel("place");
@@ -788,9 +830,38 @@ export default function TravelModule() {
                 <label>地点名称<input autoFocus value={draftPlace.name} onChange={(event) => setDraftPlace((value) => ({ ...value, name: event.target.value }))} placeholder="例如：鼓浪屿" /></label>
                 <label>城市<input value={draftPlace.city || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, city: event.target.value }))} placeholder="厦门" /></label>
                 <div className="row">
+                  <label>省 / 州<input value={draftPlace.province || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, province: event.target.value }))} placeholder="福建" /></label>
+                  <label>国家 / 地区<input value={draftPlace.country || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, country: event.target.value }))} placeholder="中国" /></label>
+                </div>
+                <div className="row">
                   <label>纬度<input type="number" step="0.00001" value={draftPlace.latitude ?? ""} onChange={(event) => setDraftPlace((value) => ({ ...value, latitude: event.target.value === "" ? null : Number(event.target.value) }))} /></label>
                   <label>经度<input type="number" step="0.00001" value={draftPlace.longitude ?? ""} onChange={(event) => setDraftPlace((value) => ({ ...value, longitude: event.target.value === "" ? null : Number(event.target.value) }))} /></label>
                 </div>
+                {!editingPlaceId && draftPlace.latitude != null && draftPlace.longitude != null ? (
+                  <div className={`lt-travel-geocode-state ${geocodeStatus}`}>
+                    <div>
+                      {geocodeStatus === "loading" ? <LoaderCircle className="spin" /> : <LocateFixed />}
+                      <span>
+                        {geocodeStatus === "loading"
+                          ? "正在自动识别地点…"
+                          : geocodeStatus === "resolved"
+                            ? (geocodeDisplayName || "已自动补充地点信息")
+                            : geocodeStatus === "unavailable"
+                              ? "自动识别不可用，可继续手动填写"
+                              : "可根据当前坐标自动补充城市、省份和国家"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={geocodeStatus === "loading"}
+                      onClick={() => void resolvePlaceCoordinates(draftPlace.latitude as number, draftPlace.longitude as number)}
+                    >
+                      {geocodeStatus === "loading" ? "识别中" : "自动识别"}
+                    </button>
+                    <small>自动识别会把当前坐标发送给配置的地名服务。</small>
+                    {geocodeAttribution ? <small>{geocodeAttribution}</small> : null}
+                  </div>
+                ) : null}
                 <button type="button" className="primary" disabled={saving || !draftPlace.name.trim()} onClick={() => void createPlace()}>
                   {saving ? "保存中…" : editingPlaceId ? "保存修改" : "保存地点"}
                 </button>
