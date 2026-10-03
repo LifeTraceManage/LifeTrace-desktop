@@ -238,11 +238,16 @@ fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
     }
 }
 
-pub(crate) fn backfill_exif_metadata(
+#[derive(Debug, Clone)]
+struct PhotoExifCandidate {
+    id: String,
+    relative_path: String,
+}
+
+fn pending_exif_candidates(
     connection: &Connection,
-    data_dir: &Path,
     limit: i64,
-) -> rusqlite::Result<usize> {
+) -> rusqlite::Result<Vec<PhotoExifCandidate>> {
     let limit = limit.clamp(1, 100);
     let mut statement = connection.prepare(
         "SELECT id,original_path
@@ -254,38 +259,98 @@ pub(crate) fn backfill_exif_metadata(
          ORDER BY imported_at DESC
          LIMIT ?1"
     )?;
-    let candidates = statement
+    statement
         .query_map([limit], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok(PhotoExifCandidate {
+                id: row.get(0)?,
+                relative_path: row.get(1)?,
+            })
         })?
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(statement);
+        .collect::<Result<Vec<_>, _>>()
+}
 
-    let root = data_dir.join("photos");
-    let mut changed = 0usize;
-    for (id, relative_path) in candidates {
-        let Ok(bytes) = std::fs::read(root.join(relative_path)) else {
-            continue;
+fn apply_exif_metadata(
+    connection: &Connection,
+    photo_id: &str,
+    metadata: &PhotoExifMetadata,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "UPDATE photos
+         SET captured_at=COALESCE(captured_at,?1),
+             latitude=COALESCE(latitude,?2),
+             longitude=COALESCE(longitude,?3),
+             exif_scanned_at=?4
+         WHERE id=?5
+           AND deleted_at IS NULL
+           AND exif_scanned_at IS NULL",
+        params![
+            metadata.captured_at,
+            metadata.latitude,
+            metadata.longitude,
+            Utc::now().to_rfc3339(),
+            photo_id
+        ],
+    )
+}
+
+async fn index_exif_batch(state: &AppState, limit: i64) -> Result<usize, String> {
+    let candidates = {
+        let connection = state
+            .database
+            .lock()
+            .map_err(|_| "照片数据库锁已损坏".to_owned())?;
+        pending_exif_candidates(&connection, limit).map_err(|error| error.to_string())?
+    };
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    let mut inspected = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let path = state.data_dir.join("photos").join(&candidate.relative_path);
+        let metadata = match fs::read(path).await {
+            Ok(bytes) => tokio::task::spawn_blocking(move || read_exif_metadata(&bytes))
+                .await
+                .map_err(|error| format!("EXIF 解析任务失败：{error}"))?,
+            // A permanently missing/corrupt local file must not pin the background
+            // indexer to the same batch forever. Mark the scan attempt complete.
+            Err(_) => PhotoExifMetadata::default(),
         };
-        let metadata = read_exif_metadata(&bytes);
-        let updated = connection.execute(
-            "UPDATE photos
-             SET captured_at=COALESCE(captured_at,?1),
-                 latitude=COALESCE(latitude,?2),
-                 longitude=COALESCE(longitude,?3),
-                 exif_scanned_at=?4
-             WHERE id=?5",
-            params![
-                metadata.captured_at,
-                metadata.latitude,
-                metadata.longitude,
-                Utc::now().to_rfc3339(),
-                id
-            ],
-        )?;
-        changed += updated;
+        inspected.push((candidate.id, metadata));
+    }
+
+    let connection = state
+        .database
+        .lock()
+        .map_err(|_| "照片数据库锁已损坏".to_owned())?;
+    let mut changed = 0usize;
+    for (photo_id, metadata) in inspected {
+        changed += apply_exif_metadata(&connection, &photo_id, &metadata)
+            .map_err(|error| error.to_string())?;
     }
     Ok(changed)
+}
+
+pub(crate) async fn run_exif_background_indexer(state: AppState) {
+    // Let migrations, local HTTP, and the first UI paint complete before historical
+    // photo scanning begins.
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    loop {
+        match index_exif_batch(&state, 12).await {
+            Ok(0) => {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+            Ok(_) => {
+                // Yield between batches so large libraries never monopolize disk/CPU.
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            Err(error) => {
+                eprintln!("LifeTrace EXIF background index skipped: {error}");
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+        }
+    }
 }
 
 fn lan_addresses() -> Vec<String> {
@@ -1272,5 +1337,78 @@ mod exif_tests {
             Some("2026-09-27T18:42:03")
         );
         assert!(normalize_exif_datetime("not-a-date").is_none());
+    }
+
+    #[test]
+    fn pending_exif_candidates_only_returns_unscanned_images() {
+        let connection = Connection::open_in_memory().unwrap();
+        ensure_schema(&connection).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,
+               media_type,file_size,imported_at,processing_status
+             ) VALUES(
+               'photo-1','hash-1','one.jpg','one.jpg','one.jpg',
+               'image',123,'2026-10-01T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,
+               media_type,file_size,exif_scanned_at,imported_at,processing_status
+             ) VALUES(
+               'photo-2','hash-2','two.jpg','two.jpg','two.jpg',
+               'image',456,'2026-10-02T00:00:00Z','2026-10-02T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+
+        let candidates = pending_exif_candidates(&connection, 20).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "photo-1");
+        assert_eq!(candidates[0].relative_path, "one.jpg");
+    }
+
+    #[test]
+    fn apply_exif_metadata_marks_scan_complete_without_overwriting_existing_values() {
+        let connection = Connection::open_in_memory().unwrap();
+        ensure_schema(&connection).unwrap();
+        connection.execute(
+            "INSERT INTO photos(
+               id,content_hash,original_file_name,stored_file_name,original_path,
+               media_type,file_size,captured_at,latitude,longitude,imported_at,processing_status
+             ) VALUES(
+               'photo-1','hash-1','one.jpg','one.jpg','one.jpg',
+               'image',123,'2026-09-01T12:00:00',10.0,20.0,
+               '2026-10-01T00:00:00Z','completed'
+             )",
+            [],
+        ).unwrap();
+
+        let metadata = PhotoExifMetadata {
+            captured_at: Some("2026-09-02T13:00:00".to_owned()),
+            latitude: Some(30.0),
+            longitude: Some(40.0),
+        };
+        assert_eq!(apply_exif_metadata(&connection, "photo-1", &metadata).unwrap(), 1);
+
+        let (captured_at, latitude, longitude, scanned_at): (
+            Option<String>,
+            Option<f64>,
+            Option<f64>,
+            Option<String>,
+        ) = connection.query_row(
+            "SELECT captured_at,latitude,longitude,exif_scanned_at
+             FROM photos WHERE id='photo-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).unwrap();
+
+        assert_eq!(captured_at.as_deref(), Some("2026-09-01T12:00:00"));
+        assert_eq!(latitude, Some(10.0));
+        assert_eq!(longitude, Some(20.0));
+        assert!(scanned_at.is_some());
+        assert!(pending_exif_candidates(&connection, 20).unwrap().is_empty());
     }
 }
