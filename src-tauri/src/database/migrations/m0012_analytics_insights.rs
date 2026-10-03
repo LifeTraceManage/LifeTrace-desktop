@@ -212,50 +212,6 @@ impl Migration for M0012AnalyticsInsights {
                   ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
                 END;
 
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_records_insert
-                AFTER INSERT ON english_learning_records BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  VALUES(NEW.user_id,1,1)
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_records_update
-                AFTER UPDATE ON english_learning_records BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  VALUES(NEW.user_id,1,1)
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_records_delete
-                AFTER DELETE ON english_learning_records BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  VALUES(OLD.user_id,1,1)
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_vocab_insert
-                AFTER INSERT ON english_vocabulary BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  VALUES(NEW.user_id,1,1)
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_vocab_update
-                AFTER UPDATE ON english_vocabulary BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  VALUES(NEW.user_id,1,1)
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_vocab_delete
-                AFTER DELETE ON english_vocabulary BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  VALUES(OLD.user_id,1,1)
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-                CREATE TRIGGER IF NOT EXISTS trg_analytics_english_articles_update
-                AFTER UPDATE ON english_articles BEGIN
-                  INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
-                  SELECT DISTINCT user_id,1,1 FROM english_learning_records
-                   WHERE article_id=NEW.id AND deleted_at IS NULL
-                  ON CONFLICT(user_id) DO UPDATE SET dirty=1,last_error=NULL;
-                END;
-
                 CREATE TRIGGER IF NOT EXISTS trg_analytics_workouts_insert
                 AFTER INSERT ON workouts BEGIN
                   INSERT INTO analytics_projection_state(user_id,dirty,projection_version)
