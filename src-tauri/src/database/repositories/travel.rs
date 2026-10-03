@@ -379,6 +379,17 @@ pub fn create_photo_link(
     validate_coordinates(input.latitude, input.longitude)?;
     let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
 
+    let already_linked = connection.query_row(
+        "SELECT 1 FROM travel_photo_links
+         WHERE user_id=?1 AND photo_id=?2 AND deleted_at IS NULL
+         LIMIT 1",
+        params![user_id,input.photo_id],
+        |_| Ok(()),
+    ).optional().map_err(|e| e.to_string())?.is_some();
+    if already_linked {
+        return Err("这张照片已经加入旅行地图".to_owned());
+    }
+
     let photo = connection.query_row(
         "SELECT captured_at,latitude,longitude FROM photos
          WHERE id=?1 AND deleted_at IS NULL AND processing_status='completed'",
