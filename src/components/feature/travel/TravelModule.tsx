@@ -12,6 +12,7 @@ import {
   Plus,
   Route,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -19,12 +20,15 @@ import TravelMapLibre from "@/src/components/feature/travel/TravelMapLibre";
 import {
   TravelStatsView,
   TravelTimelineView,
+  TravelTripSuggestionsView,
 } from "@/src/components/feature/travel/TravelInsightsViews";
 import {
   buildTravelTimeline,
+  buildTripSuggestions,
   filterTravelData,
   summarizeTravel,
   travelYear,
+  type TravelTripSuggestion,
 } from "@/src/components/feature/travel/travelInsights";
 import {
   travelApi,
@@ -40,7 +44,7 @@ import {
 const EMPTY_SUMMARY: TravelSummary = { placeCount: 0, visitCount: 0, tripCount: 0, photoCount: 0, cityCount: 0 };
 
 type Panel = "none" | "place" | "trip" | "visit" | "photo";
-type TravelMode = "map" | "trips" | "photos" | "route" | "timeline" | "stats";
+type TravelMode = "map" | "trips" | "photos" | "route" | "timeline" | "stats" | "suggestions";
 
 function shortDate(value?: string | null) {
   if (!value) return "未记录";
@@ -407,6 +411,27 @@ export default function TravelModule() {
     }
   };
 
+  const acceptTripSuggestion = async (suggestion: TravelTripSuggestion) => {
+    setSaving(true);
+    setError("");
+    try {
+      const created = await travelApi.trips.acceptSuggestion({
+        title: suggestion.title,
+        startAt: suggestion.startAt,
+        endAt: suggestion.endAt,
+        visitIds: suggestion.visitIds,
+        photoLinkIds: suggestion.photoLinkIds,
+      });
+      await load();
+      setSelectedTripId(created.id);
+      setMode("trips");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "自动旅行建议创建失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const moveVisit = async (visitId: string, direction: -1 | 1) => {
     if (!selectedTrip) return;
     const ordered = selectedTripVisits.map((visit) => visit.id);
@@ -457,6 +482,10 @@ export default function TravelModule() {
   const filteredTrips = filteredData.trips;
   const filteredVisits = filteredData.visits;
   const filteredPhotoLinks = filteredData.photoLinks;
+  const tripSuggestions = useMemo(() => buildTripSuggestions({
+    visits: filteredVisits,
+    photoLinks: filteredPhotoLinks,
+  }), [filteredPhotoLinks, filteredVisits]);
   const timelineItems = useMemo(() => buildTravelTimeline({
     trips: filteredTrips,
     visits: filteredVisits,
@@ -511,6 +540,9 @@ export default function TravelModule() {
           </button>
           <button type="button" className={mode === "route" ? "active" : ""} onClick={() => setMode("route")}>
             <Route />路线
+          </button>
+          <button type="button" className={mode === "suggestions" ? "active" : ""} onClick={() => setMode("suggestions")}>
+            <Sparkles />建议 <span>{tripSuggestions.length}</span>
           </button>
           <button type="button" className={mode === "timeline" ? "active" : ""} onClick={() => setMode("timeline")}>
             <CalendarDays />时间线
@@ -578,10 +610,16 @@ export default function TravelModule() {
 
       {error ? <div className="lt-travel-error" role="alert">{error}</div> : null}
 
-      <div className={`lt-travel-layout${mode === "timeline" || mode === "stats" ? " insights" : ""}`}>
+      <div className={`lt-travel-layout${mode === "timeline" || mode === "stats" || mode === "suggestions" ? " insights" : ""}`}>
         <div className="lt-travel-canvas">
           {loading ? (
             <div className="lt-travel-loading">正在读取本机旅行足迹…</div>
+          ) : mode === "suggestions" ? (
+            <TravelTripSuggestionsView
+              suggestions={tripSuggestions}
+              saving={saving}
+              onAccept={(suggestion) => void acceptTripSuggestion(suggestion)}
+            />
           ) : mode === "timeline" ? (
             <TravelTimelineView
               items={timelineItems}
@@ -620,7 +658,7 @@ export default function TravelModule() {
               onCreateAt={openPlaceAt}
             />
           )}
-          {mode !== "timeline" && mode !== "stats" ? (
+          {mode !== "timeline" && mode !== "stats" && mode !== "suggestions" ? (
             <div className="lt-travel-stats">
               <span><strong>{summary.cityCount}</strong><small>城市</small></span>
               <span><strong>{summary.tripCount}</strong><small>旅行</small></span>
@@ -630,7 +668,7 @@ export default function TravelModule() {
           ) : null}
         </div>
 
-        {mode !== "timeline" && mode !== "stats" ? <aside className="lt-travel-detail">
+        {mode !== "timeline" && mode !== "stats" && mode !== "suggestions" ? <aside className="lt-travel-detail">
           {mode === "trips" ? (
             <div className="lt-travel-trip-panel">
               <div className="lt-travel-panel-heading">
