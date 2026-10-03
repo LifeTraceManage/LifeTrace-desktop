@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::database::repositories::travel::{
-    self, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
+    self, AssignPhotoPlace, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
 };
 
 use super::{photo, AppState};
@@ -206,6 +206,21 @@ pub async fn create_photo_link(
     };
     match travel::create_photo_link(&connection, input) {
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn assign_photo_link_place(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<AssignPhotoPlace>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::assign_photo_link_place(&connection, &id, input) {
+        Ok(value) => Json(value).into_response(),
         Err(error) => travel_error(error),
     }
 }
