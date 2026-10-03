@@ -36,6 +36,7 @@ import {
   type TravelPhotoCandidate,
   type TravelPhotoLink,
   type TravelPlace,
+  type TravelRoadRoute,
   type TravelSummary,
   type TravelTrip,
   type TravelVisit,
@@ -56,6 +57,21 @@ function dateToIso(value: string): string | null {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function formatRoadDistance(meters: number) {
+  if (!Number.isFinite(meters)) return "—";
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(meters >= 100_000 ? 0 : 1)} km`;
+}
+
+function formatRoadDuration(seconds: number) {
+  if (!Number.isFinite(seconds)) return "—";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours} 小时 ${remainder} 分` : `${hours} 小时`;
 }
 
 function sortVisits(values: TravelVisit[]) {
@@ -104,6 +120,9 @@ export default function TravelModule() {
   const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [visitTripId, setVisitTripId] = useState("");
   const [photoTripId, setPhotoTripId] = useState("");
+  const [roadRoute, setRoadRoute] = useState<TravelRoadRoute | null>(null);
+  const [roadRouteLoading, setRoadRouteLoading] = useState(false);
+  const [roadRouteError, setRoadRouteError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -432,6 +451,37 @@ export default function TravelModule() {
     }
   };
 
+  const loadRoadRoute = async () => {
+    const coordinates = selectedTripVisits
+      .filter(
+        (visit) =>
+          typeof visit.latitude === "number"
+          && typeof visit.longitude === "number",
+      )
+      .map((visit) => ({
+        latitude: visit.latitude as number,
+        longitude: visit.longitude as number,
+      }));
+    if (coordinates.length < 2) {
+      setRoadRouteError("至少需要两个有坐标的旅行站点");
+      return;
+    }
+    setRoadRouteLoading(true);
+    setRoadRouteError("");
+    try {
+      setRoadRoute(await travelApi.routeRoad(coordinates));
+    } catch (cause) {
+      setRoadRoute(null);
+      setRoadRouteError(
+        cause instanceof Error
+          ? cause.message
+          : "道路路由不可用，当前继续显示直线",
+      );
+    } finally {
+      setRoadRouteLoading(false);
+    }
+  };
+
   const moveVisit = async (visitId: string, direction: -1 | 1) => {
     if (!selectedTrip) return;
     const ordered = selectedTripVisits.map((visit) => visit.id);
@@ -511,6 +561,16 @@ export default function TravelModule() {
     () => selectedTrip ? sortVisits(visits.filter((visit) => visit.tripId === selectedTrip.id)) : [],
     [selectedTrip, visits],
   );
+  const routeVisitSignature = useMemo(
+    () => selectedTripVisits
+      .map((visit) => `${visit.id}:${visit.sequence ?? ""}:${visit.latitude ?? ""}:${visit.longitude ?? ""}`)
+      .join("|"),
+    [selectedTripVisits],
+  );
+  useEffect(() => {
+    setRoadRoute(null);
+    setRoadRouteError("");
+  }, [selectedTripId, routeVisitSignature]);
   const linkedPhotoIds = useMemo(
     () => new Set(photoLinks.map((link) => link.photoId)),
     [photoLinks],
@@ -646,6 +706,7 @@ export default function TravelModule() {
               selectedPlaceId={selected?.id}
               selectedPhotoLinkId={selectedPhoto?.id}
               routeTripId={mode === "route" ? selectedTripId : null}
+              routeCoordinates={mode === "route" ? roadRoute?.coordinates : null}
               showPhotos={mode === "photos"}
               onSelectPlace={(place) => {
                 setSelected(place);
@@ -744,7 +805,10 @@ export default function TravelModule() {
               </div>
               <label className="lt-travel-trip-picker">
                 旅行
-                <select value={selectedTripId} onChange={(event) => setSelectedTripId(event.target.value)}>
+                <select
+                  value={selectedTripId}
+                  onChange={(event) => setSelectedTripId(event.target.value)}
+                >
                   <option value="">选择旅行</option>
                   {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
                 </select>
@@ -752,6 +816,31 @@ export default function TravelModule() {
               {selectedTrip ? (
                 <>
                   <h3>{selectedTrip.title}</h3>
+                  <div className="lt-travel-road-routing">
+                    <button
+                      type="button"
+                      disabled={roadRouteLoading || selectedTripVisits.length < 2}
+                      onClick={() => void loadRoadRoute()}
+                    >
+                      {roadRouteLoading ? <LoaderCircle className="spin" /> : <Route />}
+                      {roadRouteLoading
+                        ? "正在计算道路路线…"
+                        : roadRoute
+                          ? "重新计算道路路线"
+                          : "加载道路路线"}
+                    </button>
+                    {roadRoute ? (
+                      <p>
+                        {roadRoute.provider} · {formatRoadDistance(roadRoute.distanceMeters)}
+                        {" · "}
+                        {formatRoadDuration(roadRoute.durationSeconds)}
+                      </p>
+                    ) : roadRouteError ? (
+                      <p className="error">{roadRouteError}；当前显示站点直线。</p>
+                    ) : (
+                      <p>默认显示站点直线；配置路由服务后可按道路计算。</p>
+                    )}
+                  </div>
                   <div className="lt-travel-route-stops">
                     {selectedTripVisits.length ? selectedTripVisits.map((visit, index) => (
                       <div className="lt-travel-route-stop" key={visit.id}>
