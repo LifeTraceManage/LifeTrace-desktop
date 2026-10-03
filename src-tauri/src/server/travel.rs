@@ -47,6 +47,49 @@ pub struct ReverseGeocodeQuery {
     pub longitude: f64,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteCoordinate {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoadRouteRequest {
+    pub coordinates: Vec<RouteCoordinate>,
+    pub profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoadRouteResult {
+    pub coordinates: Vec<[f64; 2]>,
+    pub distance_meters: f64,
+    pub duration_seconds: f64,
+    pub provider: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+struct OsrmGeometry {
+    coordinates: Vec<[f64; 2]>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OsrmRoute {
+    distance: f64,
+    duration: f64,
+    geometry: OsrmGeometry,
+}
+
+#[derive(Debug, Deserialize)]
+struct OsrmRouteResponse {
+    code: String,
+    #[serde(default)]
+    routes: Vec<OsrmRoute>,
+    message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReverseGeocodeResult {
@@ -269,6 +312,106 @@ pub async fn reverse_geocode(
 ) -> Response {
     match reverse_geocode_lookup(query.latitude, query.longitude).await {
         Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+fn routing_endpoint() -> Option<String> {
+    let endpoint = std::env::var("LIFETRACE_TRAVEL_ROUTER_URL").ok()?;
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty()
+        || endpoint.eq_ignore_ascii_case("off")
+        || endpoint.eq_ignore_ascii_case("disabled")
+    {
+        return None;
+    }
+    Some(endpoint.trim_end_matches('/').to_owned())
+}
+
+fn validate_route_profile(value: Option<String>) -> Result<String, String> {
+    let profile = value.unwrap_or_else(|| "driving".to_owned());
+    if profile.is_empty()
+        || profile.len() > 32
+        || !profile.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err("道路路由 profile 不合法".to_owned());
+    }
+    Ok(profile)
+}
+
+fn parse_osrm_route(payload: OsrmRouteResponse) -> Result<RoadRouteResult, String> {
+    if payload.code != "Ok" {
+        return Err(payload
+            .message
+            .unwrap_or_else(|| format!("道路路由服务返回 {}", payload.code)));
+    }
+    let route = payload.routes.into_iter().next()
+        .ok_or_else(|| "道路路由服务没有返回路线".to_owned())?;
+    if route.geometry.coordinates.len() < 2 {
+        return Err("道路路由服务返回的路线坐标不足".to_owned());
+    }
+    Ok(RoadRouteResult {
+        coordinates: route.geometry.coordinates,
+        distance_meters: route.distance,
+        duration_seconds: route.duration,
+        provider: "OSRM-compatible",
+    })
+}
+
+async fn road_route_lookup(input: RoadRouteRequest) -> Result<RoadRouteResult, String> {
+    if input.coordinates.len() < 2 {
+        return Err("道路路线至少需要两个坐标点".to_owned());
+    }
+    if input.coordinates.len() > 25 {
+        return Err("道路路线最多支持 25 个坐标点".to_owned());
+    }
+    for coordinate in &input.coordinates {
+        if !(-90.0..=90.0).contains(&coordinate.latitude) {
+            return Err("纬度必须位于 -90 到 90 之间".to_owned());
+        }
+        if !(-180.0..=180.0).contains(&coordinate.longitude) {
+            return Err("经度必须位于 -180 到 180 之间".to_owned());
+        }
+    }
+    let endpoint = routing_endpoint()
+        .ok_or_else(|| "道路路由未配置；请设置 LIFETRACE_TRAVEL_ROUTER_URL".to_owned())?;
+    let profile = validate_route_profile(input.profile)?;
+    let coordinates = input.coordinates.iter()
+        .map(|coordinate| format!("{:.6},{:.6}", coordinate.longitude, coordinate.latitude))
+        .collect::<Vec<_>>()
+        .join(";");
+    let url = format!("{endpoint}/route/v1/{profile}/{coordinates}");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|error| format!("道路路由客户端初始化失败: {error}"))?;
+    let response = client.get(url)
+        .query(&[
+            ("overview", "full"),
+            ("geometries", "geojson"),
+            ("steps", "false"),
+        ])
+        .send()
+        .await
+        .map_err(|error| format!("道路路由请求失败: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("道路路由服务返回 {}", response.status()));
+    }
+    let payload = response.json::<OsrmRouteResponse>().await
+        .map_err(|error| format!("道路路由结果解析失败: {error}"))?;
+    parse_osrm_route(payload)
+}
+
+pub async fn road_route(Json(input): Json<RoadRouteRequest>) -> Response {
+    match road_route_lookup(input).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) if error.contains("未配置") => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error,
+                code: "TRAVEL_ROUTING_UNAVAILABLE",
+            }),
+        ).into_response(),
         Err(error) => travel_error(error),
     }
 }
