@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::database::repositories::travel::{
-    self, NewPhotoLink, NewPlace, NewTrip, NewVisit,
+    self, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
 };
 
 use super::AppState;
@@ -49,6 +49,8 @@ fn travel_error(message: String) -> Response {
         || message.contains("必须")
         || message.contains("不受支持")
         || message.contains("至少需要")
+        || message.contains("仍有关联")
+        || message.contains("顺序必须")
     {
         StatusCode::BAD_REQUEST
     } else if message.contains("不存在") {
@@ -215,6 +217,109 @@ pub async fn delete_photo_link(
     };
     match travel::delete_photo_link(&connection, &id) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+
+pub async fn update_place(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<NewPlace>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::update_place(&connection, &id, input) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn delete_place(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::delete_place(&connection, &id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn update_trip(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<NewTrip>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::update_trip(&connection, &id, input) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn delete_trip(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::delete_trip(&connection, &id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn update_visit(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<NewVisit>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::update_visit(&connection, &id, input) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn delete_visit(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::delete_visit(&connection, &id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => travel_error(error),
+    }
+}
+
+pub async fn reorder_visits(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<ReorderVisits>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return lock_error(),
+    };
+    match travel::reorder_visits(&connection, &id, input) {
+        Ok(value) => Json(value).into_response(),
         Err(error) => travel_error(error),
     }
 }
