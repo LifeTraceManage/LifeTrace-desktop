@@ -148,6 +148,7 @@ pub async fn serve(
         .route("/api/state", get(state::get).post(state::mutate))
         .route("/api/travel/summary", get(travel::summary))
         .route("/api/travel/reverse-geocode", get(travel::reverse_geocode))
+        .route("/api/travel/route", axum::routing::post(travel::road_route))
         .route("/api/travel/places", get(travel::list_places).post(travel::create_place))
         .route("/api/travel/places/{id}", axum::routing::put(travel::update_place).delete(travel::delete_place))
         .route("/api/travel/trips", get(travel::list_trips).post(travel::create_trip))
