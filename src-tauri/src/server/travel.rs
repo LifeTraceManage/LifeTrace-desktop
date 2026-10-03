@@ -178,7 +178,7 @@ pub async fn list_photo_candidates(
     };
     // Gradually enrich historical local photos without a one-time blocking migration.
     // New imports already persist EXIF metadata in the photo table.
-    let _ = photo::backfill_exif_metadata(&connection, &state.data_dir, 24);
+    let _ = photo::backfill_exif_metadata(&connection, &state.data_dir, 8);
     match travel::list_photo_candidates(&connection, query.limit.unwrap_or(120)) {
         Ok(value) => Json(value).into_response(),
         Err(error) => travel_error(error),
