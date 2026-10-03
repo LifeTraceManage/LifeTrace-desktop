@@ -501,24 +501,26 @@ export default function TravelModule() {
                   <h3>{selectedTrip.title}</h3>
                   <div className="lt-travel-route-stops">
                     {selectedTripVisits.length ? selectedTripVisits.map((visit, index) => (
-                      <button
-                        type="button"
-                        key={visit.id}
-                        onClick={() => {
-                          const place = places.find((item) => item.id === visit.placeId);
-                          if (place) {
-                            setSelected(place);
-                            setMode("map");
-                          }
-                        }}
-                      >
-                        <b>{index + 1}</b>
-                        <span><strong>{visit.placeName}</strong><small>{shortDate(visit.arrivedAt)}</small></span>
-                        <i className="lt-travel-route-order" onClick={(event) => event.stopPropagation()}>
+                      <div className="lt-travel-route-stop" key={visit.id}>
+                        <button
+                          type="button"
+                          className="lt-travel-route-main"
+                          onClick={() => {
+                            const place = places.find((item) => item.id === visit.placeId);
+                            if (place) {
+                              setSelected(place);
+                              setMode("map");
+                            }
+                          }}
+                        >
+                          <b>{index + 1}</b>
+                          <span><strong>{visit.placeName}</strong><small>{shortDate(visit.arrivedAt)}</small></span>
+                        </button>
+                        <span className="lt-travel-route-order">
                           <button type="button" disabled={saving || index === 0} onClick={() => void moveVisit(visit.id, -1)} aria-label="上移"><ChevronUp /></button>
                           <button type="button" disabled={saving || index === selectedTripVisits.length - 1} onClick={() => void moveVisit(visit.id, 1)} aria-label="下移"><ChevronDown /></button>
-                        </i>
-                      </button>
+                        </span>
+                      </div>
                     )) : <p className="empty">这次旅行还没有站点。在地点详情里点击“记录这次到访”，并选择这次旅行。</p>}
                   </div>
                 </>
