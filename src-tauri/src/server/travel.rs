@@ -1,6 +1,7 @@
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -9,9 +10,12 @@ use serde::Serialize;
 use std::{
     collections::HashMap,
     sync::OnceLock,
-    time::{Duration, Instant},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::{
+    io::{AsyncReadExt, AsyncSeekExt},
+    sync::Mutex as AsyncMutex,
+};
 
 use crate::database::repositories::travel::{
     self, AcceptTripSuggestion, AssignPhotoPlace, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
@@ -39,6 +43,16 @@ pub struct PhotoCandidateQuery {
     pub limit: Option<i64>,
 }
 
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfflineMapStatus {
+    pub available: bool,
+    pub size_bytes: Option<u64>,
+    pub modified_at_millis: Option<u128>,
+    pub archive_url: Option<String>,
+    pub file_name: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -316,6 +330,160 @@ pub async fn reverse_geocode(
         Ok(value) => Json(value).into_response(),
         Err(error) => travel_error(error),
     }
+}
+
+fn offline_map_path(state: &AppState) -> std::path::PathBuf {
+    state.data_dir.join("travel").join("offline-map.pmtiles")
+}
+
+fn parse_byte_range(value: &str, size: u64) -> Result<(u64, u64), String> {
+    let value = value.trim();
+    let range = value
+        .strip_prefix("bytes=")
+        .ok_or_else(|| "Range 头格式无效".to_owned())?;
+    if range.contains(',') {
+        return Err("暂不支持多段 Range 请求".to_owned());
+    }
+    let (start, end) = range
+        .split_once('-')
+        .ok_or_else(|| "Range 头格式无效".to_owned())?;
+    let start = start
+        .parse::<u64>()
+        .map_err(|_| "Range 起始位置无效".to_owned())?;
+    if start >= size {
+        return Err("Range 超出文件范围".to_owned());
+    }
+    let end = if end.trim().is_empty() {
+        size - 1
+    } else {
+        end.parse::<u64>()
+            .map_err(|_| "Range 结束位置无效".to_owned())?
+            .min(size - 1)
+    };
+    if end < start {
+        return Err("Range 结束位置早于起始位置".to_owned());
+    }
+    Ok((start, end))
+}
+
+pub async fn offline_map_status(State(state): State<AppState>) -> Response {
+    let path = offline_map_path(&state);
+    match tokio::fs::metadata(&path).await {
+        Ok(metadata) if metadata.is_file() && metadata.len() >= 127 => {
+            let modified_at_millis = metadata.modified().ok()
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_millis());
+            Json(OfflineMapStatus {
+                available: true,
+                size_bytes: Some(metadata.len()),
+                modified_at_millis,
+                archive_url: Some(
+                    "http://127.0.0.1:3103/api/travel/offline-map/archive".to_owned(),
+                ),
+                file_name: Some("offline-map.pmtiles".to_owned()),
+            }).into_response()
+        }
+        _ => Json(OfflineMapStatus {
+            available: false,
+            size_bytes: None,
+            modified_at_millis: None,
+            archive_url: None,
+            file_name: None,
+        }).into_response(),
+    }
+}
+
+pub async fn offline_map_archive(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    const MAX_RANGE_BYTES: u64 = 32 * 1024 * 1024;
+
+    let path = offline_map_path(&state);
+    let metadata = match tokio::fs::metadata(&path).await {
+        Ok(value) if value.is_file() && value.len() >= 127 => value,
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let size = metadata.len();
+    let Some(range_header) = headers.get(header::RANGE).and_then(|value| value.to_str().ok()) else {
+        let mut response = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+        response.headers_mut().insert(
+            header::CONTENT_RANGE,
+            HeaderValue::from_str(&format!("bytes */{size}")).unwrap(),
+        );
+        response.headers_mut().insert(
+            header::ACCEPT_RANGES,
+            HeaderValue::from_static("bytes"),
+        );
+        return response;
+    };
+    let (start, end) = match parse_byte_range(range_header, size) {
+        Ok(value) => value,
+        Err(_) => {
+            let mut response = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+            response.headers_mut().insert(
+                header::CONTENT_RANGE,
+                HeaderValue::from_str(&format!("bytes */{size}")).unwrap(),
+            );
+            response.headers_mut().insert(
+                header::ACCEPT_RANGES,
+                HeaderValue::from_static("bytes"),
+            );
+            return response;
+        }
+    };
+    let length = end - start + 1;
+    if length > MAX_RANGE_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "PMTiles Range 请求过大",
+        ).into_response();
+    }
+
+    let mut file = match tokio::fs::File::open(&path).await {
+        Ok(value) => value,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let mut bytes = vec![0_u8; length as usize];
+    if file.read_exact(&mut bytes).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let modified = metadata.modified().ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_millis())
+        .unwrap_or(0);
+    let etag = format!("\"pmtiles-{size}-{modified}\"");
+    let mut response = Response::new(Body::from(bytes));
+    *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+    let response_headers = response.headers_mut();
+    response_headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    response_headers.insert(
+        header::ACCEPT_RANGES,
+        HeaderValue::from_static("bytes"),
+    );
+    response_headers.insert(
+        header::CONTENT_RANGE,
+        HeaderValue::from_str(&format!("bytes {start}-{end}/{size}")).unwrap(),
+    );
+    response_headers.insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(&length.to_string()).unwrap(),
+    );
+    response_headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=3600"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&etag) {
+        response_headers.insert(header::ETAG, value);
+    }
+    response
 }
 
 fn routing_endpoint() -> Option<String> {
@@ -781,4 +949,20 @@ mod reverse_geocode_tests {
         assert!(validate_route_profile(Some("../route".to_owned())).is_err());
         assert!(validate_route_profile(Some("driving-car".to_owned())).is_ok());
     }
+
+    #[test]
+    fn byte_range_parser_accepts_open_ended_ranges() {
+        assert_eq!(parse_byte_range("bytes=0-15", 100).unwrap(), (0, 15));
+        assert_eq!(parse_byte_range("bytes=16-", 100).unwrap(), (16, 99));
+        assert_eq!(parse_byte_range("bytes=90-150", 100).unwrap(), (90, 99));
+    }
+
+    #[test]
+    fn byte_range_parser_rejects_invalid_or_multiple_ranges() {
+        assert!(parse_byte_range("items=0-1", 100).is_err());
+        assert!(parse_byte_range("bytes=100-101", 100).is_err());
+        assert!(parse_byte_range("bytes=10-9", 100).is_err());
+        assert!(parse_byte_range("bytes=0-1,4-5", 100).is_err());
+    }
+
 }
