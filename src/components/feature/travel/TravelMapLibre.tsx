@@ -683,7 +683,7 @@ export default function TravelMapLibre({
       </div>
       {mapError ? (
         <div className="lt-travel-map-warning">
-          地图底图加载异常；足迹数据仍保存在本机。可通过 VITE_TRAVEL_MAP_STYLE_URL 切换地图服务。
+          {mapError}
         </div>
       ) : null}
     </div>
