@@ -148,10 +148,20 @@ export const travelApi = {
   places: {
     list: () => request<TravelPlace[]>("/api/travel/places"),
     create: (input: NewTravelPlace) => request<TravelPlace>("/api/travel/places", json(input)),
+    update: (id: string, input: NewTravelPlace) =>
+      request<TravelPlace>(`/api/travel/places/${encodeURIComponent(id)}`, json(input, "PUT")),
+    remove: (id: string) =>
+      request<void>(`/api/travel/places/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   trips: {
     list: () => request<TravelTrip[]>("/api/travel/trips"),
     create: (input: NewTravelTrip) => request<TravelTrip>("/api/travel/trips", json(input)),
+    update: (id: string, input: NewTravelTrip) =>
+      request<TravelTrip>(`/api/travel/trips/${encodeURIComponent(id)}`, json(input, "PUT")),
+    remove: (id: string) =>
+      request<void>(`/api/travel/trips/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    reorder: (id: string, visitIds: string[]) =>
+      request<TravelVisit[]>(`/api/travel/trips/${encodeURIComponent(id)}/reorder`, json({ visitIds }, "PUT")),
   },
   visits: {
     list: (filters: { tripId?: string; placeId?: string } = {}) => {
@@ -161,6 +171,10 @@ export const travelApi = {
       return request<TravelVisit[]>(`/api/travel/visits${params.size ? `?${params}` : ""}`);
     },
     create: (input: NewTravelVisit) => request<TravelVisit>("/api/travel/visits", json(input)),
+    update: (id: string, input: NewTravelVisit) =>
+      request<TravelVisit>(`/api/travel/visits/${encodeURIComponent(id)}`, json(input, "PUT")),
+    remove: (id: string) =>
+      request<void>(`/api/travel/visits/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   photoCandidates: {
     list: (limit = 120) => request<TravelPhotoCandidate[]>(`/api/travel/photo-candidates?limit=${limit}`),
