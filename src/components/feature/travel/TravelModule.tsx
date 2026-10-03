@@ -66,6 +66,8 @@ export default function TravelModule() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoPickerLoading, setPhotoPickerLoading] = useState(false);
+  const [photoPickerMode, setPhotoPickerMode] = useState<"place" | "gps">("place");
+  const [pendingPhotoLinkId, setPendingPhotoLinkId] = useState("");
   const [error, setError] = useState("");
   const [draftPlace, setDraftPlace] = useState<NewTravelPlace>({
     name: "",
@@ -112,12 +114,14 @@ export default function TravelModule() {
   useEffect(() => { void load(); }, [load]);
 
   const openPlaceAt = (latitude: number, longitude: number) => {
+    setPendingPhotoLinkId("");
     setEditingPlaceId("");
     setDraftPlace({ name: "", placeType: "custom", latitude, longitude });
     setPanel("place");
   };
 
   const openEditPlace = (place: TravelPlace) => {
+    setPendingPhotoLinkId("");
     setEditingPlaceId(place.id);
     setDraftPlace({
       name: place.name,
@@ -145,10 +149,19 @@ export default function TravelModule() {
       const saved = editingPlaceId
         ? await travelApi.places.update(editingPlaceId, payload)
         : await travelApi.places.create(payload);
+      const assignedPhoto = pendingPhotoLinkId
+        ? await travelApi.photoLinks.assignPlace(pendingPhotoLinkId, saved.id)
+        : null;
       await load();
       setSelected(saved);
       setEditingPlaceId("");
-      setMode("map");
+      setPendingPhotoLinkId("");
+      if (assignedPhoto) {
+        setSelectedPhoto(assignedPhoto);
+        setMode("photos");
+      } else {
+        setMode("map");
+      }
       setPanel("none");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "地点保存失败");
@@ -220,12 +233,9 @@ export default function TravelModule() {
     }
   };
 
-  const openPhotoPicker = async () => {
-    if (!selected) return;
-    setPhotoTripId(selectedTripId);
+  const refreshPhotoCandidates = async () => {
     setPhotoPickerLoading(true);
     setError("");
-    setPanel("photo");
     try {
       setPhotoCandidates(await travelApi.photoCandidates.list(180));
     } catch (cause) {
@@ -235,14 +245,31 @@ export default function TravelModule() {
     }
   };
 
-  const linkPhoto = async (candidate: TravelPhotoCandidate) => {
+  const openPhotoPicker = async () => {
     if (!selected) return;
+    setPhotoPickerMode("place");
+    setPhotoTripId(selectedTripId);
+    setPanel("photo");
+    await refreshPhotoCandidates();
+  };
+
+  const openGpsPhotoPicker = async () => {
+    setPhotoPickerMode("gps");
+    setPhotoTripId(selectedTripId);
+    setPanel("photo");
+    await refreshPhotoCandidates();
+  };
+
+  const linkPhoto = async (candidate: TravelPhotoCandidate) => {
+    const hasGps = candidate.latitude != null && candidate.longitude != null;
+    if (photoPickerMode === "place" && !selected) return;
+    if (photoPickerMode === "gps" && !hasGps) return;
     setSaving(true);
     setError("");
     try {
       const created = await travelApi.photoLinks.create({
         photoId: candidate.photoId,
-        placeId: selected.id,
+        placeId: photoPickerMode === "place" ? selected?.id ?? null : null,
         tripId: photoTripId || null,
         capturedAt: candidate.capturedAt || null,
         latitude: candidate.latitude ?? null,
@@ -256,6 +283,19 @@ export default function TravelModule() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const createPlaceFromPhoto = (photo: TravelPhotoLink) => {
+    if (photo.latitude == null || photo.longitude == null) return;
+    setPendingPhotoLinkId(photo.id);
+    setEditingPlaceId("");
+    setDraftPlace({
+      name: "",
+      placeType: "custom",
+      latitude: photo.latitude,
+      longitude: photo.longitude,
+    });
+    setPanel("place");
   };
 
   const unlinkPhoto = async (link: TravelPhotoLink) => {
@@ -348,8 +388,8 @@ export default function TravelModule() {
     [selectedTrip, visits],
   );
   const linkedPhotoIds = useMemo(
-    () => new Set(photoLinks.filter((link) => link.placeId === selected?.id).map((link) => link.photoId)),
-    [photoLinks, selected?.id],
+    () => new Set(photoLinks.map((link) => link.photoId)),
+    [photoLinks],
   );
   const selectedPlacePhotos = useMemo(
     () => selected ? photoLinks.filter((link) => link.placeId === selected.id) : [],
@@ -463,12 +503,18 @@ export default function TravelModule() {
             <div className="lt-travel-photo-panel">
               <div className="lt-travel-panel-heading">
                 <div><span>Photo Map</span><h2>照片地图</h2><p>照片本体仍由相册管理，这里只保存地点关联。</p></div>
+                <button type="button" onClick={() => void openGpsPhotoPicker()} title="导入带 GPS 的照片"><Plus /></button>
               </div>
               {selectedPhoto ? (
                 <article className="lt-travel-photo-detail">
                   <img src={selectedPhoto.thumbnailUrl} alt="" />
                   <h3>{selectedPhoto.originalFileName}</h3>
-                  <p>{selectedPhoto.placeName || "自定义坐标"} · {shortDate(selectedPhoto.capturedAt)}</p>
+                  <p>{selectedPhoto.placeName || "照片定位"} · {shortDate(selectedPhoto.capturedAt)}</p>
+                  {!selectedPhoto.placeId && selectedPhoto.latitude != null && selectedPhoto.longitude != null ? (
+                    <button type="button" disabled={saving} onClick={() => createPlaceFromPhoto(selectedPhoto)}>
+                      <MapPinned />在此位置创建地点
+                    </button>
+                  ) : null}
                   <button type="button" disabled={saving} onClick={() => void unlinkPhoto(selectedPhoto)}>
                     <Trash2 />移除地图关联
                   </button>
@@ -481,7 +527,10 @@ export default function TravelModule() {
                       <span><strong>{photo.placeName || photo.originalFileName}</strong><small>{shortDate(photo.capturedAt)}</small></span>
                     </button>
                   )) : (
-                    <p className="empty">还没有地图照片。先在“地图”里选择地点，再点击“关联照片”。</p>
+                    <div className="empty">
+                      <p>还没有地图照片。可以直接导入相册里带 GPS 的照片，或先选择地点再关联照片。</p>
+                      <button type="button" onClick={() => void openGpsPhotoPicker()}><Camera />导入定位照片</button>
+                    </div>
                   )}
                 </div>
               )}
@@ -606,7 +655,7 @@ export default function TravelModule() {
                 <h2>
                   {panel === "place" ? (editingPlaceId ? "编辑地点" : "添加地点")
                     : panel === "trip" ? (editingTripId ? "编辑旅行" : "新建旅行")
-                      : panel === "photo" ? "关联照片"
+                      : panel === "photo" ? (photoPickerMode === "gps" ? "导入定位照片" : "关联照片")
                         : "记录到访"}
                 </h2>
               </div>
@@ -643,25 +692,36 @@ export default function TravelModule() {
                     {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
                   </select>
                 </label>
-                <p>地点：<strong>{selected?.name || "未选择"}</strong>。照片原文件不会移动或复制。</p>
+                <p>
+                  {photoPickerMode === "gps"
+                    ? "仅显示可直接加入地图的定位状态；没有 GPS 的照片不会被导入。"
+                    : <>地点：<strong>{selected?.name || "未选择"}</strong>。照片原文件不会移动或复制。</>}
+                </p>
+                <button type="button" className="lt-travel-photo-scan" disabled={photoPickerLoading} onClick={() => void refreshPhotoCandidates()}>
+                  继续扫描旧照片 EXIF
+                </button>
                 {photoPickerLoading ? <div className="lt-travel-photo-picker-loading">正在读取本机相册…</div> : (
                   <div className="lt-travel-photo-picker-grid">
                     {photoCandidates.map((candidate) => {
                       const linked = linkedPhotoIds.has(candidate.photoId);
+                      const hasGps = candidate.latitude != null && candidate.longitude != null;
+                      const unavailable = photoPickerMode === "gps" && !hasGps;
                       return (
                         <button
                           type="button"
                           key={candidate.photoId}
-                          className={linked ? "linked" : ""}
-                          disabled={saving || linked}
+                          className={linked ? "linked" : unavailable ? "unavailable" : ""}
+                          disabled={saving || linked || unavailable}
                           onClick={() => void linkPhoto(candidate)}
-                          title={linked ? "这张照片已关联到当前地点" : candidate.originalFileName}
+                          title={linked ? "这张照片已加入旅行地图" : unavailable ? "照片没有 GPS 定位" : candidate.originalFileName}
                         >
                           <img src={candidate.thumbnailUrl} alt="" loading="lazy" />
                           <span>
                             {linked
-                              ? "已关联"
-                              : `${candidate.latitude != null && candidate.longitude != null ? "有定位 · " : ""}${shortDate(candidate.capturedAt || candidate.importedAt)}`}
+                              ? "已加入"
+                              : unavailable
+                                ? "无定位"
+                                : `${hasGps ? "有定位 · " : ""}${shortDate(candidate.capturedAt || candidate.importedAt)}`}
                           </span>
                         </button>
                       );
