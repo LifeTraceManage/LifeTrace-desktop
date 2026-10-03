@@ -249,3 +249,212 @@ pub fn create_visit(connection: &Connection, input: NewVisit) -> Result<TravelVi
     ).map_err(|e| e.to_string())?;
     list_visits(connection, None, None)?.into_iter().find(|item| item.id == id).ok_or_else(|| "访问记录创建后无法读取".to_owned())
 }
+
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TravelPhotoCandidate {
+    pub photo_id: String,
+    pub original_file_name: String,
+    pub media_type: String,
+    pub captured_at: Option<String>,
+    pub imported_at: String,
+    pub thumbnail_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TravelPhotoLink {
+    pub id: String,
+    pub photo_id: String,
+    pub original_file_name: String,
+    pub media_type: String,
+    pub thumbnail_url: String,
+    pub trip_id: Option<String>,
+    pub visit_id: Option<String>,
+    pub place_id: Option<String>,
+    pub place_name: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub captured_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPhotoLink {
+    pub photo_id: String,
+    pub trip_id: Option<String>,
+    pub visit_id: Option<String>,
+    pub place_id: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub captured_at: Option<String>,
+}
+
+pub fn list_photo_candidates(
+    connection: &Connection,
+    limit: i64,
+) -> Result<Vec<TravelPhotoCandidate>, String> {
+    let limit = limit.clamp(1, 500);
+    let mut statement = connection.prepare(
+        "SELECT id,original_file_name,media_type,captured_at,imported_at
+         FROM photos
+         WHERE deleted_at IS NULL AND processing_status='completed'
+         ORDER BY COALESCE(captured_at,imported_at) DESC
+         LIMIT ?1"
+    ).map_err(|e| e.to_string())?;
+    let rows = statement.query_map([limit], |row| {
+        let photo_id: String = row.get(0)?;
+        Ok(TravelPhotoCandidate {
+            thumbnail_url: format!(
+                "http://127.0.0.1:3444/photo-sync/media/{photo_id}/thumbnail"
+            ),
+            photo_id,
+            original_file_name: row.get(1)?,
+            media_type: row.get(2)?,
+            captured_at: row.get(3)?,
+            imported_at: row.get(4)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+pub fn list_photo_links(connection: &Connection) -> Result<Vec<TravelPhotoLink>, String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let mut statement = connection.prepare(
+        "SELECT l.id,l.photo_id,p.original_file_name,p.media_type,l.trip_id,l.visit_id,l.place_id,
+                place.name,
+                COALESCE(l.latitude,place.latitude),
+                COALESCE(l.longitude,place.longitude),
+                COALESCE(l.captured_at,p.captured_at),
+                l.created_at,l.updated_at
+         FROM travel_photo_links l
+         JOIN photos p ON p.id=l.photo_id AND p.deleted_at IS NULL
+         LEFT JOIN travel_places place ON place.id=l.place_id AND place.deleted_at IS NULL
+         WHERE l.user_id=?1 AND l.deleted_at IS NULL
+         ORDER BY COALESCE(l.captured_at,p.captured_at,l.created_at) DESC"
+    ).map_err(|e| e.to_string())?;
+    let rows = statement.query_map([user_id], |row| {
+        let photo_id: String = row.get(1)?;
+        Ok(TravelPhotoLink {
+            id: row.get(0)?,
+            thumbnail_url: format!(
+                "http://127.0.0.1:3444/photo-sync/media/{photo_id}/thumbnail"
+            ),
+            photo_id,
+            original_file_name: row.get(2)?,
+            media_type: row.get(3)?,
+            trip_id: row.get(4)?,
+            visit_id: row.get(5)?,
+            place_id: row.get(6)?,
+            place_name: row.get(7)?,
+            latitude: row.get(8)?,
+            longitude: row.get(9)?,
+            captured_at: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+pub fn create_photo_link(
+    connection: &Connection,
+    input: NewPhotoLink,
+) -> Result<TravelPhotoLink, String> {
+    validate_coordinates(input.latitude, input.longitude)?;
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+
+    let photo = connection.query_row(
+        "SELECT captured_at FROM photos
+         WHERE id=?1 AND deleted_at IS NULL AND processing_status='completed'",
+        [&input.photo_id],
+        |row| row.get::<_, Option<String>>(0),
+    ).optional().map_err(|e| e.to_string())?
+      .ok_or_else(|| "照片不存在或尚未处理完成".to_owned())?;
+
+    let mut trip_id = input.trip_id;
+    let mut place_id = input.place_id;
+    let visit_id = input.visit_id;
+
+    if let Some(id) = visit_id.as_deref() {
+        let visit = connection.query_row(
+            "SELECT trip_id,place_id FROM travel_visits
+             WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+            params![id,user_id],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        ).optional().map_err(|e| e.to_string())?
+          .ok_or_else(|| "访问记录不存在".to_owned())?;
+        if trip_id.is_none() { trip_id = visit.0; }
+        if place_id.is_none() { place_id = Some(visit.1); }
+    }
+
+    if let Some(id) = trip_id.as_deref() {
+        let exists = connection.query_row(
+            "SELECT 1 FROM travel_trips WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+            params![id,user_id],
+            |_| Ok(()),
+        ).optional().map_err(|e| e.to_string())?.is_some();
+        if !exists { return Err("旅行不存在".to_owned()); }
+    }
+
+    let mut latitude = input.latitude;
+    let mut longitude = input.longitude;
+    if let Some(id) = place_id.as_deref() {
+        let place = connection.query_row(
+            "SELECT latitude,longitude FROM travel_places
+             WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+            params![id,user_id],
+            |row| Ok((row.get::<_, Option<f64>>(0)?, row.get::<_, Option<f64>>(1)?)),
+        ).optional().map_err(|e| e.to_string())?
+          .ok_or_else(|| "地点不存在".to_owned())?;
+        if latitude.is_none() { latitude = place.0; }
+        if longitude.is_none() { longitude = place.1; }
+    }
+
+    if place_id.is_none() && latitude.is_none() && longitude.is_none() {
+        return Err("照片至少需要关联地点或提供坐标".to_owned());
+    }
+
+    let id = Uuid::new_v4().to_string();
+    let stamp = now();
+    let captured_at = input.captured_at.or(photo);
+    connection.execute(
+        "INSERT INTO travel_photo_links(
+           id,user_id,photo_id,trip_id,visit_id,place_id,latitude,longitude,captured_at,
+           created_at,updated_at
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10)",
+        params![
+            id,user_id,input.photo_id,trip_id,visit_id,place_id,latitude,longitude,
+            captured_at,stamp
+        ],
+    ).map_err(|e| {
+        if e.to_string().contains("UNIQUE constraint failed") {
+            "这张照片已经关联到该访问记录".to_owned()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    list_photo_links(connection)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "照片关联创建后无法读取".to_owned())
+}
+
+pub fn delete_photo_link(connection: &Connection, id: &str) -> Result<(), String> {
+    let user_id = profile::active_profile_id(connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let changed = connection.execute(
+        "UPDATE travel_photo_links
+         SET deleted_at=?1,updated_at=?1,version=version+1
+         WHERE id=?2 AND user_id=?3 AND deleted_at IS NULL",
+        params![stamp,id,user_id],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("照片关联不存在".to_owned());
+    }
+    Ok(())
+}
