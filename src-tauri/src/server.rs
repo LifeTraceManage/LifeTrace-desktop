@@ -151,6 +151,7 @@ pub async fn serve(
         .route("/api/travel/places", get(travel::list_places).post(travel::create_place))
         .route("/api/travel/places/{id}", axum::routing::put(travel::update_place).delete(travel::delete_place))
         .route("/api/travel/trips", get(travel::list_trips).post(travel::create_trip))
+        .route("/api/travel/trips/from-suggestion", axum::routing::post(travel::create_trip_from_suggestion))
         .route("/api/travel/trips/{id}", axum::routing::put(travel::update_trip).delete(travel::delete_trip))
         .route("/api/travel/trips/{id}/reorder", axum::routing::put(travel::reorder_visits))
         .route("/api/travel/visits", get(travel::list_visits).post(travel::create_visit))
