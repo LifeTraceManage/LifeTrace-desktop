@@ -66,6 +66,13 @@ export type TravelReverseGeocode = {
   attribution: string;
 };
 
+export type TravelRoadRoute = {
+  coordinates: [number, number][];
+  distanceMeters: number;
+  durationSeconds: number;
+  provider: string;
+};
+
 export type NewTravelPlace = {
   name: string;
   country?: string | null;
@@ -172,6 +179,13 @@ export const travelApi = {
     });
     return request<TravelReverseGeocode>(`/api/travel/reverse-geocode?${params}`);
   },
+  routeRoad: (
+    coordinates: Array<{ latitude: number; longitude: number }>,
+    profile = "driving",
+  ) => request<TravelRoadRoute>(
+    "/api/travel/route",
+    json({ coordinates, profile }),
+  ),
   places: {
     list: () => request<TravelPlace[]>("/api/travel/places"),
     create: (input: NewTravelPlace) => request<TravelPlace>("/api/travel/places", json(input)),
