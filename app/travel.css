@@ -200,3 +200,22 @@
 .lt-travel-photo-marker.image-error img{display:none}
 .lt-travel-photo-marker-pointer{position:absolute;left:50%;bottom:-9px;width:12px;height:12px;background:#fff;border-right:2px solid rgba(61,78,69,.16);border-bottom:2px solid rgba(61,78,69,.16);transform:translateX(-50%) rotate(45deg);z-index:-1}
 .lt-travel-photo-marker.active .lt-travel-photo-marker-pointer{background:#d57e65;border-color:#d57e65}
+
+.lt-travel-suggestions{min-height:100%;padding-bottom:30px}
+.lt-travel-suggestion-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;padding:8px 26px 28px}
+.lt-travel-suggestion-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:16px;border:1px solid var(--border-subtle,#e1e7e3);border-radius:14px;background:var(--surface,#fff);box-shadow:0 4px 16px rgba(30,48,39,.04)}
+.lt-travel-suggestion-icon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:#f1edf7;color:#6b5b88}
+.lt-travel-suggestion-icon svg{width:18px;height:18px}
+.lt-travel-suggestion-copy{min-width:0}
+.lt-travel-suggestion-copy h3{margin:0;font-size:15px}
+.lt-travel-suggestion-copy>p{margin:4px 0 10px;font-size:10px;opacity:.55}
+.lt-travel-suggestion-labels{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.lt-travel-suggestion-labels span{max-width:160px;padding:4px 7px;border-radius:999px;background:var(--surface-muted,#f2f5f3);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt-travel-suggestion-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.lt-travel-suggestion-metrics span{padding:7px;border-radius:9px;background:var(--surface-muted,#f7f9f7)}
+.lt-travel-suggestion-metrics strong,.lt-travel-suggestion-metrics small{display:block}
+.lt-travel-suggestion-metrics strong{font-size:14px}.lt-travel-suggestion-metrics small{font-size:9px;opacity:.5;margin-top:2px}
+.lt-travel-suggestion-accept{grid-column:1/-1;min-height:36px;border:1px solid #c8d7cf;border-radius:9px;background:#f3f7f4;color:#315c49;display:flex;align-items:center;justify-content:center;gap:7px;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+.lt-travel-suggestion-accept:hover{background:#eaf2ed}.lt-travel-suggestion-accept:disabled{opacity:.5;cursor:default}
+.lt-travel-suggestion-accept svg{width:15px;height:15px}
+@media(max-width:700px){.lt-travel-suggestion-list{grid-template-columns:1fr;padding-left:16px;padding-right:16px}.lt-travel-suggestion-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
