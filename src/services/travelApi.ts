@@ -185,6 +185,11 @@ export const travelApi = {
     list: () => request<TravelPhotoLink[]>("/api/travel/photo-links"),
     create: (input: NewTravelPhotoLink) =>
       request<TravelPhotoLink>("/api/travel/photo-links", json(input)),
+    assignPlace: (id: string, placeId: string) =>
+      request<TravelPhotoLink>(
+        `/api/travel/photo-links/${encodeURIComponent(id)}/place`,
+        json({ placeId }, "PUT"),
+      ),
     remove: (id: string) =>
       request<void>(`/api/travel/photo-links/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
