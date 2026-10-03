@@ -21,7 +21,7 @@ use crate::database::repositories::travel::{
     self, AcceptTripSuggestion, AssignPhotoPlace, NewPhotoLink, NewPlace, NewTrip, NewVisit, ReorderVisits,
 };
 
-use super::{photo, AppState};
+use super::AppState;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
