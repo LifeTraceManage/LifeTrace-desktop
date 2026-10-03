@@ -156,11 +156,12 @@ fn table_columns(connection: &Connection, table: &str) -> Result<Vec<String>, St
     let mut statement = connection
         .prepare(&sql)
         .map_err(|error| error.to_string())?;
-    statement
+    let columns = statement
         .query_map([], |row| row.get::<_, String>(1))
         .map_err(|error| error.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    Ok(columns)
 }
 
 fn json_to_sql(value: &Value) -> SqlValue {
@@ -348,4 +349,59 @@ mod tests {
         ).unwrap();
         assert_eq!(visit_trip, "trip-1");
     }
+
+    #[test]
+    fn travel_photo_link_round_trips_without_local_photo_binary() {
+        let (source, source_profile) = db("photo-link-source");
+        let (target, target_profile) = db("photo-link-target");
+
+        source.execute(
+            "INSERT INTO travel_photo_links(
+               id,user_id,photo_id,latitude,longitude,captured_at,created_at,updated_at
+             ) VALUES(
+               'link-1',?1,'photo-not-on-target',24.4798,118.0894,
+               '2026-10-01T12:00:00','2026-10-01T12:00:00Z','2026-10-01T12:00:00Z'
+             )",
+            [&source_profile],
+        ).unwrap();
+
+        let local = load_local_entity(
+            &source,
+            &source_profile,
+            "travel.photo_link",
+            "link-1",
+        ).unwrap().unwrap();
+        let wire = crate::sync::payload::legacy_to_wire(
+            "travel.photo_link",
+            &local,
+            &source_profile,
+            None,
+        ).unwrap();
+        let legacy = crate::sync::payload::wire_to_legacy(&wire).unwrap();
+        apply_upsert(
+            &target,
+            &target_profile,
+            "travel.photo_link",
+            &legacy,
+        ).unwrap();
+
+        let row: (String, Option<f64>, Option<f64>) = target.query_row(
+            "SELECT photo_id,latitude,longitude
+             FROM travel_photo_links
+             WHERE id='link-1' AND user_id=?1",
+            [&target_profile],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(row.0, "photo-not-on-target");
+        assert_eq!(row.1, Some(24.4798));
+        assert_eq!(row.2, Some(118.0894));
+
+        let local_photo_count: i64 = target.query_row(
+            "SELECT COUNT(*) FROM photos WHERE id='photo-not-on-target'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(local_photo_count, 0);
+    }
+
 }
