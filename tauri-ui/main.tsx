@@ -39,6 +39,7 @@ import "@/app/apple-polish.css";
 import "@/app/interaction-performance.css";
 import "@/app/desktop-cloud-workspace.css";
 import "@/app/desktop-local-tools.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import "@/app/travel.css";
 
 installGlobalFetchInstrumentation();
