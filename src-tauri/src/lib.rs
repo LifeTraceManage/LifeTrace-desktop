@@ -55,6 +55,8 @@ pub fn run() {
             desktop::write_text_file,
             desktop::read_text_file,
             desktop::desktop_open_url,
+            desktop::travel_offline_map_import,
+            desktop::travel_offline_map_remove,
             sync::commands::sync_set_session,
             sync::commands::sync_clear_session,
             sync::commands::sync_bind_current_profile,
