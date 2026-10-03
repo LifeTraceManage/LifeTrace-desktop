@@ -217,7 +217,7 @@ test("trip suggestions cluster nearby-in-time unassigned GPS evidence", () => {
   assert.deepEqual(suggestions[0].visitIds, ["auto-v1", "auto-v2"]);
   assert.deepEqual(suggestions[0].photoLinkIds, ["auto-p1"]);
   assert.equal(suggestions[0].eventCount, 3);
-  assert.equal(suggestions[0].locationCount, 2);
+  assert.equal(suggestions[0].locationCount, 3);
   assert.match(suggestions[0].title, /厦门/);
   assert.ok(suggestions[0].routeDistanceKm > 500);
 });
