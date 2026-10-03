@@ -56,6 +56,16 @@ export type TravelSummary = {
   cityCount: number;
 };
 
+export type TravelReverseGeocode = {
+  name?: string | null;
+  city?: string | null;
+  province?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  displayName?: string | null;
+  attribution: string;
+};
+
 export type NewTravelPlace = {
   name: string;
   country?: string | null;
@@ -147,6 +157,13 @@ function json(body: unknown, method = "POST"): RequestInit {
 
 export const travelApi = {
   summary: () => request<TravelSummary>("/api/travel/summary"),
+  reverseGeocode: (latitude: number, longitude: number) => {
+    const params = new URLSearchParams({
+      latitude: String(latitude),
+      longitude: String(longitude),
+    });
+    return request<TravelReverseGeocode>(`/api/travel/reverse-geocode?${params}`);
+  },
   places: {
     list: () => request<TravelPlace[]>("/api/travel/places"),
     create: (input: NewTravelPlace) => request<TravelPlace>("/api/travel/places", json(input)),
