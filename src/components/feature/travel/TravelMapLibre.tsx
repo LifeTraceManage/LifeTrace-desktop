@@ -9,6 +9,7 @@ type TravelMapLibreProps = {
   selectedPlaceId?: string | null;
   selectedPhotoLinkId?: string | null;
   routeTripId?: string | null;
+  routeCoordinates?: [number, number][] | null;
   showPhotos?: boolean;
   onSelectPlace: (place: TravelPlace) => void;
   onSelectPhoto: (photo: TravelPhotoLink) => void;
@@ -76,7 +77,11 @@ function photoCollection(photoLinks: TravelPhotoLink[], selectedPhotoLinkId?: st
   };
 }
 
-function routeFeatures(visits: TravelVisit[], routeTripId?: string | null) {
+function routeFeatures(
+  visits: TravelVisit[],
+  routeTripId?: string | null,
+  routedCoordinates?: [number, number][] | null,
+) {
   const ordered = visits
     .filter(
       (visit) =>
@@ -91,7 +96,12 @@ function routeFeatures(visits: TravelVisit[], routeTripId?: string | null) {
       return String(left.arrivedAt ?? left.createdAt).localeCompare(String(right.arrivedAt ?? right.createdAt));
     });
 
-  const coordinates = ordered.map((visit) => [visit.longitude as number, visit.latitude as number]);
+  const stopCoordinates = ordered.map(
+    (visit) => [visit.longitude as number, visit.latitude as number] as [number, number],
+  );
+  const coordinates = routedCoordinates && routedCoordinates.length >= 2
+    ? routedCoordinates
+    : stopCoordinates;
   const line = coordinates.length >= 2
     ? {
         type: "Feature",
@@ -123,6 +133,7 @@ function routeFeatures(visits: TravelVisit[], routeTripId?: string | null) {
       features: stops,
     },
     coordinates,
+    stopCoordinates,
   };
 }
 
@@ -322,6 +333,7 @@ export default function TravelMapLibre({
   selectedPlaceId,
   selectedPhotoLinkId,
   routeTripId,
+  routeCoordinates,
   showPhotos = false,
   onSelectPlace,
   onSelectPhoto,
@@ -341,7 +353,10 @@ export default function TravelMapLibre({
   const [styleReady, setStyleReady] = useState(false);
   const [mapError, setMapError] = useState("");
 
-  const route = useMemo(() => routeFeatures(visits, routeTripId), [routeTripId, visits]);
+  const route = useMemo(
+    () => routeFeatures(visits, routeTripId, routeCoordinates),
+    [routeCoordinates, routeTripId, visits],
+  );
 
   useEffect(() => {
     placesRef.current = places;
