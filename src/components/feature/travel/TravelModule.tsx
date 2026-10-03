@@ -6,12 +6,15 @@ import {
   Plane,
   Plus,
   Route,
+  Trash2,
   X,
 } from "lucide-react";
 import TravelMapLibre from "@/src/components/feature/travel/TravelMapLibre";
 import {
   travelApi,
   type NewTravelPlace,
+  type TravelPhotoCandidate,
+  type TravelPhotoLink,
   type TravelPlace,
   type TravelSummary,
   type TravelTrip,
@@ -20,8 +23,8 @@ import {
 
 const EMPTY_SUMMARY: TravelSummary = { placeCount: 0, visitCount: 0, tripCount: 0, photoCount: 0, cityCount: 0 };
 
-type Panel = "none" | "place" | "trip" | "visit";
-type TravelMode = "map" | "trips" | "route";
+type Panel = "none" | "place" | "trip" | "visit" | "photo";
+type TravelMode = "map" | "trips" | "photos" | "route";
 
 function shortDate(value?: string | null) {
   if (!value) return "未记录";
@@ -48,12 +51,16 @@ export default function TravelModule() {
   const [places, setPlaces] = useState<TravelPlace[]>([]);
   const [trips, setTrips] = useState<TravelTrip[]>([]);
   const [visits, setVisits] = useState<TravelVisit[]>([]);
+  const [photoLinks, setPhotoLinks] = useState<TravelPhotoLink[]>([]);
+  const [photoCandidates, setPhotoCandidates] = useState<TravelPhotoCandidate[]>([]);
   const [selected, setSelected] = useState<TravelPlace | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<TravelPhotoLink | null>(null);
   const [selectedTripId, setSelectedTripId] = useState("");
   const [mode, setMode] = useState<TravelMode>("map");
   const [panel, setPanel] = useState<Panel>("none");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [photoPickerLoading, setPhotoPickerLoading] = useState(false);
   const [error, setError] = useState("");
   const [draftPlace, setDraftPlace] = useState<NewTravelPlace>({
     name: "",
@@ -66,22 +73,26 @@ export default function TravelModule() {
   const [tripEndDate, setTripEndDate] = useState("");
   const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [visitTripId, setVisitTripId] = useState("");
+  const [photoTripId, setPhotoTripId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, nextPlaces, nextTrips, nextVisits] = await Promise.all([
+      const [nextSummary, nextPlaces, nextTrips, nextVisits, nextPhotoLinks] = await Promise.all([
         travelApi.summary(),
         travelApi.places.list(),
         travelApi.trips.list(),
         travelApi.visits.list(),
+        travelApi.photoLinks.list(),
       ]);
       setSummary(nextSummary);
       setPlaces(nextPlaces);
       setTrips(nextTrips);
       setVisits(nextVisits);
+      setPhotoLinks(nextPhotoLinks);
       setSelected((current) => current ? nextPlaces.find((item) => item.id === current.id) ?? null : null);
+      setSelectedPhoto((current) => current ? nextPhotoLinks.find((item) => item.id === current.id) ?? null : null);
       setSelectedTripId((current) => {
         if (current && nextTrips.some((trip) => trip.id === current)) return current;
         return nextTrips[0]?.id ?? "";
@@ -164,6 +175,56 @@ export default function TravelModule() {
     }
   };
 
+  const openPhotoPicker = async () => {
+    if (!selected) return;
+    setPhotoTripId(selectedTripId);
+    setPhotoPickerLoading(true);
+    setError("");
+    setPanel("photo");
+    try {
+      setPhotoCandidates(await travelApi.photoCandidates.list(180));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "照片列表读取失败");
+    } finally {
+      setPhotoPickerLoading(false);
+    }
+  };
+
+  const linkPhoto = async (candidate: TravelPhotoCandidate) => {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      const created = await travelApi.photoLinks.create({
+        photoId: candidate.photoId,
+        placeId: selected.id,
+        tripId: photoTripId || null,
+        capturedAt: candidate.capturedAt || null,
+      });
+      await load();
+      setSelectedPhoto(created);
+      setMode("photos");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "照片关联失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const unlinkPhoto = async (link: TravelPhotoLink) => {
+    setSaving(true);
+    setError("");
+    try {
+      await travelApi.photoLinks.remove(link.id);
+      setSelectedPhoto(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "照片关联移除失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const selectedVisits = useMemo(
     () => selected ? sortVisits(visits.filter((visit) => visit.placeId === selected.id)) : [],
     [selected, visits],
@@ -175,6 +236,14 @@ export default function TravelModule() {
   const selectedTripVisits = useMemo(
     () => selectedTrip ? sortVisits(visits.filter((visit) => visit.tripId === selectedTrip.id)) : [],
     [selectedTrip, visits],
+  );
+  const linkedPhotoIds = useMemo(
+    () => new Set(photoLinks.filter((link) => link.placeId === selected?.id).map((link) => link.photoId)),
+    [photoLinks, selected?.id],
+  );
+  const selectedPlacePhotos = useMemo(
+    () => selected ? photoLinks.filter((link) => link.placeId === selected.id) : [],
+    [photoLinks, selected],
   );
 
   const selectTrip = (trip: TravelTrip, nextMode: TravelMode = "trips") => {
@@ -192,8 +261,8 @@ export default function TravelModule() {
           <button type="button" className={mode === "trips" ? "active" : ""} onClick={() => setMode("trips")}>
             <Plane />旅行 <span>{summary.tripCount}</span>
           </button>
-          <button type="button" disabled title="照片地图将在照片关联完成后启用">
-            <Camera />照片地图
+          <button type="button" className={mode === "photos" ? "active" : ""} onClick={() => setMode("photos")}>
+            <Camera />照片地图 <span>{summary.photoCount}</span>
           </button>
           <button type="button" className={mode === "route" ? "active" : ""} onClick={() => setMode("route")}>
             <Route />路线
@@ -222,11 +291,18 @@ export default function TravelModule() {
             <TravelMapLibre
               places={places}
               visits={visits}
+              photoLinks={photoLinks}
               selectedPlaceId={selected?.id}
+              selectedPhotoLinkId={selectedPhoto?.id}
               routeTripId={mode === "route" ? selectedTripId : null}
+              showPhotos={mode === "photos"}
               onSelectPlace={(place) => {
                 setSelected(place);
                 setMode("map");
+              }}
+              onSelectPhoto={(photo) => {
+                setSelectedPhoto(photo);
+                setMode("photos");
               }}
               onCreateAt={openPlaceAt}
             />
@@ -267,6 +343,33 @@ export default function TravelModule() {
                   <button type="button" onClick={() => setMode("route")}><Route />查看路线</button>
                 </div>
               ) : null}
+            </div>
+          ) : mode === "photos" ? (
+            <div className="lt-travel-photo-panel">
+              <div className="lt-travel-panel-heading">
+                <div><span>Photo Map</span><h2>照片地图</h2><p>照片本体仍由相册管理，这里只保存地点关联。</p></div>
+              </div>
+              {selectedPhoto ? (
+                <article className="lt-travel-photo-detail">
+                  <img src={selectedPhoto.thumbnailUrl} alt="" />
+                  <h3>{selectedPhoto.originalFileName}</h3>
+                  <p>{selectedPhoto.placeName || "自定义坐标"} · {shortDate(selectedPhoto.capturedAt)}</p>
+                  <button type="button" disabled={saving} onClick={() => void unlinkPhoto(selectedPhoto)}>
+                    <Trash2 />移除地图关联
+                  </button>
+                </article>
+              ) : (
+                <div className="lt-travel-photo-list">
+                  {photoLinks.length ? photoLinks.slice(0, 40).map((photo) => (
+                    <button type="button" key={photo.id} onClick={() => setSelectedPhoto(photo)}>
+                      <img src={photo.thumbnailUrl} alt="" loading="lazy" />
+                      <span><strong>{photo.placeName || photo.originalFileName}</strong><small>{shortDate(photo.capturedAt)}</small></span>
+                    </button>
+                  )) : (
+                    <p className="empty">还没有地图照片。先在“地图”里选择地点，再点击“关联照片”。</p>
+                  )}
+                </div>
+              )}
             </div>
           ) : mode === "route" ? (
             <div className="lt-travel-route-panel">
@@ -318,12 +421,29 @@ export default function TravelModule() {
                 <span><strong>{selected.visitCount}</strong><small>访问次数</small></span>
                 <span><strong>{selected.photoCount}</strong><small>关联照片</small></span>
               </div>
-              <button className="lt-travel-add-visit" type="button" onClick={() => {
-                setVisitTripId(selectedTripId);
-                setPanel("visit");
-              }}>
-                <CalendarDays />记录这次到访
-              </button>
+              <div className="lt-travel-place-actions">
+                <button className="lt-travel-add-visit" type="button" onClick={() => {
+                  setVisitTripId(selectedTripId);
+                  setPanel("visit");
+                }}>
+                  <CalendarDays />记录到访
+                </button>
+                <button className="lt-travel-add-visit" type="button" onClick={() => void openPhotoPicker()}>
+                  <Camera />关联照片
+                </button>
+              </div>
+              {selectedPlacePhotos.length ? (
+                <div className="lt-travel-place-photos">
+                  {selectedPlacePhotos.slice(0, 6).map((photo) => (
+                    <button type="button" key={photo.id} onClick={() => {
+                      setSelectedPhoto(photo);
+                      setMode("photos");
+                    }}>
+                      <img src={photo.thumbnailUrl} alt="" loading="lazy" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="lt-travel-visit-list">
                 <h3>访问记录</h3>
                 {selectedVisits.length ? selectedVisits.map((visit) => (
@@ -355,7 +475,15 @@ export default function TravelModule() {
         <div className="lt-travel-sheet-backdrop" onMouseDown={() => !saving && setPanel("none")}>
           <section className="lt-travel-sheet" onMouseDown={(event) => event.stopPropagation()}>
             <header>
-              <div><span>Travel</span><h2>{panel === "place" ? "添加地点" : panel === "trip" ? "新建旅行" : "记录到访"}</h2></div>
+              <div>
+                <span>Travel</span>
+                <h2>
+                  {panel === "place" ? "添加地点"
+                    : panel === "trip" ? "新建旅行"
+                      : panel === "photo" ? "关联照片"
+                        : "记录到访"}
+                </h2>
+              </div>
               <button type="button" onClick={() => setPanel("none")}><X /></button>
             </header>
             {panel === "place" ? (
@@ -380,6 +508,36 @@ export default function TravelModule() {
                 <button type="button" className="primary" disabled={saving || !tripTitle.trim()} onClick={() => void createTrip()}>
                   {saving ? "创建中…" : "创建旅行"}
                 </button>
+              </div>
+            ) : panel === "photo" ? (
+              <div className="lt-travel-photo-picker">
+                <label>关联到旅行
+                  <select value={photoTripId} onChange={(event) => setPhotoTripId(event.target.value)}>
+                    <option value="">不指定旅行</option>
+                    {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.title}</option>)}
+                  </select>
+                </label>
+                <p>地点：<strong>{selected?.name || "未选择"}</strong>。照片原文件不会移动或复制。</p>
+                {photoPickerLoading ? <div className="lt-travel-photo-picker-loading">正在读取本机相册…</div> : (
+                  <div className="lt-travel-photo-picker-grid">
+                    {photoCandidates.map((candidate) => {
+                      const linked = linkedPhotoIds.has(candidate.photoId);
+                      return (
+                        <button
+                          type="button"
+                          key={candidate.photoId}
+                          className={linked ? "linked" : ""}
+                          disabled={saving || linked}
+                          onClick={() => void linkPhoto(candidate)}
+                          title={linked ? "这张照片已关联到当前地点" : candidate.originalFileName}
+                        >
+                          <img src={candidate.thumbnailUrl} alt="" loading="lazy" />
+                          <span>{linked ? "已关联" : shortDate(candidate.capturedAt || candidate.importedAt)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="lt-travel-form">
