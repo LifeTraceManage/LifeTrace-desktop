@@ -259,14 +259,13 @@ fn pending_exif_candidates(
          ORDER BY imported_at DESC
          LIMIT ?1"
     )?;
-    statement
-        .query_map([limit], |row| {
-            Ok(PhotoExifCandidate {
-                id: row.get(0)?,
-                relative_path: row.get(1)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()
+    let rows = statement.query_map([limit], |row| {
+        Ok(PhotoExifCandidate {
+            id: row.get(0)?,
+            relative_path: row.get(1)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
 }
 
 fn apply_exif_metadata(
@@ -396,6 +395,12 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            synced_at TEXT NOT NULL,UNIQUE(device_id,client_asset_id)
          );
          CREATE INDEX IF NOT EXISTS photos_captured_at_idx ON photos(captured_at);
+         CREATE INDEX IF NOT EXISTS photos_exif_pending_idx
+           ON photos(imported_at DESC)
+           WHERE exif_scanned_at IS NULL
+             AND deleted_at IS NULL
+             AND media_type='image'
+             AND processing_status='completed';
          CREATE INDEX IF NOT EXISTS photo_tasks_status_idx ON photo_upload_tasks(status);",
     )?;
     for (column, ddl) in [
