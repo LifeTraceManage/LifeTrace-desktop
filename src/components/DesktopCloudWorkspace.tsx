@@ -21,6 +21,7 @@ import DesktopLocalToolsCenter from "@/src/components/DesktopLocalToolsCenter";
 import DesktopFitnessImport from "@/src/components/DesktopFitnessImport";
 import DesktopWorkbenchShell from "@/src/components/DesktopWorkbenchShell";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
+import Footprints from "@/src/components/feature/footprints/Footprints";
 import { cloudAuthClient, CLIENT_VERSION } from "@/src/services/cloudAuth";
 import { setAppThemePreference } from "@/src/services/appPreferences";
 import { useCloudAuthStore } from "@/src/stores/useCloudAuthStore";
@@ -299,6 +300,7 @@ export default function DesktopCloudWorkspace() {
               {localToolsOpen
                 ? <DesktopLocalToolsCenter onClose={() => setLocalToolsOpen(false)} />
                 : path === "/app/photos" ? <PhotoSyncModule />
+                  : path === "/app/footprints" ? <Footprints />
                   : path === "/app/fitness" ? <><DesktopFitnessImport />{content}</>
                     : content}
             </DesktopWorkbenchShell>

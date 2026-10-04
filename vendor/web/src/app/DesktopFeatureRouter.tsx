@@ -61,6 +61,7 @@ function FeatureRoutes() {
       <Route path="/app/fitness" element={withSuspense(<FitnessPage />)} />
       <Route path="/app/health" element={withSuspense(<HealthPage />)} />
       <Route path="/app/notes" element={withSuspense(<NotesPage />)} />
+      <Route path="/app/footprints" element={null} />
       <Route path="/app/review" element={withSuspense(<ReviewPage />)} />
       <Route path="/finance/*" element={withSuspense(<FinanceWorkspace />)} />
       <Route path="/app/finance/*" element={<LegacyFinanceRedirect />} />
