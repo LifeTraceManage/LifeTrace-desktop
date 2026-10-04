@@ -425,8 +425,8 @@ export default function TravelMapLibre({
       if (!cancelled) {
         setMapConfig({
           style: DEFAULT_MAP_STYLE,
-          center: [108.5, 34.5],
-          zoom: 3.4,
+          center: [104.2, 35.8],
+          zoom: 3.6,
           offline: false,
         });
       }
@@ -452,6 +452,8 @@ export default function TravelMapLibre({
       center: mapConfig.center,
       zoom: mapConfig.zoom,
       attributionControl: true,
+      maxBounds: [[72.0, 15.0], [136.0, 55.5]],
+      minZoom: 3,
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
