@@ -414,8 +414,6 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            synced_at TEXT NOT NULL,UNIQUE(device_id,client_asset_id)
          );
          CREATE INDEX IF NOT EXISTS photos_captured_at_idx ON photos(captured_at);
-         CREATE INDEX IF NOT EXISTS photos_geo_idx ON photos(latitude,longitude,captured_at)
-           WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;
          CREATE INDEX IF NOT EXISTS photo_tasks_status_idx ON photo_upload_tasks(status);",
     )?;
     for (column, ddl) in [
