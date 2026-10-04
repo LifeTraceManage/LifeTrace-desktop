@@ -39,7 +39,6 @@ import ExecutionModule from "@/src/components/feature/execution/ExecutionModule"
 import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
 import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
-import AIAssistantModule from "@/src/components/AIAssistantModule";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import AppUpdaterHost from "@/src/components/AppUpdaterHost";
 import type { ToastPayload } from "@/src/ui/feedback/toastBus";
@@ -313,9 +312,6 @@ export default function HengXuShell() {
           />
         ) : null}
         {view === "execution" ? <ExecutionModule /> : null}
-        {view === "assistant" ? (
-          <AIAssistantModule openSettings={() => setView("settings")} />
-        ) : null}
         {view === "mail" ? <MailActionCenter /> : null}
         {view === "habits" ? (
           <Habits
