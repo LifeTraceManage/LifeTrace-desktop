@@ -414,6 +414,8 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            synced_at TEXT NOT NULL,UNIQUE(device_id,client_asset_id)
          );
          CREATE INDEX IF NOT EXISTS photos_captured_at_idx ON photos(captured_at);
+         CREATE INDEX IF NOT EXISTS photos_geo_idx ON photos(latitude,longitude,captured_at)
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;
          CREATE INDEX IF NOT EXISTS photo_tasks_status_idx ON photo_upload_tasks(status);",
     )?;
     for (column, ddl) in [
@@ -438,8 +440,30 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            WHERE exif_scanned_at IS NULL
              AND deleted_at IS NULL
              AND media_type='image'
-             AND processing_status='completed';"
+             AND processing_status='completed';
+         CREATE INDEX IF NOT EXISTS photos_geo_idx ON photos(latitude,longitude,captured_at)
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;"
     )?;
+    let footprint_links_exist: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='footprint_entry_photos'",
+        [],
+        |row| row.get(0),
+    )?;
+    if footprint_links_exist > 0 {
+        connection.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS trg_footprint_photo_soft_delete
+             AFTER UPDATE OF deleted_at ON photos
+             WHEN NEW.deleted_at IS NOT NULL
+             BEGIN
+               DELETE FROM footprint_entry_photos WHERE photo_id=NEW.id;
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_footprint_photo_delete
+             AFTER DELETE ON photos
+             BEGIN
+               DELETE FROM footprint_entry_photos WHERE photo_id=OLD.id;
+             END;"
+        )?;
+    }
     // 上次隐藏任务被中断（例如加密完成前应用退出）时，把卡在“隐藏中”的照片
     // 恢复为可见：文件仍在磁盘，不丢数据，等待用户再次隐藏。
     connection.execute(

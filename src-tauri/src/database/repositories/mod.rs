@@ -16,3 +16,5 @@ pub mod habits;
 pub mod notes;
 pub mod state_compat;
 pub mod workouts;
+
+pub mod footprints;
