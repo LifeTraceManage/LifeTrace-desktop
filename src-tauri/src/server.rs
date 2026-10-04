@@ -13,7 +13,6 @@ pub(crate) mod migration;
 mod notes;
 pub(crate) mod photo;
 mod state;
-mod travel;
 mod xunji;
 
 use std::{
@@ -150,23 +149,6 @@ pub async fn serve(
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/state", get(state::get).post(state::mutate))
-        .route("/api/travel/summary", get(travel::summary))
-        .route("/api/travel/offline-map/status", get(travel::offline_map_status))
-        .route("/api/travel/offline-map/archive", get(travel::offline_map_archive))
-        .route("/api/travel/reverse-geocode", get(travel::reverse_geocode))
-        .route("/api/travel/route", axum::routing::post(travel::road_route))
-        .route("/api/travel/places", get(travel::list_places).post(travel::create_place))
-        .route("/api/travel/places/{id}", axum::routing::put(travel::update_place).delete(travel::delete_place))
-        .route("/api/travel/trips", get(travel::list_trips).post(travel::create_trip))
-        .route("/api/travel/trips/from-suggestion", axum::routing::post(travel::create_trip_from_suggestion))
-        .route("/api/travel/trips/{id}", axum::routing::put(travel::update_trip).delete(travel::delete_trip))
-        .route("/api/travel/trips/{id}/reorder", axum::routing::put(travel::reorder_visits))
-        .route("/api/travel/visits", get(travel::list_visits).post(travel::create_visit))
-        .route("/api/travel/visits/{id}", axum::routing::put(travel::update_visit).delete(travel::delete_visit))
-        .route("/api/travel/photo-candidates", get(travel::list_photo_candidates))
-        .route("/api/travel/photo-links", get(travel::list_photo_links).post(travel::create_photo_link))
-        .route("/api/travel/photo-links/{id}", axum::routing::delete(travel::delete_photo_link))
-        .route("/api/travel/photo-links/{id}/place", axum::routing::put(travel::assign_photo_link_place))
         .route("/api/analytics/status", get(analytics::status))
         .route(
             "/api/analytics/rebuild",

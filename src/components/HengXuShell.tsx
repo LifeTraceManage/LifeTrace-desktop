@@ -39,7 +39,6 @@ import ExecutionModule from "@/src/components/feature/execution/ExecutionModule"
 import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
 import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
-import TravelModule from "@/src/components/feature/travel/TravelModule";
 import AIAssistantModule from "@/src/components/AIAssistantModule";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import AppUpdaterHost from "@/src/components/AppUpdaterHost";
@@ -347,7 +346,6 @@ export default function HengXuShell() {
           />
         ) : null}
         {view === "photos" ? <PhotoSyncModule /> : null}
-        {view === "travel" ? <TravelModule /> : null}
         {view === "notes" ? <NotesModule /> : null}
         {view === "finance" ? <Finance /> : null}
         {view === "transactions" ? (
