@@ -1,7 +1,6 @@
 import {
   BarChart3,
   BookOpen,
-  Bot,
   CalendarDays,
   Check,
   CircleDollarSign,
@@ -19,7 +18,6 @@ import type { NavGroup } from "./AppShell";
 export type PlatformView =
   | "dashboard"
   | "execution"
-  | "assistant"
   | "mail"
   | "habits"
   | "fitness"
@@ -75,16 +73,11 @@ export const navGroups: NavGroup[] = [
       { id: "analytics", label: "分析", icon: BarChart3 },
     ],
   },
-  {
-    label: "助手",
-    items: [{ id: "assistant", label: "AI 管家", icon: Bot }],
-  },
 ];
 
 export const pageTitles: Record<PlatformView, string> = {
   dashboard: "今天",
   execution: "执行中心",
-  assistant: "AI 管家",
   mail: "邮件行动中心",
   habits: "坚持",
   fitness: "健身训练",
