@@ -234,3 +234,7 @@
 .lt-travel-actions .lt-travel-offline-actions>button.offline-remove svg{width:14px;height:14px}
 .lt-travel-map-hint strong{font-weight:750;color:#315c49}
 @media(max-width:900px){.lt-travel-offline-actions{width:100%}.lt-travel-offline-actions>button:first-child{flex:1}}
+
+/* Non-GPS photos remain actionable: choose a saved China address before binding. */
+.lt-travel-photo-picker-grid button.needs-address{border-color:#d7b46a}
+.lt-travel-photo-picker-grid button.needs-address:hover{border-color:#b88a32}
