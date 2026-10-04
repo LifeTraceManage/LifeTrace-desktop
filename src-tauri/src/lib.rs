@@ -1,8 +1,10 @@
 #![allow(linker_messages)]
 
+mod application;
 mod cloud_api;
 mod cloud_auth;
 pub mod contracts;
+mod commands;
 mod database;
 mod desktop;
 mod execution;
@@ -33,6 +35,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             cloud_api::cloud_api_http_request,
+            commands::notes::notes_query,
+            commands::notes::notes_mutate,
             cloud_auth::cloud_auth_http_request,
             cloud_auth::cloud_credential_set,
             cloud_auth::cloud_credential_get,
