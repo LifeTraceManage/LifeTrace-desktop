@@ -1,5 +1,4 @@
 mod analytics;
-mod assistant;
 mod execution;
 mod execution_calendar;
 mod execution_cloud;
@@ -110,7 +109,6 @@ pub async fn serve(
         }
     }
     state::ensure_schema(&connection)?;
-    assistant::ensure_schema(&connection)?;
     imports::ensure_schema(&connection)?;
     crate::database::repositories::notes::seed_default_folders(&connection)?;
     photo::ensure_schema(&connection)?;
@@ -385,20 +383,6 @@ pub async fn serve(
         .route(
             "/api/execution/entity-links/{id}",
             axum::routing::delete(execution_relation::delete_link),
-        )
-        .route("/api/assistant/catalog", get(assistant::catalog))
-        .route("/api/assistant/chat", axum::routing::post(assistant::chat))
-        .route(
-            "/api/assistant/conversations",
-            get(assistant::conversations_get)
-                .post(assistant::conversations_save)
-                .delete(assistant::conversations_remove),
-        )
-        .route(
-            "/api/settings/ai",
-            get(assistant::settings_get)
-                .post(assistant::settings_save)
-                .delete(assistant::settings_remove),
         )
         .route(
             "/api/imports",
