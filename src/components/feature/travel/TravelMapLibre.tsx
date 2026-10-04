@@ -26,8 +26,30 @@ type TravelMapLibreProps = {
   onCreateAt: (latitude: number, longitude: number) => void;
 };
 
-const DEFAULT_MAP_STYLE =
-  import.meta.env.VITE_TRAVEL_MAP_STYLE_URL || "https://demotiles.maplibre.org/style.json";
+const CONFIGURED_MAP_STYLE = import.meta.env.VITE_TRAVEL_MAP_STYLE_URL;
+const DEFAULT_RASTER_TILE_URL =
+  import.meta.env.VITE_TRAVEL_MAP_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+const DEFAULT_MAP_STYLE = CONFIGURED_MAP_STYLE || {
+  version: 8,
+  sources: {
+    "china-base": {
+      type: "raster",
+      tiles: [DEFAULT_RASTER_TILE_URL],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [
+    {
+      id: "china-base",
+      type: "raster",
+      source: "china-base",
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+};
 
 const PHOTO_THUMBNAIL_ZOOM = 10;
 const MAX_VISIBLE_PHOTO_MARKERS = 60;
@@ -428,8 +450,8 @@ export default function TravelMapLibre({
       if (!cancelled) {
         setMapConfig({
           style: DEFAULT_MAP_STYLE,
-          center: [108.5, 34.5],
-          zoom: 3.4,
+          center: [104.2, 35.8],
+          zoom: 3.6,
           offline: false,
         });
       }
@@ -455,6 +477,8 @@ export default function TravelMapLibre({
       center: mapConfig.center,
       zoom: mapConfig.zoom,
       attributionControl: true,
+      maxBounds: [[72.0, 15.0], [136.0, 55.5]],
+      minZoom: 3,
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
@@ -564,7 +588,7 @@ export default function TravelMapLibre({
 
     map.on("error", (event: any) => {
       const message = event?.error?.message;
-      if (typeof message === "string" && message.trim()) setMapError(message);
+      if (typeof message === "string" && message.trim()) setMapError(`地图底图加载失败：${message}。可配置 VITE_TRAVEL_MAP_TILE_URL 使用可访问的国内瓦片源，或导入离线 PMTiles。`);
     });
 
     ["travel-points", "travel-clusters", "travel-photo-points", "travel-photo-clusters"].forEach((layer) => {
