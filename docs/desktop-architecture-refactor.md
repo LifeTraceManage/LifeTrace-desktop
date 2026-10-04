@@ -140,6 +140,32 @@ NotesModule
 
 写操作成功后会调用 `SyncDesktopState::signal_local_change()`，保证绕过 localhost HTTP 后仍能及时唤醒同步调度器。
 
+### 3.6 核心本地状态改为 Tauri Command 主路径
+
+新增：
+
+- `src-tauri/src/application/state.rs`
+- `src-tauri/src/commands/state.rs`
+
+重构：
+
+- `src/db/sqliteClient.ts`
+- `src-tauri/src/server/state.rs`
+
+桌面运行时的坚持、活动日志、财务账户/账单、复盘、训练历史和本机 settings 现在走：
+
+```text
+useLifeStore
+  -> sqliteClient
+  -> invoke(state_get / state_mutate)
+  -> commands::state
+  -> application::state
+  -> domain repositories
+  -> SQLite
+```
+
+数据库工作通过 `spawn_blocking` 执行，避免阻塞 Tauri async runtime。写操作成功后同样唤醒同步 scheduler。浏览器/dev 下的 `/api/state` 继续保留为兼容 adapter，但不再承载业务分支。
+
 ## 4. 数据归属
 
 ### Local only
