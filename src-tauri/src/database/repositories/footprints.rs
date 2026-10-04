@@ -465,7 +465,7 @@ pub fn save_entry(
                     clean_optional(&input.ended_at),
                     if input.visit_type.trim().is_empty() { "trip" } else { input.visit_type.trim() },
                     input.rating,
-                    i64::from(input.favorite),
+                    if input.favorite { 1_i64 } else { 0_i64 },
                     now,
                     id,
                     user_id
@@ -630,7 +630,7 @@ pub fn attach_photos(
                     entry_id,
                     photo_id,
                     start_order + offset as i64,
-                    i64::from(has_cover == 0 && offset == 0),
+                    if has_cover == 0 && offset == 0 { 1_i64 } else { 0_i64 },
                     stamp()
                 ],
             )
@@ -737,7 +737,7 @@ pub fn summary(connection: &Connection, user_id: &str) -> Result<FootprintSummar
                  ELSE NULL END),
                COUNT(DISTINCT e.id),
                COUNT(DISTINCT ep.photo_id),
-               COALESCE(SUM(CASE WHEN e.favorite=1 THEN 1 ELSE 0 END),0),
+               COUNT(DISTINCT CASE WHEN e.favorite=1 THEN e.id END),
                MIN(e.started_at),
                MAX(COALESCE(e.ended_at,e.started_at))
              FROM footprint_entries e
