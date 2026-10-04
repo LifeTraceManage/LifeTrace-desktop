@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import TravelMapLibre from "@/src/components/feature/travel/TravelMapLibre";
+import { groupChinaTravelAddresses } from "@/src/components/feature/travel/travelAddress";
 import {
   TravelStatsView,
   TravelTimelineView,
@@ -141,6 +142,8 @@ export default function TravelModule() {
   });
   const [offlineMapBusy, setOfflineMapBusy] = useState(false);
 
+  const addressGroups = useMemo(() => groupChinaTravelAddresses(places), [places]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -260,7 +263,7 @@ export default function TravelModule() {
   const openPlaceAt = (latitude: number, longitude: number) => {
     setPendingPhotoLinkId("");
     setEditingPlaceId("");
-    setDraftPlace({ name: "", placeType: "custom", latitude, longitude });
+    setDraftPlace({ name: "", placeType: "custom", country: "中国", countryCode: "CN", latitude, longitude });
     setPanel("place");
     resolvePlaceCoordinates(latitude, longitude);
   };
@@ -1069,7 +1072,7 @@ export default function TravelModule() {
                 <h2>
                   {panel === "place" ? (editingPlaceId ? "编辑地点" : "添加地点")
                     : panel === "trip" ? (editingTripId ? "编辑旅行" : "新建旅行")
-                      : panel === "photo" ? (photoPickerMode === "gps" ? "导入定位照片" : "关联照片")
+                      : panel === "photo" ? (photoPickerMode === "gps" ? "添加旅行照片" : "关联照片")
                         : "记录到访"}
                 </h2>
               </div>
@@ -1144,13 +1147,15 @@ export default function TravelModule() {
                   <label>无 GPS 照片绑定地址
                     <select value={photoBindingPlaceId} onChange={(event) => setPhotoBindingPlaceId(event.target.value)}>
                       <option value="">请选择省 / 市 / 具体地点</option>
-                      {places
-                        .filter((place) => place.latitude != null && place.longitude != null)
-                        .map((place) => (
-                          <option key={place.id} value={place.id}>
-                            {[place.province, place.city, place.name].filter(Boolean).join(" · ")}
-                          </option>
-                        ))}
+                      {addressGroups.flatMap((group) =>
+                        group.cities.map((city) => (
+                          <optgroup key={`${group.province}/${city.city}`} label={`${group.province} · ${city.city}`}>
+                            {city.places.map((place) => (
+                              <option key={place.id} value={place.id}>{place.name}</option>
+                            ))}
+                          </optgroup>
+                        ))
+                      )}
                     </select>
                   </label>
                 ) : null}
