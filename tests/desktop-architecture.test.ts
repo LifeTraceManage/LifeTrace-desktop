@@ -53,7 +53,7 @@ test("cloud transport is outside react components", () => {
   assert.doesNotMatch(workspace, /@tauri-apps\/api\/core/);
   assert.doesNotMatch(workspace, /invoke</);
   assert.match(transport, /cloud_api_http_request/);
-  assert.match(transport, /path\.startsWith\("\/api\/v1\/"\)/);
+  assert.match(transport, /url\.pathname\.startsWith\("\/api\/v1\/"\)/);
 });
 
 
