@@ -1081,11 +1081,11 @@ export default function TravelModule() {
             {panel === "place" ? (
               <div className="lt-travel-form">
                 <label>地点名称<input autoFocus value={draftPlace.name} onChange={(event) => setDraftPlace((value) => ({ ...value, name: event.target.value }))} placeholder="例如：鼓浪屿" /></label>
-                <label>城市<input value={draftPlace.city || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, city: event.target.value }))} placeholder="厦门" /></label>
                 <div className="row">
-                  <label>省 / 州<input value={draftPlace.province || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, province: event.target.value }))} placeholder="福建" /></label>
-                  <label>国家 / 地区<input value={draftPlace.country || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, country: event.target.value }))} placeholder="中国" /></label>
+                  <label>省 / 自治区 / 直辖市<input value={draftPlace.province || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, province: event.target.value, country: "中国", countryCode: "CN" }))} placeholder="例如：福建省" /></label>
+                  <label>城市<input value={draftPlace.city || ""} onChange={(event) => setDraftPlace((value) => ({ ...value, city: event.target.value, country: "中国", countryCode: "CN" }))} placeholder="例如：厦门市" /></label>
                 </div>
+                <label>国家 / 地区<input value="中国" disabled /></label>
                 <div className="row">
                   <label>纬度<input type="number" step="0.00001" value={draftPlace.latitude ?? ""} onChange={(event) => setDraftPlace((value) => ({ ...value, latitude: event.target.value === "" ? null : Number(event.target.value) }))} /></label>
                   <label>经度<input type="number" step="0.00001" value={draftPlace.longitude ?? ""} onChange={(event) => setDraftPlace((value) => ({ ...value, longitude: event.target.value === "" ? null : Number(event.target.value) }))} /></label>
