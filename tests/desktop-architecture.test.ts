@@ -55,3 +55,22 @@ test("cloud transport is outside react components", () => {
   assert.match(transport, /cloud_api_http_request/);
   assert.match(transport, /path\.startsWith\("\/api\/v1\/"\)/);
 });
+
+
+test("core local state uses tauri commands and shared application service", () => {
+  const client = read("src/db/sqliteClient.ts");
+  const commands = read("src-tauri/src/commands/state.rs");
+  const application = read("src-tauri/src/application/state.rs");
+  const adapter = read("src-tauri/src/server/state.rs");
+
+  assert.match(client, /invoke<LifeData>\("state_get"/);
+  assert.match(client, /invoke<\{ ok: true \}>\("state_mutate"/);
+  assert.match(commands, /spawn_blocking/);
+  assert.match(commands, /signal_local_change/);
+  assert.match(adapter, /application::state::load/);
+  assert.match(adapter, /application::state::mutate/);
+  assert.doesNotMatch(adapter, /finance::|habits::|workouts::/);
+  assert.match(application, /finance::save_transaction/);
+  assert.match(application, /habits::save_activity/);
+  assert.match(application, /workouts::save_workout/);
+});
