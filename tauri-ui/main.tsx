@@ -14,7 +14,7 @@ import { installWindowPlacementPersistence, restoreWindowPlacement } from "./win
 /* The authenticated cloud workspace reuses the current apps/web feature layer.
  * Compile its Tailwind visual contract first, then keep desktop/local styles in
  * control of native shell and local-only tools. */
-import "../vendor/web/src/styles/globals.css";
+import "@/src/compat/webWorkspaceStyles";
 
 import "@/app/tokens.css";
 import "@/app/globals.css";
@@ -38,6 +38,7 @@ import "@/app/module-layout-overrides.css";
 import "@/app/apple-polish.css";
 import "@/app/interaction-performance.css";
 import "@/app/desktop-cloud-workspace.css";
+import "@/app/cloud-agent.css";
 import "@/app/desktop-local-tools.css";
 
 installGlobalFetchInstrumentation();
