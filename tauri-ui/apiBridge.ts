@@ -93,33 +93,6 @@ export function installTauriApiBridge() {
     },
     setCompatibilityMode: (enabled) => invoke<PhotoSyncDesktopResponse>("photo_set_compatibility", { enabled }),
   };
-  window.travelOfflineMapApi = {
-    async chooseAndInstall() {
-      const sourcePath = await open({
-        multiple: false,
-        directory: false,
-        title: "选择 PMTiles 离线地图",
-        filters: [{ name: "PMTiles", extensions: ["pmtiles"] }],
-      });
-      if (!sourcePath) return { ok: false, canceled: true };
-      try {
-        const result = await invoke<{ok:boolean;fileName?:string;sizeBytes?:number}>(
-          "travel_offline_map_import",
-          { sourcePath },
-        );
-        return { ...result, canceled: false };
-      } catch (error) {
-        return { ok: false, canceled: false, error: String(error) };
-      }
-    },
-    async remove() {
-      try {
-        return await invoke<{ok:boolean;error?:string}>("travel_offline_map_remove");
-      } catch (error) {
-        return { ok: false, error: String(error) };
-      }
-    },
-  };
   window.noteApi = {
     async selectAttachment(noteId) {
       const sourcePath = await open({ multiple: false, directory: false });
