@@ -37,6 +37,8 @@ pub fn run() {
             cloud_api::cloud_api_http_request,
             commands::notes::notes_query,
             commands::notes::notes_mutate,
+            commands::state::state_get,
+            commands::state::state_mutate,
             cloud_auth::cloud_auth_http_request,
             cloud_auth::cloud_credential_set,
             cloud_auth::cloud_credential_get,
