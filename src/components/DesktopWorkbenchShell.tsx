@@ -88,7 +88,9 @@ const PAGE_COPY: Record<string, [string, string]> = {
   "/app/english": ["英语学习", "管理英语学习内容与练习记录。"],
   "/app/photos": ["相册", "管理同步相册与本机私密相册。"],
   "/app/finance": ["财务", "使用 BeeCount Cloud Web 管理账单与资产。"],
-  "/app/finance/transactions": ["账单", "查看财务交易记录。"],
+  "/app/finance/transactions": ["账单", "查看和编辑本机账单记录。"],
+  "/app/finance/accounts": ["账户", "管理本机财务账户。"],
+  "/app/finance/import": ["账单导入", "从文件导入账单到本机数据库。"],
   "/app/search": ["全局搜索", "跨模块检索 LifeTrace 云端内容。"],
   "/app/settings": ["设置", "管理账户、外观、设备与偏好。"],
 };
@@ -124,6 +126,10 @@ type DesktopWorkbenchShellProps = {
   privacy: boolean;
   error: string;
   onNavigate: (route: string) => void;
+  onBack: () => void;
+  onForward: () => void;
+  canBack: boolean;
+  canForward: boolean;
   onRefresh: () => void;
   onTogglePrivacy: () => void;
   onLogout: () => void;
@@ -157,6 +163,10 @@ export default function DesktopWorkbenchShell({
   privacy,
   error,
   onNavigate,
+  onBack,
+  onForward,
+  canBack,
+  canForward,
   onRefresh,
   onTogglePrivacy,
   onLogout,
@@ -283,8 +293,8 @@ export default function DesktopWorkbenchShell({
         <section className="lt-desk-stage">
           <header className="lt-desktop-commandbar">
             <div className="lt-desk-history-actions">
-              <button type="button" title="后退" onClick={() => window.history.back()}><ChevronLeft /></button>
-              <button type="button" title="前进" onClick={() => window.history.forward()}><ChevronRight /></button>
+              <button type="button" title="后退" disabled={!canBack} onClick={onBack}><ChevronLeft /></button>
+              <button type="button" title="前进" disabled={!canForward} onClick={onForward}><ChevronRight /></button>
             </div>
             <div className="lt-desk-page-heading"><strong>{title}</strong><span>{description}</span></div>
             <div className="lt-desk-command-actions">
