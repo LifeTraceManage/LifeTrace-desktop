@@ -6,6 +6,7 @@ import {
   type ThemeMode,
 } from "../../vendor/web/src/app/AppContext";
 import { DesktopFeatureRouter } from "../../vendor/web/src/app/DesktopFeatureRouter";
+import { AgentSidebarProvider } from "../../vendor/web/src/features/assistant/AgentSidebarContext";
 import {
   CloudDataStore,
   EMPTY_CLOUD_STATE,
@@ -278,32 +279,34 @@ export default function DesktopCloudWorkspace() {
 
   return (
     <AppRuntimeProvider value={appContext}>
-      <DesktopFeatureRouter
-        render={({ path, navigate, content }) => (
-          <DesktopWorkbenchShell
-            route={path}
-            titleOverride={localToolsOpen ? "本机工具" : undefined}
-            descriptionOverride={localToolsOpen ? "SQLite 与其他仅桌面端提供的本机能力。" : undefined}
-            userLabel={session.user.displayName || session.user.email}
-            online={networkOnline}
-            loading={loading}
-            privacy={privacy}
-            error={error}
-            onNavigate={(next) => { setLocalToolsOpen(false); navigate(next); }}
-            onRefresh={() => void refresh()}
-            onTogglePrivacy={() => setPrivacy((value) => !value)}
-            onLogout={() => void logout()}
-            onOpenLocalTools={() => setLocalToolsOpen(true)}
-          >
-            {localToolsOpen
-              ? <DesktopLocalToolsCenter onClose={() => setLocalToolsOpen(false)} />
-              : path === "/app/travel" ? <TravelModule />
-              : path === "/app/photos" ? <PhotoSyncModule />
-                : path === "/app/fitness" ? <><DesktopFitnessImport />{content}</>
-                  : content}
-          </DesktopWorkbenchShell>
-        )}
-      />
+      <AgentSidebarProvider>
+        <DesktopFeatureRouter
+          render={({ path, navigate, content }) => (
+            <DesktopWorkbenchShell
+              route={path}
+              titleOverride={localToolsOpen ? "本机工具" : undefined}
+              descriptionOverride={localToolsOpen ? "SQLite 与其他仅桌面端提供的本机能力。" : undefined}
+              userLabel={session.user.displayName || session.user.email}
+              online={networkOnline}
+              loading={loading}
+              privacy={privacy}
+              error={error}
+              onNavigate={(next) => { setLocalToolsOpen(false); navigate(next); }}
+              onRefresh={() => void refresh()}
+              onTogglePrivacy={() => setPrivacy((value) => !value)}
+              onLogout={() => void logout()}
+              onOpenLocalTools={() => setLocalToolsOpen(true)}
+            >
+              {localToolsOpen
+                ? <DesktopLocalToolsCenter onClose={() => setLocalToolsOpen(false)} />
+                : path === "/app/travel" ? <TravelModule />
+                : path === "/app/photos" ? <PhotoSyncModule />
+                  : path === "/app/fitness" ? <><DesktopFitnessImport />{content}</>
+                    : content}
+            </DesktopWorkbenchShell>
+          )}
+        />
+      </AgentSidebarProvider>
     </AppRuntimeProvider>
   );
 }

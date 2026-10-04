@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
+import maplibreWorkerUrl from "../../../../vendor/web/node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { buildOfflinePmtilesStyle } from "@/src/components/feature/travel/offlinePmtiles";
+
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 import type {
   TravelOfflineMapStatus,
   TravelPhotoLink,

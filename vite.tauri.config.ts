@@ -12,6 +12,9 @@ export default defineConfig({
   css: {
     postcss: path.join(webRoot, "postcss.config.cjs"),
   },
+  worker: {
+    format: "es",
+  },
   resolve: {
     alias: {
       "@": projectRoot,
