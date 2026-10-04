@@ -1,0 +1,64 @@
+.lt-cloud-agent{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:calc(100vh - 122px);background:var(--lt-surface,#fff);border:1px solid var(--lt-border,#e5e7eb);border-radius:16px;overflow:hidden}
+.lt-cloud-agent button,.lt-cloud-agent textarea{font:inherit}
+.lt-cloud-agent-history{border-right:1px solid var(--lt-border,#e5e7eb);background:color-mix(in srgb,var(--lt-surface,#fff) 94%,#64748b 6%);min-width:0}
+.lt-cloud-agent-history>header{display:flex;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid var(--lt-border,#e5e7eb)}
+.lt-cloud-agent-history>header>div{display:flex;align-items:center;gap:9px}
+.lt-cloud-agent-history>header svg{width:17px;height:17px}
+.lt-cloud-agent-history>header span{display:flex;flex-direction:column}
+.lt-cloud-agent-history>header small,.lt-cloud-agent-history-list small{opacity:.58}
+.lt-cloud-agent-history>header button,.lt-cloud-agent-history-list article>button:last-child{border:0;background:transparent;border-radius:8px;padding:7px;cursor:pointer}
+.lt-cloud-agent-history-list{padding:8px;display:grid;gap:4px}
+.lt-cloud-agent-history-list article{display:flex;align-items:center;border-radius:10px;border:1px solid transparent}
+.lt-cloud-agent-history-list article.active{background:var(--lt-card,#fff);border-color:var(--lt-border,#e5e7eb)}
+.lt-cloud-agent-history-list article>button:first-child{min-width:0;flex:1;border:0;background:transparent;text-align:left;padding:10px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
+.lt-cloud-agent-history-list article strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt-cloud-agent-history-list .danger{opacity:.55}
+.lt-cloud-agent-history-list .danger:hover{opacity:1}
+.lt-cloud-agent-history-list svg{width:15px;height:15px}
+.lt-cloud-agent-muted{padding:20px 10px;display:flex;gap:8px;align-items:center;opacity:.6;font-size:13px}
+.lt-cloud-agent-main{min-width:0;display:grid;grid-template-rows:auto minmax(320px,1fr) auto auto auto;background:var(--lt-surface,#fff)}
+.lt-cloud-agent-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--lt-border,#e5e7eb)}
+.lt-cloud-agent-hero>div{display:flex;align-items:center;gap:11px}
+.lt-cloud-agent-hero>div>span:last-child{display:flex;flex-direction:column;gap:3px}
+.lt-cloud-agent-hero small{opacity:.62}
+.lt-cloud-agent-orb{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--lt-accent,#2563eb) 12%,transparent)}
+.lt-cloud-agent-orb svg{width:20px}
+.lt-cloud-agent-trust{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.72;white-space:nowrap}
+.lt-cloud-agent-trust svg{width:15px}
+.lt-cloud-agent-messages{padding:22px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.lt-cloud-agent-empty{margin:auto;max-width:520px;text-align:center;padding:42px 22px}
+.lt-cloud-agent-empty>svg{width:42px;height:42px;opacity:.5}
+.lt-cloud-agent-empty h2{margin:12px 0 7px;font-size:20px}
+.lt-cloud-agent-empty p{margin:0;opacity:.62;line-height:1.7}
+.lt-cloud-agent-message{display:flex;gap:10px;align-items:flex-start;max-width:min(780px,88%)}
+.lt-cloud-agent-message.user{align-self:flex-end;flex-direction:row-reverse}
+.lt-cloud-agent-message>span{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--lt-accent,#2563eb) 11%,transparent);font-size:12px;flex:none}
+.lt-cloud-agent-message>span svg{width:16px}
+.lt-cloud-agent-message>div{padding:11px 13px;border-radius:12px;background:color-mix(in srgb,var(--lt-surface,#fff) 94%,#64748b 6%);line-height:1.65;overflow-wrap:anywhere}
+.lt-cloud-agent-message.user>div{background:var(--lt-accent,#2563eb);color:#fff}
+.lt-cloud-agent-message p{margin:.4em 0}
+.lt-cloud-agent-message p:first-child{margin-top:0}.lt-cloud-agent-message p:last-child{margin-bottom:0}
+.lt-cloud-agent-message pre{overflow:auto;padding:10px;border-radius:8px;background:rgba(15,23,42,.08)}
+.lt-cloud-agent-message small{display:block;margin-top:7px;opacity:.55}
+.lt-cloud-agent-pending{display:flex;align-items:center;gap:7px;opacity:.6;font-size:13px}
+.lt-cloud-agent-approvals{margin:0 18px 12px;border:1px solid color-mix(in srgb,#f59e0b 35%,var(--lt-border,#e5e7eb));border-radius:12px;background:color-mix(in srgb,#f59e0b 7%,transparent);overflow:hidden}
+.lt-cloud-agent-approvals>header{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid color-mix(in srgb,#f59e0b 22%,transparent)}
+.lt-cloud-agent-approvals>header svg{width:16px}
+.lt-cloud-agent-approvals article{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px}
+.lt-cloud-agent-approvals article+article{border-top:1px solid color-mix(in srgb,#f59e0b 18%,transparent)}
+.lt-cloud-agent-approvals article>div:first-child{min-width:0;display:flex;flex-direction:column;gap:3px}
+.lt-cloud-agent-approvals article small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px;opacity:.6}
+.lt-cloud-agent-approvals article>div:last-child{display:flex;gap:7px}
+.lt-cloud-agent-approvals button{border-radius:8px;padding:7px 10px;border:1px solid var(--lt-border,#d1d5db);display:flex;align-items:center;gap:5px;cursor:pointer}
+.lt-cloud-agent-approvals button.primary{border-color:transparent;background:var(--lt-accent,#2563eb);color:#fff}
+.lt-cloud-agent-approvals button svg{width:14px}
+.lt-cloud-agent-error{margin:0 18px 10px;padding:9px 11px;border-radius:9px;background:color-mix(in srgb,#ef4444 10%,transparent);color:#b91c1c;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.lt-cloud-agent-error button{border:0;background:transparent;cursor:pointer;color:inherit}.lt-cloud-agent-error svg{width:15px}
+.lt-cloud-agent-composer{display:grid;grid-template-columns:minmax(0,1fr) 38px 42px;gap:8px;padding:14px 18px 18px;border-top:1px solid var(--lt-border,#e5e7eb)}
+.lt-cloud-agent-composer textarea{resize:none;min-height:46px;max-height:150px;padding:11px 12px;border:1px solid var(--lt-border,#d1d5db);border-radius:11px;background:var(--lt-surface,#fff);color:inherit;outline:none}
+.lt-cloud-agent-composer textarea:focus{border-color:var(--lt-accent,#2563eb);box-shadow:0 0 0 3px color-mix(in srgb,var(--lt-accent,#2563eb) 12%,transparent)}
+.lt-cloud-agent-composer button{border:1px solid var(--lt-border,#d1d5db);border-radius:10px;background:transparent;display:grid;place-items:center;cursor:pointer}
+.lt-cloud-agent-composer button.primary{border-color:transparent;background:var(--lt-accent,#2563eb);color:#fff}
+.lt-cloud-agent-composer button:disabled{opacity:.45;cursor:not-allowed}
+.lt-cloud-agent-composer svg{width:17px}
+@media(max-width:900px){.lt-cloud-agent{grid-template-columns:1fr}.lt-cloud-agent-history{display:none}.lt-cloud-agent{min-height:calc(100vh - 106px)}}
