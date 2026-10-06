@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Archive,
   ArrowLeft,
@@ -17,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { browserTimezone, executionApi } from "@/src/services/executionApi";
+import { openExternalUrl } from "@/src/desktop/shellAdapter";
 import { mailApi, type MailAccount, type MailAttachment, type MailMessage } from "@/src/services/mailApi";
 import { confirmAction } from "@/src/ui/feedback/confirm";
 import { collectAddresses, senderIdentity, senderLabel } from "./mailModel";
@@ -42,10 +42,9 @@ async function openSafeUrl(href: string) {
       return;
     }
     try {
-      await invoke("desktop_open_url", { url: parsed.href });
+      await openExternalUrl(parsed.href);
     } catch {
-      const opened = window.open(parsed.href, "_blank", "noopener,noreferrer");
-      if (!opened) toast("无法打开链接，请检查系统默认浏览器设置", "error");
+      toast("无法打开链接，请检查系统默认浏览器设置", "error");
     }
   } catch {
     toast("邮件链接无效", "error");
