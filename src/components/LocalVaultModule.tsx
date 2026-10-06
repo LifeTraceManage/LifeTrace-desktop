@@ -8,6 +8,7 @@ import {
   Trash2, X,
 } from "lucide-react";
 import Toast from "@/src/components/Toast";
+import { desktopVault } from "@/src/desktop/vaultAdapter";
 
 const DELETE_CONFIRMATION = "永久删除私密相册";
 
@@ -23,7 +24,7 @@ function base64ObjectUrl(dataBase64:string,mimeType:string) {
 }
 
 export default function LocalVaultModule() {
-  const api=typeof window!=="undefined"?window.vaultApi:undefined;
+  const api=desktopVault.available()?desktopVault:undefined;
   const [status,setStatus]=useState<VaultStatus|null>(null);
   const [assets,setAssets]=useState<VaultAsset[]>([]);
   const [albums,setAlbums]=useState<VaultAlbum[]>([]);
