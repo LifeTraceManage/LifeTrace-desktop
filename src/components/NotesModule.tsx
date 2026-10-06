@@ -116,7 +116,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     if(kind==="trash")await noteApi.trash(note.id);
     if(kind==="restore")await noteApi.restore(note.id);
     if(kind==="delete"){
-      for(const attachment of note.attachments??[])await window.noteApi?.deleteAttachment(note.id,attachment.fileName);
+      for(const attachment of note.attachments??[])await desktopNotes.deleteAttachment(note.id,attachment.fileName);
       await noteApi.delete(note.id);
     }
     if(kind==="duplicate")await noteApi.duplicate(note.id);
@@ -124,18 +124,18 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   };
   const exportNote=async(format:"md"|"html"|"json")=>{
     const content=format==="md"?draft.contentMarkdown:format==="html"?`<!doctype html><meta charset="utf-8"><title>${titleOf(draft)}</title><article>${DOMPurify.sanitize(draft.contentHtml)}</article>`:JSON.stringify(draft,null,2);
-    if(window.noteApi){const result=await window.noteApi.exportNote({format,title:titleOf(draft),content});if(!result.ok)notify(result.error||"导出失败")}
+    if(desktopNotes.available()){const result=await desktopNotes.exportNote({format,title:titleOf(draft),content});if(!result.ok)notify(result.error||"导出失败")}
     else{const blob=new Blob([content],{type:"text/plain;charset=utf-8"});const anchor=document.createElement("a");anchor.href=URL.createObjectURL(blob);anchor.download=`${titleOf(draft)}.${format}`;anchor.click();URL.revokeObjectURL(anchor.href)}
   };
   useEffect(()=>{
     const key=(event:KeyboardEvent)=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();void save(true)}};
     window.addEventListener("keydown",key);
-    const dispose=window.noteApi?.onCommand(command=>{if(command==="save")void save(true);if(command==="favorite")patch({isFavorite:!draft.isFavorite});if(command==="pin")patch({isPinned:!draft.isPinned});if(command==="export")void exportNote("md");if(command==="trash")void action("trash")});
+    const dispose=desktopNotes.onCommand(command=>{if(command==="save")void save(true);if(command==="favorite")patch({isFavorite:!draft.isFavorite});if(command==="pin")patch({isPinned:!draft.isPinned});if(command==="export")void exportNote("md");if(command==="trash")void action("trash")});
     return()=>{window.removeEventListener("keydown",key);dispose?.()};
   });
   const attach=async()=>{
-    if(!window.noteApi){notify("附件仅在 Electron 桌面端可用");return}
-    const result=await window.noteApi.selectAttachment(note.id);if(!result.ok||!result.file){if(result.error)notify(result.error);return}
+    if(!desktopNotes.available()){notify("附件仅在 Electron 桌面端可用");return}
+    const result=await desktopNotes.selectAttachment(note.id);if(!result.ok||!result.file){if(result.error)notify(result.error);return}
     await noteApi.recordAttachment(result.file);notify("附件已添加");onSaved(await noteApi.get(note.id));
   };
   const insertWikiLink=(value:string)=>{
@@ -203,7 +203,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         <div className="nt-tag-field"><span><LinkIcon/>反向链接</span><div>{backlinks.length===0?<small>暂时没有其他笔记引用这里。</small>:backlinks.map(link=><button key={link.id} title={link.sourceSummary||link.sourceTitle} onClick={()=>void onOpenNote(link.sourceNoteId)}>{link.sourceTitle}</button>)}</div></div>
         <label><LinkIcon/>关联数据<select value="" onChange={e=>addRelation(e.target.value)}><option value="">添加习惯、训练或账单…</option>{relationOptions.map(x=><option key={`${x.type}:${x.id}`} value={`${x.type}:${x.id}`}>{x.label}</option>)}</select></label>
         {draft.relations.length>0&&<div className="nt-relations">{draft.relations.map(rel=><span key={rel.id}>{rel.entityType} · {rel.entityId.slice(0,8)}<button onClick={()=>patch({relations:draft.relations.filter(x=>x.id!==rel.id)})}><X/></button></span>)}</div>}
-        <div className="nt-attachments"><header><span><Paperclip/>附件</span><button onClick={()=>void attach()}><Plus/>添加附件</button></header>{draft.attachments?.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void window.noteApi?.openAttachment(note.id,file.fileName)}>打开</button><button onClick={()=>void window.noteApi?.showAttachment(note.id,file.fileName)}>位置</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await window.noteApi?.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);onSaved(await noteApi.get(note.id))}}><Trash2/></button></article>)}</div>
+        <div className="nt-attachments"><header><span><Paperclip/>附件</span><button onClick={()=>void attach()}><Plus/>添加附件</button></header>{draft.attachments?.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button><button onClick={()=>void desktopNotes.showAttachment(note.id,file.fileName)}>位置</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await desktopNotes.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);onSaved(await noteApi.get(note.id))}}><Trash2/></button></article>)}</div>
         <footer>创建于 {formatTime(draft.createdAt)} · 更新于 {formatTime(draft.updatedAt)} · 版本 {draft.version}</footer>
       </div>
     </div>
@@ -263,8 +263,8 @@ export default function NotesModule(){
     setScope("all");setFolderId("");setTagId("");await loadList(created.id);setSelected(created);notify(type==="quick"?"快速记录已创建":"新笔记已创建");
   },[loadList]);
   const importMarkdown=useCallback(async()=>{
-    if(!window.noteApi){notify("Markdown 导入仅在 Electron 桌面端可用");return}
-    const result=await window.noteApi.importMarkdown();if(!result.ok||result.canceled)return;if(result.error){notify(result.error);return}
+    if(!desktopNotes.available()){notify("Markdown 导入仅在 Electron 桌面端可用");return}
+    const result=await desktopNotes.importMarkdown();if(!result.ok||result.canceled)return;if(result.error){notify(result.error);return}
     const content=result.content??"";const lines=content.split(/\r?\n/);const contentJson={type:"doc",content:lines.map(line=>({type:"paragraph",content:line?[{type:"text",text:line}]:undefined}))};
     const escaped=lines.map(line=>`<p>${line.replace(/[&<>"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char]!) )||"<br>"}</p>`).join("");
     await create("document",{title:result.title||null,contentJson,contentHtml:escaped,contentText:content,contentMarkdown:content,summary:cleanSummary(content)});
@@ -280,7 +280,7 @@ export default function NotesModule(){
       if(event.shiftKey&&event.key.toLowerCase()==="f"){event.preventDefault();searchRef.current?.focus()}
     };
     window.addEventListener("keydown",handler);
-    const dispose=window.noteApi?.onCommand(command=>{if(command==="new")void create("document");if(command==="quick")void create("quick");if(command==="import")void importMarkdown();if(command==="search")searchRef.current?.focus()});
+    const dispose=desktopNotes.onCommand(command=>{if(command==="new")void create("document");if(command==="quick")void create("quick");if(command==="import")void importMarkdown();if(command==="search")searchRef.current?.focus()});
     return()=>{window.removeEventListener("keydown",handler);dispose?.()};
   },[create,importMarkdown]);
 
@@ -289,9 +289,9 @@ export default function NotesModule(){
   const manageFolder=async(folder:NoteFolder)=>{const name=prompt("修改文件夹名称；留空并确定可删除（其中笔记会移到未分类）",folder.name);if(name===null)return;if(!name.trim()){if(confirm(`删除文件夹“${folder.name}”？笔记不会被删除。`))await noteApi.deleteFolder(folder.id)}else await noteApi.saveFolder({...folder,name:name.trim()});await loadMeta();await loadList()};
   const manageTag=async(tag:NoteTag)=>{const name=prompt("修改标签名称；留空并确定可删除",tag.name);if(name===null)return;if(!name.trim()){if(confirm(`删除标签“${tag.name}”？笔记不会被删除。`))await noteApi.deleteTag(tag.id)}else await noteApi.saveTag({...tag,name:name.trim()});await loadMeta();await loadList()};
   const restoreTrash=async()=>{for(const note of notes)await noteApi.restore(note.id);notify(`已恢复 ${notes.length} 篇笔记`);await loadList()};
-  const emptyTrash=async()=>{if(!confirm(`永久删除回收站中的 ${notes.length} 篇笔记？此操作无法撤销。`))return;for(const item of notes){const full=await noteApi.get(item.id);for(const file of full.attachments??[])await window.noteApi?.deleteAttachment(item.id,file.fileName);await noteApi.delete(item.id)}notify("回收站已清空");await loadList()};
+  const emptyTrash=async()=>{if(!confirm(`永久删除回收站中的 ${notes.length} 篇笔记？此操作无法撤销。`))return;for(const item of notes){const full=await noteApi.get(item.id);for(const file of full.attachments??[])await desktopNotes.deleteAttachment(item.id,file.fileName);await noteApi.delete(item.id)}notify("回收站已清空");await loadList()};
   const toggleSelected=async(field:"isFavorite"|"isPinned")=>{if(!selected)return;const saved=await noteApi.update({...selected,[field]:!selected[field],tagIds:selected.tags.map(x=>x.id),relations:selected.relations,createRevision:false});setSelected(saved);setCommandOpen(false);await loadList(saved.id)};
-  const exportSelected=async()=>{if(!selected)return;const content=selected.contentMarkdown||selected.contentText;if(window.noteApi)await window.noteApi.exportNote({format:"md",title:titleOf(selected),content});setCommandOpen(false)};
+  const exportSelected=async()=>{if(!selected)return;const content=selected.contentMarkdown||selected.contentText;if(desktopNotes.available())await desktopNotes.exportNote({format:"md",title:titleOf(selected),content});setCommandOpen(false)};
   const choose=(nextScope:string,nextFolder="",nextTag="")=>{setScope(nextScope);setFolderId(nextFolder);setTagId(nextTag)};
 
   return <><div className={`nt-workspace ${leftCollapsed?"left-collapsed":""} ${listCollapsed?"list-collapsed":""}`} style={{gridTemplateColumns:`${leftCollapsed?0:leftWidth}px ${listCollapsed?0:listWidth}px minmax(460px,1fr)`}}>
