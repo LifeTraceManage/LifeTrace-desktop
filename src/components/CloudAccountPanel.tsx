@@ -1,20 +1,16 @@
-import { Bot, Cloud, Languages, Monitor, ShieldCheck, CircleHelp, HardDrive } from "lucide-react";
+import { Cloud, ShieldCheck, CircleHelp, HardDrive } from "lucide-react";
 import CloudSyncSettingsPanel from "@/src/components/CloudSyncSettingsPanel";
 import StorageLocationPanel from "@/src/components/StorageLocationPanel";
 import AccountSecurityPanel from "@/src/components/account/AccountSecurityPanel";
 
 const sections = [
-  ["settings-general", "常规与外观", Monitor],
   ["settings-sync", "数据与同步", Cloud],
   ["settings-storage", "存储", HardDrive],
-  ["settings-ai", "AI 服务", Bot],
-  ["settings-translation", "翻译", Languages],
   ["settings-security", "账户与安全", ShieldCheck],
   ["settings-about", "关于", CircleHelp],
 ] as const;
 
 function jumpTo(id: string) {
-  window.location.hash = id;
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
