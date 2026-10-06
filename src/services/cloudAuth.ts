@@ -3,6 +3,7 @@ import type { SessionBindingResult } from "@/src/services/cloudSync";
 import { clientLogger } from "@/src/services/clientObservability";
 import { rawCloudAuthErrorMessage } from "@/src/services/cloudAuthError";
 import { desktopSync } from "@/src/desktop/syncAdapter";
+import { desktopCredentials } from "@/src/desktop/credentialAdapter";
 
 export type CloudAuthUser = {
   id: string;
@@ -49,12 +50,6 @@ export type CloudAuthSnapshot = {
   scopes: string[];
   authenticated: boolean;
   binding?: SessionBindingResult;
-};
-
-type CredentialApi = {
-  set(refreshToken: string): Promise<void>;
-  get(): Promise<string | null>;
-  clear(): Promise<void>;
 };
 
 type NativeCloudAuthResponse = {
@@ -104,18 +99,9 @@ export const CLIENT_VERSION = "0.3.3";
 const DEVICE_KEY = "lifetrace-cloud-device-id";
 const CLOUD_ORIGIN_KEY = "lifetrace-cloud-origin";
 
-function credentialApi(): CredentialApi {
-  const api = window.cloudCredentialApi;
-  if (!api) {
-    return {
-      set: async () => { throw new Error("Windows 安全凭据存储不可用"); },
-      get: async () => null,
-      clear: async () => undefined,
-    };
-  }
-  return api;
+function credentialApi() {
+  return desktopCredentials;
 }
-
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
