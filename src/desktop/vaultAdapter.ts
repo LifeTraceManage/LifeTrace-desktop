@@ -7,6 +7,9 @@ function api() {
 
 export const desktopVault = {
   available: () => typeof window !== "undefined" && Boolean(window.vaultApi),
+  canHidePhotosFromSyncAlbum: () =>
+    typeof window !== "undefined"
+    && typeof window.vaultApi?.hidePhotosFromSyncAlbum === "function",
   status: (): Promise<VaultStatus> => api().status(),
   initialize: (password: string): Promise<VaultStatus> => api().initialize(password),
   unlock: (password: string): Promise<VaultStatus> => api().unlock(password),
