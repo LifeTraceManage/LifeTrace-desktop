@@ -428,6 +428,21 @@ pub async fn detach_photo(
     }
 }
 
+pub async fn discoveries(State(state): State<AppState>) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return error(StatusCode::INTERNAL_SERVER_ERROR, "数据库暂时不可用"),
+    };
+    let user_id = match profile(&connection) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match footprints::photo_discoveries(&connection, &user_id) {
+        Ok(value) => Json(value).into_response(),
+        Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, message),
+    }
+}
+
 pub async fn photo_suggestions(
     State(state): State<AppState>,
     Query(query): Query<HashMap<String, String>>,
