@@ -35,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             cloud_api::cloud_api_http_request,
+            commands::analytics::analytics_query,
             commands::notes::notes_query,
             commands::notes::notes_mutate,
             commands::state::state_get,
