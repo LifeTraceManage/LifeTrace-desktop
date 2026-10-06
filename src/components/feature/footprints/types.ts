@@ -72,6 +72,17 @@ export type FootprintPhotoSuggestion = FootprintPhoto & {
   reason: string;
 };
 
+export type FootprintPhotoDiscovery = {
+  id: string;
+  photoIds: string[];
+  photoCount: number;
+  startedAt: string;
+  endedAt: string;
+  latitude: number;
+  longitude: number;
+  samplePhotoIds: string[];
+};
+
 export type FootprintEntryDetail = {
   entry: FootprintEntry;
   photos: FootprintPhoto[];
