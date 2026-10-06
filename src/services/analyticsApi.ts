@@ -1,4 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import { instrumentedFetch } from "@/src/services/clientObservability";
+import { normalizeAppError } from "@/src/services/appError";
 import type {
   InsightSnapshot,
   ProjectionStatus,
@@ -8,6 +10,26 @@ import type {
 } from "@/src/types/analytics";
 
 type ApiErrorPayload = { error?: string };
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+async function nativeQuery<T>(
+  action: "status" | "rebuild" | "timeline" | "search" | "report" | "insights",
+  query?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>("analytics_query", {
+      request: {
+        action,
+        ...(query ? { query } : {}),
+      },
+    });
+  } catch (cause) {
+    throw normalizeAppError(cause, "本机分析服务请求失败");
+  }
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || "GET").toUpperCase();
@@ -43,8 +65,12 @@ function query(path: string, values: Record<string, string | number | null | und
 }
 
 export const analyticsApi = {
-  status: () => request<ProjectionStatus>("/api/analytics/status"),
-  rebuild: () => request<ProjectionStatus>("/api/analytics/rebuild", { method: "POST" }),
+  status: () => isTauriRuntime()
+    ? nativeQuery<ProjectionStatus>("status")
+    : request<ProjectionStatus>("/api/analytics/status"),
+  rebuild: () => isTauriRuntime()
+    ? nativeQuery<ProjectionStatus>("rebuild")
+    : request<ProjectionStatus>("/api/analytics/rebuild", { method: "POST" }),
   timeline: (options: {
     from?: string;
     to?: string;
@@ -53,20 +79,28 @@ export const analyticsApi = {
     keyword?: string;
     cursor?: string;
     limit?: number;
-  } = {}) => request<TimelinePage>(query("/api/analytics/timeline", options)),
+  } = {}) => isTauriRuntime()
+    ? nativeQuery<TimelinePage>("timeline", options)
+    : request<TimelinePage>(query("/api/analytics/timeline", options)),
   search: (options: {
     q: string;
     domain?: string;
     from?: string;
     to?: string;
     limit?: number;
-  }) => request<SearchHit[]>(query("/api/analytics/search", options)),
+  }) => isTauriRuntime()
+    ? nativeQuery<SearchHit[]>("search", options)
+    : request<SearchHit[]>(query("/api/analytics/search", options)),
   report: (options: {
     reportType: "weekly" | "monthly" | "custom";
     periodStart: string;
     periodEnd: string;
     timezone: string;
-  }) => request<ReportSnapshot>(query("/api/analytics/report", options)),
+  }) => isTauriRuntime()
+    ? nativeQuery<ReportSnapshot>("report", options)
+    : request<ReportSnapshot>(query("/api/analytics/report", options)),
   insights: (options: { periodStart: string; periodEnd: string }) =>
-    request<InsightSnapshot[]>(query("/api/analytics/insights", options)),
+    isTauriRuntime()
+      ? nativeQuery<InsightSnapshot[]>("insights", options)
+      : request<InsightSnapshot[]>(query("/api/analytics/insights", options)),
 };
