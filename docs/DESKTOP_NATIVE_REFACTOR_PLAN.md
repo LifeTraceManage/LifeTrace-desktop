@@ -96,8 +96,15 @@ Implemented:
 
 Still transitional:
 
-- Some existing Desktop services (notably execution/analytics/import compatibility paths) still use the local Axum API rather than direct Tauri commands.
+- Some existing Desktop services (notably execution and selected import/photo compatibility paths) still use the local Axum API rather than direct Tauri commands.
 - Vite still references shared build tooling/dependencies under `vendor/web`; this is build-time reuse, not Web page/runtime reuse. Travel compatibility constraints prevent indiscriminate dependency cleanup.
+
+Additional foundation work completed:
+
+- Online and offline authenticated identity states now use one Desktop workspace.
+- Desktop UI renders before the localhost compatibility server is ready; compatibility-server failure no longer blocks startup.
+- Non-Travel React components are guarded against direct `fetch()`, Tauri `invoke()`, `@tauri-apps/api` imports and `window.*Api` bridge access.
+- Desktop platform capabilities are exposed through `src/desktop/*Adapter.ts` modules for sync, credentials, Notes files, storage, photo sync, Vault, shell URLs and app metadata.
 
 ### Phase 3 — Notes migration
 
@@ -142,7 +149,8 @@ Auth:
 Search:
 - Desktop-owned search page.
 - Local SQLite analytics/search index is the data source.
-- The analytics transport remains on the local HTTP compatibility layer and is a remaining cleanup target.
+- Desktop transport is now `analytics_query -> application::analytics -> analytics repository -> SQLite`.
+- HTTP analytics routes remain browser/dev compatibility adapters only.
 
 Settings:
 - Desktop-owned settings UI.
@@ -151,12 +159,13 @@ Settings:
 
 ### Phase 5 — Photos / Attachments
 
-Status: **functional; adapter cleanup remains**
+Status: **functional with Desktop adapter boundaries**
 
 - Photo sync and local Vault are Desktop-native/Tauri capabilities.
 - Notes attachments use Desktop file picker and native commands.
+- Notes, photo sync, Vault and storage UI access native capabilities through `src/desktop/*Adapter.ts`.
+- Photo dashboard and Xunji import HTTP calls are isolated in services instead of React components.
 - Shared filesystem/photo infrastructure is retained to avoid breaking Travel.
-- Further work should consolidate remaining `window.*Api` access behind typed service adapters without changing Travel callers.
 
 ### Phase 6 — Local Agent runtime removal
 
@@ -191,8 +200,7 @@ Status: **partial**
 
 Remaining candidates:
 
-- Convert analytics/execution local HTTP adapters to Tauri application commands where useful.
-- Consolidate Desktop file/photo attachment bridges behind typed service APIs.
+- Convert execution and remaining compatibility HTTP modules to Tauri application commands where the regression risk is justified.
 - Reassess Axum modules after all feature transports are native commands.
 - Remove build-only Web tooling only after confirming no Travel/shared dependency impact.
 - Audit CSP/local ports after compatibility server usage is reduced.
@@ -222,9 +230,9 @@ No tests should be deleted to hide failures. Travel-related failures, if introdu
 | Auth | Yes | Session-aware | Rust native HTTP | No | Migrated |
 | Dashboard / Habits / Finance / Review / Fitness | Yes | Yes | Tauri core-state commands | No | Migrated |
 | Notes | Yes | Yes | Tauri Notes commands | No | Migrated |
-| Search | Yes | Yes | Local HTTP analytics adapter | No | Functional / transport cleanup remains |
+| Search | Yes | Yes | Tauri analytics command | No | Migrated |
 | Settings | Yes | Yes | Desktop services | No | Migrated |
-| Photos / Vault | Yes | Yes | Existing Tauri/Desktop APIs | No | Functional |
+| Photos / Vault | Yes | Yes | Desktop adapters over Tauri APIs | No | Migrated boundary |
 | Execution | Yes | Yes/SQLite-backed | Local HTTP compatibility API | No | Functional / transport cleanup remains |
 | Agent | Yes | Cloud-only | DesktopApiClient + Rust cloud transport | No | Migrated |
 | Travel | Excluded | Excluded | Excluded | Excluded | Not modified |
