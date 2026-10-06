@@ -5,6 +5,7 @@ import DesktopWorkbenchShell from "@/src/components/DesktopWorkbenchShell";
 import { useDesktopNavigation } from "@/src/hooks/useDesktopNavigation";
 import { useCloudAuthStore } from "@/src/stores/useCloudAuthStore";
 import { useLifeStore } from "@/src/stores/useLifeStore";
+import { desktopSync } from "@/src/desktop/syncAdapter";
 
 export default function DesktopCloudWorkspace() {
   const user = useCloudAuthStore((value) => value.user);
@@ -29,8 +30,7 @@ export default function DesktopCloudWorkspace() {
   }, [initialize]);
 
   const refresh = useCallback(async () => {
-    const sync = window.syncApi;
-    if (!sync) {
+    if (!desktopSync.available()) {
       setError("桌面同步服务尚未就绪");
       return;
     }
@@ -46,7 +46,7 @@ export default function DesktopCloudWorkspace() {
     setSyncing(true);
     setError("");
     try {
-      await sync.now(false);
+      await desktopSync.now(false);
       await reloadLocal();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "云端同步失败");
