@@ -18,6 +18,14 @@ import FootprintPhotoPicker from "./FootprintPhotoPicker";
 
 type Province = { code: string; name: string };
 
+export type FootprintEditorDraft = {
+  title?: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
 const provinces: Province[] = (
   rawChina as unknown as {
     features: Array<{
@@ -36,29 +44,35 @@ export default function FootprintEditor({
   entry,
   existingPhotoIds = [],
   preferredProvince,
+  draft,
   onSaved,
   onClose,
 }: {
   entry?: FootprintEntry | null;
   existingPhotoIds?: string[];
   preferredProvince?: { code: string; name: string } | null;
+  draft?: FootprintEditorDraft | null;
   onSaved: () => void;
   onClose: () => void;
 }) {
   const initialProvince = useMemo(() => {
     if (entry) return { code: entry.provinceCode, name: entry.provinceName };
     if (preferredProvince) return preferredProvince;
-    return provinces[0] ?? { code: "110000", name: "北京市" };
+    return null;
   }, [entry, preferredProvince]);
 
-  const [title, setTitle] = useState(entry?.title ?? "");
-  const [provinceCode, setProvinceCode] = useState(initialProvince.code);
+  const [title, setTitle] = useState(entry?.title ?? draft?.title ?? "");
+  const [provinceCode, setProvinceCode] = useState(initialProvince?.code ?? "");
   const [cityName, setCityName] = useState(entry?.cityName ?? "");
   const [placeName, setPlaceName] = useState(entry?.placeName ?? "");
   const [startedAt, setStartedAt] = useState(
-    entry?.startedAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    entry?.startedAt.slice(0, 10)
+      ?? draft?.startedAt
+      ?? new Date().toISOString().slice(0, 10),
   );
-  const [endedAt, setEndedAt] = useState(entry?.endedAt?.slice(0, 10) ?? "");
+  const [endedAt, setEndedAt] = useState(
+    entry?.endedAt?.slice(0, 10) ?? draft?.endedAt ?? "",
+  );
   const [description, setDescription] = useState(entry?.description ?? "");
   const [favorite, setFavorite] = useState(entry?.favorite ?? false);
   const [rating, setRating] = useState(entry?.rating ?? 0);
@@ -72,6 +86,10 @@ export default function FootprintEditor({
       setError("请输入足迹标题");
       return;
     }
+    if (!provinceCode) {
+      setError("请选择省份");
+      return;
+    }
     if (!cityName.trim()) {
       setError("请输入城市");
       return;
@@ -80,8 +98,11 @@ export default function FootprintEditor({
       setError("结束日期不能早于开始日期");
       return;
     }
-    const province = provinces.find((item) => item.code === provinceCode)
-      ?? initialProvince;
+    const province = provinces.find((item) => item.code === provinceCode);
+    if (!province) {
+      setError("请选择有效省份");
+      return;
+    }
     const input: FootprintEntryInput = {
       title: title.trim(),
       description: description.trim() || null,
@@ -98,9 +119,9 @@ export default function FootprintEditor({
         placeName: placeName.trim() || null,
         countryCode: "CN",
         countryName: "中国",
-        source: "manual",
-        latitude: entry?.latitude ?? null,
-        longitude: entry?.longitude ?? null,
+        source: entry ? "manual" : draft?.latitude != null ? "exif" : "manual",
+        latitude: entry?.latitude ?? draft?.latitude ?? null,
+        longitude: entry?.longitude ?? draft?.longitude ?? null,
       },
     };
     setSaving(true);
@@ -161,6 +182,7 @@ export default function FootprintEditor({
                 value={provinceCode}
                 onChange={(event) => setProvinceCode(event.target.value)}
               >
+                <option value="">请选择省份</option>
                 {provinces.map((province) => (
                   <option value={province.code} key={province.code}>
                     {province.name}
