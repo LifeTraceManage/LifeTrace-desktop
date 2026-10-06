@@ -23,6 +23,9 @@ pub fn query(connection: &mut Connection, request: &Value) -> Result<Value, Stri
         .get("action")
         .and_then(Value::as_str)
         .unwrap_or("status");
+    if !matches!(action, "status" | "rebuild" | "timeline" | "search" | "report" | "insights") {
+        return Err("不支持的分析操作".to_owned());
+    }
     let user_id = active_user(connection)?;
 
     match action {
@@ -86,7 +89,7 @@ pub fn query(connection: &mut Connection, request: &Value) -> Result<Value, Stri
             )?)
             .map_err(|error| error.to_string())
         }
-        _ => Err("不支持的分析操作".to_owned()),
+        _ => unreachable!("analytics action validated above"),
     }
 }
 
@@ -98,6 +101,6 @@ mod tests {
     fn rejects_unknown_analytics_action_before_repository_query() {
         let mut connection = Connection::open_in_memory().unwrap();
         let error = query(&mut connection, &json!({ "action": "unknown" })).unwrap_err();
-        assert!(error.contains("active_profile") || error.contains("no such table"));
+        assert_eq!(error, "不支持的分析操作");
     }
 }
