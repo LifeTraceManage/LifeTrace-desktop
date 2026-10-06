@@ -21,6 +21,7 @@ import {
   Star, Strikethrough, Tag, Trash2, Undo2, Unlink, X,
 } from "lucide-react";
 import { noteApi, type NoteInputValue } from "@/src/services/noteApi";
+import { desktopNotes } from "@/src/desktop/noteAdapter";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Note, NoteFolder, NoteRelation, NoteRevision, NoteTag, NoteType } from "@/src/types";
 import MoreMenu from "@/src/ui/menu/MoreMenu";
@@ -134,7 +135,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     return()=>{window.removeEventListener("keydown",key);dispose?.()};
   });
   const attach=async()=>{
-    if(!desktopNotes.available()){notify("附件仅在 Electron 桌面端可用");return}
+    if(!desktopNotes.available()){notify("附件仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.selectAttachment(note.id);if(!result.ok||!result.file){if(result.error)notify(result.error);return}
     await noteApi.recordAttachment(result.file);notify("附件已添加");onSaved(await noteApi.get(note.id));
   };
@@ -263,7 +264,7 @@ export default function NotesModule(){
     setScope("all");setFolderId("");setTagId("");await loadList(created.id);setSelected(created);notify(type==="quick"?"快速记录已创建":"新笔记已创建");
   },[loadList]);
   const importMarkdown=useCallback(async()=>{
-    if(!desktopNotes.available()){notify("Markdown 导入仅在 Electron 桌面端可用");return}
+    if(!desktopNotes.available()){notify("Markdown 导入仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.importMarkdown();if(!result.ok||result.canceled)return;if(result.error){notify(result.error);return}
     const content=result.content??"";const lines=content.split(/\r?\n/);const contentJson={type:"doc",content:lines.map(line=>({type:"paragraph",content:line?[{type:"text",text:line}]:undefined}))};
     const escaped=lines.map(line=>`<p>${line.replace(/[&<>"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char]!) )||"<br>"}</p>`).join("");
