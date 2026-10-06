@@ -30,7 +30,7 @@ test("local agent implementation is removed and desktop assistant points at clou
   const localNavigation = read("src/components/layout/navigation.ts");
   const localSettings = read("src/components/feature/settings/SettingsView.tsx");
   const server = read("src-tauri/src/server.rs");
-  const cloudWorkspace = read("src/components/DesktopCloudWorkspace.tsx");
+  const nativeRoutes = read("src/components/DesktopNativeRouteContent.tsx");
   const cloudAgent = read("src/services/cloudAgentApi.ts");
 
   assert.doesNotMatch(localNavigation, /AI 管家|assistant/);
@@ -41,7 +41,8 @@ test("local agent implementation is removed and desktop assistant points at clou
   assert.equal(existsSync("src/components/AISettingsPanel.tsx"), false);
   assert.equal(existsSync("src-tauri/src/server/assistant.rs"), false);
 
-  assert.match(cloudWorkspace, /CloudAgentModule/);
+  assert.match(nativeRoutes, /route === "\/app\/assistant"/);
+  assert.match(nativeRoutes, /<CloudAgentModule \/>/);
   assert.match(cloudAgent, /\/api\/v1\/web\/assistant/);
   assert.match(cloudAgent, /\/api\/v1\/assistant\/sessions/);
 });
