@@ -75,3 +75,33 @@ test("core local state uses tauri commands and shared application service", () =
   assert.match(application, /habits::save_activity/);
   assert.match(application, /workouts::save_workout/);
 });
+
+
+test("analytics search uses tauri ipc while http routes remain compatibility adapters", () => {
+  const api = read("src/services/analyticsApi.ts");
+  const commands = read("src-tauri/src/commands/analytics.rs");
+  const application = read("src-tauri/src/application/analytics.rs");
+  const adapter = read("src-tauri/src/server/analytics.rs");
+
+  assert.match(api, /invoke<T>\("analytics_query"/);
+  assert.match(api, /isTauriRuntime/);
+  assert.match(commands, /application::analytics::query/);
+  assert.match(commands, /spawn_blocking/);
+  assert.match(application, /analytics_repo::search/);
+  assert.match(adapter, /application::analytics::query/);
+  assert.doesNotMatch(adapter, /profile::active_profile_id|analytics_repo::search\(/);
+});
+
+test("desktop startup renders before probing the localhost compatibility server", () => {
+  const main = read("tauri-ui/main.tsx");
+  assert.match(main, /createRoot\(root!\)\.render/);
+  assert.match(main, /void waitForTauriBackend\(10_000\)/);
+  assert.doesNotMatch(main, /await waitForTauriBackend\(/);
+});
+
+test("offline authenticated identity keeps the same native desktop workspace", () => {
+  const app = read("src/components/DesktopApp.tsx");
+  assert.match(app, /phase === "offline"/);
+  assert.match(app, /<DesktopCloudWorkspace \/>/);
+  assert.doesNotMatch(app, /HengXuShell|cloudAvailable/);
+});
