@@ -39,6 +39,7 @@ import ExecutionModule from "@/src/components/feature/execution/ExecutionModule"
 import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
 import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
+import Footprints from "@/src/components/feature/footprints/Footprints";
 import AIAssistantModule from "@/src/components/AIAssistantModule";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import AppUpdaterHost from "@/src/components/AppUpdaterHost";
@@ -317,6 +318,7 @@ export default function HengXuShell() {
           <AIAssistantModule openSettings={() => setView("settings")} />
         ) : null}
         {view === "mail" ? <MailActionCenter /> : null}
+        {view === "footprints" ? <Footprints /> : null}
         {view === "habits" ? (
           <Habits
             edit={(value) => setModal({ kind: "activity", value })}
