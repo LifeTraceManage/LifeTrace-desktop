@@ -2,20 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-test("signed-out desktop gates both cloud and local business workspaces", async () => {
+test("signed-out desktop gates the native business workspace", async () => {
   const source = await readFile("src/components/DesktopApp.tsx", "utf8");
   assert.match(source, /const hasIdentity = Boolean\(user && \(authenticated \|\| phase === "offline"\)\)/);
   assert.match(source, /if \(!hasIdentity\)[\s\S]*return <SignedOutShell restoring=\{restoring\}\/>/);
 
   const identityGate = source.indexOf("if (!hasIdentity)");
   const signedOutReturn = source.indexOf("return <SignedOutShell", identityGate);
-  const cloudWorkspace = source.indexOf("<DesktopCloudWorkspace", signedOutReturn);
-  const localWorkspace = source.indexOf("<HengXuShell", signedOutReturn);
+  const nativeWorkspace = source.indexOf("<DesktopCloudWorkspace", signedOutReturn);
 
   assert.ok(identityGate >= 0, "desktop must gate business UI on an authenticated identity");
   assert.ok(signedOutReturn > identityGate, "signed-out users must return before business workspaces render");
-  assert.ok(cloudWorkspace > signedOutReturn, "cloud workspace must stay behind the identity gate");
-  assert.ok(localWorkspace > signedOutReturn, "local workspace must stay behind the identity gate");
+  assert.ok(nativeWorkspace > signedOutReturn, "native workspace must stay behind the identity gate");
+  assert.doesNotMatch(source, /HengXuShell/, "online and offline identity states must use one native workspace");
 });
 
 test("desktop updater is available before login and outside workspace-specific UI", async () => {
