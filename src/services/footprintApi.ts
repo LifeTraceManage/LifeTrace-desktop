@@ -4,6 +4,7 @@ import type {
   FootprintEntryInput,
   FootprintPhoto,
   FootprintPhotoPage,
+  FootprintPhotoDiscovery,
   FootprintPhotoSuggestion,
   FootprintSummary,
   ProvinceFootprintDetail,
@@ -73,6 +74,8 @@ export const footprintApi = {
       `/api/footprints/entries/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`,
       { method: "DELETE" },
     ),
+  discoveries: () =>
+    request<FootprintPhotoDiscovery[]>("/api/footprints/discoveries"),
   photoSuggestions: (entryId: string) =>
     request<FootprintPhotoSuggestion[]>(
       `/api/footprints/photo-suggestions?entryId=${encodeURIComponent(entryId)}`,
