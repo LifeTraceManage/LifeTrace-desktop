@@ -19,7 +19,7 @@ pub struct ProjectionStatus {
     pub last_error: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineQuery {
     pub from: Option<String>,
@@ -56,7 +56,7 @@ pub struct TimelinePage {
     pub next_cursor: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchQuery {
     pub q: String,
