@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { getVersion } from "@tauri-apps/api/app";
 import { Check, Copy, Download, FileText, LoaderCircle, RefreshCw } from "lucide-react";
 import { useAppUpdaterStore } from "@/src/stores/useAppUpdaterStore";
 import { isTauriDesktopRuntime } from "@/src/services/appUpdater";
@@ -9,6 +8,7 @@ import {
   getClientLogPath,
 } from "@/src/services/clientDiagnostics";
 import { clientLogger } from "@/src/services/clientObservability";
+import { desktopAppVersion } from "@/src/desktop/appAdapter";
 
 function downloadJson(value: unknown, filename: string): void {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
@@ -34,7 +34,7 @@ export default function AboutLifeTracePanel() {
   useEffect(() => {
     let cancelled = false;
     if (!isTauriDesktopRuntime()) return;
-    getVersion().then((value) => { if (!cancelled) setVersion(value); }).catch((error) => {
+    desktopAppVersion().then((value) => { if (!cancelled) setVersion(value); }).catch((error) => {
       clientLogger.warn("about.version.read_failed", undefined, error);
       if (!cancelled) setVersion(null);
     });
