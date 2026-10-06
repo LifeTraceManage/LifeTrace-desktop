@@ -435,6 +435,7 @@ pub async fn serve(
         .route("/api/footprints/provinces", get(footprints::provinces))
         .route("/api/footprints/provinces/{code}", get(footprints::province))
         .route("/api/footprints/photos", get(footprints::photos))
+        .route("/api/footprints/discoveries", get(footprints::discoveries))
         .route(
             "/api/footprints/photo-suggestions",
             get(footprints::photo_suggestions),
