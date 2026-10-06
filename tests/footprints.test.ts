@@ -95,6 +95,26 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.match(photo, /photos_geo_idx/);
 });
 
+test("Footprints discovers unlinked GPS photo clusters before creating entries", () => {
+  const repository = read("src-tauri/src/database/repositories/footprints.rs");
+  const server = read("src-tauri/src/server.rs");
+  const api = read("src/services/footprintApi.ts");
+  const page = read("src/components/feature/footprints/Footprints.tsx");
+  const discoveries = read("src/components/feature/footprints/FootprintDiscoveries.tsx");
+  const editor = read("src/components/feature/footprints/FootprintEditor.tsx");
+
+  assert.match(repository, /pub fn photo_discoveries/);
+  assert.match(repository, /p\.latitude IS NOT NULL/);
+  assert.match(repository, /JOIN footprint_entries e ON e\.id=ep\.entry_id/);
+  assert.match(repository, /cluster\.photo_ids\.len\(\) >= 2/);
+  assert.match(server, /"\/api\/footprints\/discoveries"/);
+  assert.match(api, /discoveries: \(\) =>/);
+  assert.match(page, /<FootprintDiscoveries/);
+  assert.match(discoveries, /生成足迹/);
+  assert.match(editor, /请选择省份/);
+  assert.match(editor, /draft\?\.latitude/);
+});
+
 test("Footprints ships an offline China province dataset and Map of Us attribution", () => {
   const map = JSON.parse(read("src/assets/maps/china-provinces.json")) as {
     features: Array<{ properties: { adcode: number | string; name?: string } }>;
