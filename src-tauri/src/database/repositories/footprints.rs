@@ -950,7 +950,7 @@ pub fn photo_discoveries(
             if distance <= 120.0
                 && best_match
                     .as_ref()
-                    .is_none_or(|(_, current_distance)| distance < *current_distance)
+                    .map_or(true, |(_, current_distance)| distance < *current_distance)
             {
                 best_match = Some((index, distance));
             }
