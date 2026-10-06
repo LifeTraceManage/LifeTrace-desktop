@@ -25,6 +25,7 @@ import type {
   ProvinceFootprintSummary,
 } from "./types";
 import { filterFootprints } from "./footprintViewModel";
+import { resolveCoordinates } from "./footprintRegion";
 import ChinaMap from "./ChinaMap";
 import FootprintDiscoveries from "./FootprintDiscoveries";
 import FootprintEditor, { type FootprintEditorDraft } from "./FootprintEditor";
@@ -129,15 +130,22 @@ export default function Footprints() {
   };
 
   const createFromDiscovery = (discovery: FootprintPhotoDiscovery) => {
+    const region = resolveCoordinates(discovery.latitude, discovery.longitude);
     setEditor({
       entry: null,
       photoIds: discovery.photoIds,
       draft: {
-        title: `照片足迹 · ${discovery.startedAt}`,
+        title: region?.cityName
+          ? `${region.cityName} · ${discovery.startedAt}`
+          : `照片足迹 · ${discovery.startedAt}`,
         startedAt: discovery.startedAt,
         endedAt: discovery.endedAt,
         latitude: discovery.latitude,
         longitude: discovery.longitude,
+        provinceCode: region?.provinceCode ?? null,
+        provinceName: region?.provinceName ?? null,
+        cityCode: region?.cityCode ?? null,
+        cityName: region?.cityName ?? null,
       },
     });
   };
