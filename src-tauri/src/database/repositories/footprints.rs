@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 use uuid::Uuid;
@@ -112,6 +112,19 @@ pub struct PhotoSuggestion {
     pub score: i64,
     pub distance_km: Option<f64>,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PhotoDiscovery {
+    pub id: String,
+    pub photo_ids: Vec<String>,
+    pub photo_count: usize,
+    pub started_at: String,
+    pub ended_at: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub sample_photo_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
@@ -847,6 +860,161 @@ fn haversine_km(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
     2.0 * earth_radius_km * hav.sqrt().asin()
 }
 
+pub fn photo_discoveries(
+    connection: &Connection,
+    user_id: &str,
+) -> Result<Vec<PhotoDiscovery>, String> {
+    #[derive(Debug)]
+    struct DiscoveryPhoto {
+        id: String,
+        shot_date: NaiveDate,
+        latitude: f64,
+        longitude: f64,
+    }
+
+    #[derive(Debug)]
+    struct DiscoveryCluster {
+        photo_ids: Vec<String>,
+        sample_photo_ids: Vec<String>,
+        started_at: NaiveDate,
+        ended_at: NaiveDate,
+        last_date: NaiveDate,
+        latitude_sum: f64,
+        longitude_sum: f64,
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT p.id,date(COALESCE(p.captured_at,p.imported_at)),p.latitude,p.longitude
+             FROM photos p
+             WHERE p.deleted_at IS NULL
+               AND p.processing_status='completed'
+               AND p.media_type='image'
+               AND p.latitude IS NOT NULL
+               AND p.longitude IS NOT NULL
+               AND date(COALESCE(p.captured_at,p.imported_at)) IS NOT NULL
+               AND NOT EXISTS(
+                 SELECT 1
+                 FROM footprint_entry_photos ep
+                 JOIN footprint_entries e ON e.id=ep.entry_id
+                 WHERE ep.photo_id=p.id AND e.user_id=?1 AND e.deleted_at IS NULL
+               )
+             ORDER BY date(COALESCE(p.captured_at,p.imported_at)) ASC,
+                      COALESCE(p.captured_at,p.imported_at) ASC
+             LIMIT 1000",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([user_id], |row| {
+            let shot_date: String = row.get(1)?;
+            Ok((
+                row.get::<_, String>(0)?,
+                shot_date,
+                row.get::<_, f64>(2)?,
+                row.get::<_, f64>(3)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut photos = Vec::new();
+    for row in rows {
+        let (id, shot_date, latitude, longitude) = row.map_err(|error| error.to_string())?;
+        let Ok(shot_date) = NaiveDate::parse_from_str(&shot_date, "%Y-%m-%d") else {
+            continue;
+        };
+        photos.push(DiscoveryPhoto {
+            id,
+            shot_date,
+            latitude,
+            longitude,
+        });
+    }
+
+    let mut clusters: Vec<DiscoveryCluster> = Vec::new();
+    for photo in photos {
+        let mut best_match: Option<(usize, f64)> = None;
+        for (index, cluster) in clusters.iter().enumerate() {
+            let day_gap = (photo.shot_date - cluster.last_date).num_days();
+            if !(0..=3).contains(&day_gap) {
+                continue;
+            }
+            let count = cluster.photo_ids.len() as f64;
+            let center_latitude = cluster.latitude_sum / count;
+            let center_longitude = cluster.longitude_sum / count;
+            let distance = haversine_km(
+                center_latitude,
+                center_longitude,
+                photo.latitude,
+                photo.longitude,
+            );
+            if distance <= 120.0
+                && best_match
+                    .as_ref()
+                    .is_none_or(|(_, current_distance)| distance < *current_distance)
+            {
+                best_match = Some((index, distance));
+            }
+        }
+
+        if let Some((index, _)) = best_match {
+            let cluster = &mut clusters[index];
+            if cluster.sample_photo_ids.len() < 4 {
+                cluster.sample_photo_ids.push(photo.id.clone());
+            }
+            cluster.photo_ids.push(photo.id);
+            cluster.started_at = cluster.started_at.min(photo.shot_date);
+            cluster.ended_at = cluster.ended_at.max(photo.shot_date);
+            cluster.last_date = cluster.last_date.max(photo.shot_date);
+            cluster.latitude_sum += photo.latitude;
+            cluster.longitude_sum += photo.longitude;
+        } else {
+            clusters.push(DiscoveryCluster {
+                photo_ids: vec![photo.id.clone()],
+                sample_photo_ids: vec![photo.id],
+                started_at: photo.shot_date,
+                ended_at: photo.shot_date,
+                last_date: photo.shot_date,
+                latitude_sum: photo.latitude,
+                longitude_sum: photo.longitude,
+            });
+        }
+    }
+
+    let mut discoveries = clusters
+        .into_iter()
+        .filter(|cluster| cluster.photo_ids.len() >= 2)
+        .map(|cluster| {
+            let photo_count = cluster.photo_ids.len();
+            let count = photo_count as f64;
+            let latitude = cluster.latitude_sum / count;
+            let longitude = cluster.longitude_sum / count;
+            PhotoDiscovery {
+                id: format!(
+                    "{}:{}",
+                    cluster.started_at.format("%Y-%m-%d"),
+                    cluster.photo_ids.first().cloned().unwrap_or_default()
+                ),
+                photo_ids: cluster.photo_ids,
+                photo_count,
+                started_at: cluster.started_at.format("%Y-%m-%d").to_string(),
+                ended_at: cluster.ended_at.format("%Y-%m-%d").to_string(),
+                latitude: (latitude * 100_000.0).round() / 100_000.0,
+                longitude: (longitude * 100_000.0).round() / 100_000.0,
+                sample_photo_ids: cluster.sample_photo_ids,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    discoveries.sort_by(|left, right| {
+        right
+            .ended_at
+            .cmp(&left.ended_at)
+            .then_with(|| right.photo_count.cmp(&left.photo_count))
+    });
+    discoveries.truncate(24);
+    Ok(discoveries)
+}
+
 pub fn photo_suggestions(
     connection: &Connection,
     user_id: &str,
@@ -1033,6 +1201,66 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM footprint_entry_photos", [], |row| row.get(0))
             .unwrap();
         assert_eq!(link_count, 0);
+    }
+
+    #[test]
+    fn photo_discoveries_cluster_unlinked_gps_photos() {
+        let connection = connection();
+        let user = active_profile_id(&connection).unwrap();
+        let location = save_location(&connection, &user, &location_write()).unwrap();
+        let entry = save_entry(
+            &connection,
+            &user,
+            &EntryWrite {
+                id: None,
+                location_id: location.id,
+                title: "已有成都足迹".to_owned(),
+                description: None,
+                started_at: "2026-05-01".to_owned(),
+                ended_at: Some("2026-05-02".to_owned()),
+                visit_type: "trip".to_owned(),
+                rating: None,
+                favorite: false,
+            },
+        )
+        .unwrap();
+
+        connection.execute_batch(
+            r#"
+            INSERT INTO photos VALUES(
+              'a','a.jpg','image','2026-06-01T09:00:00','2026-06-01T09:00:00',
+              30.57,104.06,'completed',NULL
+            );
+            INSERT INTO photos VALUES(
+              'b','b.jpg','image','2026-06-02T09:00:00','2026-06-02T09:00:00',
+              30.59,104.08,'completed',NULL
+            );
+            INSERT INTO photos VALUES(
+              'linked','linked.jpg','image','2026-06-02T10:00:00','2026-06-02T10:00:00',
+              30.58,104.07,'completed',NULL
+            );
+            INSERT INTO photos VALUES(
+              'far','far.jpg','image','2026-06-02T11:00:00','2026-06-02T11:00:00',
+              39.90,116.40,'completed',NULL
+            );
+            INSERT INTO photos VALUES(
+              'nogps','nogps.jpg','image','2026-06-02T12:00:00','2026-06-02T12:00:00',
+              NULL,NULL,'completed',NULL
+            );
+            "#,
+        )
+        .unwrap();
+        replace_entry_photos(&connection, &user, &entry.id, &["linked".to_owned()]).unwrap();
+
+        let discoveries = photo_discoveries(&connection, &user).unwrap();
+        assert_eq!(discoveries.len(), 1);
+        let discovery = &discoveries[0];
+        assert_eq!(discovery.photo_count, 2);
+        assert_eq!(discovery.started_at, "2026-06-01");
+        assert_eq!(discovery.ended_at, "2026-06-02");
+        assert_eq!(discovery.photo_ids, vec!["a".to_owned(), "b".to_owned()]);
+        assert!(discovery.latitude > 30.57 && discovery.latitude < 30.59);
+        assert!(discovery.longitude > 104.06 && discovery.longitude < 104.08);
     }
 
     #[test]
