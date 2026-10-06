@@ -20,7 +20,7 @@ The problematic dependency was instead compile-time/source-level reuse of the ch
 | Local DeepSeek Agent runtime | Historical Desktop AI implementation | Cloud Agent client | Removed |
 | Notes -> localhost `/api/notes` | Browser-compatible transport reused on Desktop | Tauri Notes command -> application service -> repository | Migrated |
 | Core local state -> localhost `/api/state` | Browser-compatible local server | Tauri state command -> application service -> repository | Migrated |
-| Analytics/Search -> localhost API | Existing local projection service | Tauri analytics application boundary | Pending cleanup |
+| Analytics/Search -> localhost API | Existing local projection service | Tauri analytics application boundary | Migrated; HTTP kept for browser/dev |
 | Execution -> localhost API | Existing local execution service | Tauri execution application boundary | Pending cleanup |
 | Vite/PostCSS/shared dependency references to `vendor/web` | Shared build/dependency setup | Desktop-owned build tooling where safe | Partial; preserve Travel compatibility |
 
@@ -52,11 +52,11 @@ Status: **removed from the authenticated runtime**.
 
 ### window.location / browser history
 
-Browser navigation is not used as the primary Desktop application router. Native Desktop navigation now keeps its own history and last route.
+Browser navigation is not used as the primary Desktop application router. Native Desktop navigation now keeps its own atomic history and last route. Online and offline authenticated states use this same workspace.
 
 Normal page reload/error recovery code may still use browser primitives because Tauri's React renderer is a WebView; this is not a dependency on the LifeTrace Web frontend.
 
-Status: **core routing migrated**.
+Status: **core routing migrated**. Login/logout no longer require a full page reload to switch workspaces.
 
 ### Web-only runtime
 
@@ -86,6 +86,14 @@ The authenticated workspace is composed by `DesktopNativeRouteContent` and Deskt
 
 Travel is intentionally omitted from this audit's migration work and is not changed.
 
+## Desktop Adapter Boundary
+
+Non-Travel React components are now guarded from direct platform access. Native capabilities are exposed through `src/desktop` adapters for sync, secure credentials, Notes files, storage, photo sync, Vault, external URLs and app metadata.
+
+Component tests fail if non-Travel React UI imports Tauri APIs, calls `invoke()` or `fetch()`, or accesses a `window.*Api` bridge directly.
+
+The Tauri UI also renders before the localhost compatibility server health check completes; that server is no longer a prerequisite for core Desktop startup.
+
 ## Local Compatibility Server
 
 The Axum service on localhost is not a LifeTrace Web frontend. It is a native Rust compatibility/API process running inside the Desktop application.
@@ -94,8 +102,8 @@ Current status:
 
 - Notes: Desktop no longer depends on its HTTP route.
 - Core local state: Desktop no longer depends on its HTTP route.
-- Analytics/search: still uses the compatibility route.
-- Execution and selected import features: still use compatibility routes.
+- Analytics/search: Desktop uses Tauri IPC; HTTP route is browser/dev compatibility only.
+- Execution and selected import/photo features still use compatibility routes where their existing local service behavior remains useful.
 
 Therefore, removing the Web frontend and removing localhost compatibility transport are separate concerns. The former is addressed; the latter is an incremental native-IPC cleanup.
 
