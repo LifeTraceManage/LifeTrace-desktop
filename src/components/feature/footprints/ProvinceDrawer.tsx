@@ -9,6 +9,7 @@ import { footprintDateLabel } from "./footprintViewModel";
 
 type Props = {
   mapLevel: FootprintMapLevel;
+  selected: boolean;
   summary: ProvinceFootprintSummary | null;
   name: string;
   detail: ProvinceFootprintDetail | null;
@@ -23,6 +24,7 @@ type Props = {
 
 export default function ProvinceDrawer({
   mapLevel,
+  selected,
   summary,
   name,
   detail,
@@ -53,7 +55,7 @@ export default function ProvinceDrawer({
               : "还没有在这里记录足迹"}
         </p>
 
-        {summary || detail || loading ? (
+        {selected ? (
           <div className="footprint-drawer-nav">
             {mapLevel === "country" ? (
               <button
@@ -134,7 +136,13 @@ export default function ProvinceDrawer({
       {!loading && !scopedEntries.length ? (
         <div className="footprint-drawer-empty">
           <MapPin />
-          <p>{selectedCityName ? "这个城市还没有足迹记录。" : "点击“添加足迹”，把第一次到访记录在这里。"}</p>
+          <p>
+            {selectedCityName
+              ? "这个城市还没有足迹记录。"
+              : selected
+                ? "这个省份还没有足迹记录；仍然可以点击“查看省内地图”进入市 / 地区级。"
+                : "点击地图上的省份查看详情；选中后可进入省内地图。"}
+          </p>
         </div>
       ) : null}
     </aside>
