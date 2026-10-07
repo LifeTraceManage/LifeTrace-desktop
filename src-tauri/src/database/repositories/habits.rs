@@ -14,7 +14,7 @@ const ACTIVITY_TYPES: [&str; 5] = ["duration", "count", "completion", "weekly", 
 const TARGET_PERIODS: [&str; 2] = ["daily", "weekly"];
 const SCHEDULE_TYPES: [&str; 3] = ["daily", "weekly", "custom"];
 const CHECKIN_METHODS: [&str; 2] = ["manual", "automatic"];
-const SYNC_SOURCES: [&str; 1] = ["fitness"];
+const LOCAL_SYNC_SOURCES: [&str; 2] = ["fitness", "english"];
 const LOG_STATUSES: [&str; 3] = ["completed", "partial", "skipped"];
 
 fn now() -> String {
@@ -136,12 +136,12 @@ pub fn activity_from_legacy_json(value: &Value) -> Result<ActivityRow, String> {
             return Err(format!("习惯 {id} 打卡方式不合法: {value}"));
         }
     }
-    let sync_source = optional_text(object, "syncSource");
-    if let Some(value) = &sync_source {
-        if !SYNC_SOURCES.contains(&value.as_str()) {
-            return Err(format!("习惯 {id} 同步来源不合法: {value}"));
-        }
-    }
+    // The wire contract deliberately preserves unknown sync-source strings for
+    // forward compatibility. The legacy Desktop table still has a narrow CHECK
+    // constraint, so cloud provenance values such as "web" must not block a
+    // pull. Keep only local integration sources in the constrained column.
+    let sync_source = optional_text(object, "syncSource")
+        .filter(|value| LOCAL_SYNC_SOURCES.contains(&value.as_str()));
     let target_days_json = object
         .get("targetDays")
         .filter(|value| value.is_array())
