@@ -1298,6 +1298,35 @@ mod tests {
     }
 
     #[test]
+    fn deleting_folder_promotes_children_and_notes_to_parent() {
+        let connection = Connection::open_in_memory().unwrap();
+        schema(&connection);
+        let root = save_folder(&connection, &json!({"name":"Root","sortOrder":0})).unwrap();
+        let child = save_folder(&connection, &json!({"name":"Child","parentFolderId":root,"sortOrder":1})).unwrap();
+        let grandchild = save_folder(&connection, &json!({"name":"Grandchild","parentFolderId":child,"sortOrder":2})).unwrap();
+        let note = save_note(
+            &connection,
+            &json!({
+                "title":"Nested","noteType":"document","folderId":child,
+                "contentJson":{"type":"doc"},"contentHtml":"","contentText":"",
+                "contentMarkdown":"","summary":"","tagIds":[],"relations":[]
+            }),
+            false,
+            false,
+        ).unwrap();
+
+        delete_folder(&connection, &child).unwrap();
+
+        let note = get_note(&connection, note["id"].as_str().unwrap()).unwrap().unwrap();
+        assert_eq!(note["folderId"], root);
+        let meta = meta(&connection).unwrap();
+        assert!(meta["folders"].as_array().unwrap().iter().all(|folder| folder["id"] != child));
+        let grandchild_row = meta["folders"].as_array().unwrap().iter()
+            .find(|folder| folder["id"] == grandchild).unwrap();
+        assert_eq!(grandchild_row["parentFolderId"], root);
+    }
+
+    #[test]
     fn update_bumps_version_and_keeps_attachments() {
         let connection = Connection::open_in_memory().unwrap();
         schema(&connection);
