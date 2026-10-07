@@ -104,7 +104,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     onUpdate:({editor:instance})=>{
       const html=DOMPurify.sanitize(instance.getHTML(),{USE_PROFILES:{html:true}});
       const text=instance.getText({blockSeparator:"\n"});
-      setDraft(current=>({...current,contentJson:withNoteProperties(instance.getJSON() as Record<string,unknown>,properties),contentHtml:html,contentText:text,contentMarkdown:turndown.turndown(html),summary:cleanSummary(text)}));
+      setDraft(current=>({...current,contentJson:withNoteProperties(instance.getJSON() as Record<string,unknown>,readNoteProperties(current.contentJson)),contentHtml:html,contentText:text,contentMarkdown:turndown.turndown(html),summary:cleanSummary(text)}));
       setDirty(true);setStatus("dirty");
     },
   });
@@ -144,11 +144,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
   const patch=(value:Partial<Note>)=>{setDraft(current=>({...current,...value}));setDirty(true);setStatus("dirty")};
   const patchProperties=(value:Partial<DesktopNoteProperties>)=>{
-    setProperties(current=>{
-      const next={...current,...value};
-      setDraft(noteValue=>({...noteValue,contentJson:withNoteProperties(noteValue.contentJson,next)}));
-      return next;
-    });
+    const next={...properties,...value};
+    setProperties(next);
+    setDraft(noteValue=>({...noteValue,contentJson:withNoteProperties(noteValue.contentJson,next)}));
     setDirty(true);setStatus("dirty");
   };
   const toggleTag=(tag:NoteTag)=>patch({tags:draft.tags.some(x=>x.id===tag.id)?draft.tags.filter(x=>x.id!==tag.id):[...draft.tags,tag]});
