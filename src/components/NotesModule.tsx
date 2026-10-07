@@ -114,25 +114,23 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [menuOpen,setMenuOpen]=useState(false);
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
+  const [markdown,setMarkdown]=useState(()=>markdownSource(note));
+  const editorRef=useRef<HTMLTextAreaElement>(null);
   const saveLock=useRef(false);
-  const editor=useEditor({
-    immediatelyRender:false,
-    extensions:[
-      StarterKit.configure({codeBlock:false,link:false}),
-      Link.configure({openOnClick:false,HTMLAttributes:{rel:"noopener noreferrer nofollow",target:"_blank"}}),
-      Image.configure({allowBase64:false}),
-      TaskList,TaskItem.configure({nested:true}),
-      Placeholder.configure({placeholder:"开始写下你的想法…"}),
-      CodeBlockLowlight.configure({lowlight}),
-    ],
-    content:note.contentJson,
-    onUpdate:({editor:instance})=>{
-      const html=DOMPurify.sanitize(instance.getHTML(),{USE_PROFILES:{html:true}});
-      const text=instance.getText({blockSeparator:"\n"});
-      setDraft(current=>({...current,contentJson:withNoteProperties(instance.getJSON() as Record<string,unknown>,readNoteProperties(current.contentJson)),contentHtml:html,contentText:text,contentMarkdown:turndown.turndown(html),summary:cleanSummary(text)}));
-      setDirty(true);setStatus("dirty");
-    },
-  });
+
+  const updateMarkdown=useCallback((value:string)=>{
+    const plain=plainTextFromMarkdown(value);
+    setMarkdown(value);
+    setDraft(current=>({
+      ...current,
+      contentJson:markdownContentJson(value,current.contentJson,readNoteProperties(current.contentJson)),
+      contentHtml:"",
+      contentText:plain,
+      contentMarkdown:value,
+      summary:cleanSummary(plain),
+    }));
+    setDirty(true);setStatus("dirty");
+  },[]);
 
   const save=useCallback(async(createRevision=false)=>{
     if(saveLock.current||!dirty&&!createRevision)return draft;
@@ -140,7 +138,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     try{
       const value:NoteInputValue&{id:string}={
         id:draft.id,title:draft.title,noteType:draft.noteType,folderId:draft.folderId,
-        contentJson:draft.contentJson,contentHtml:DOMPurify.sanitize(draft.contentHtml),
+        contentJson:draft.contentJson,contentHtml:draft.contentHtml,
         contentText:draft.contentText,contentMarkdown:draft.contentMarkdown,summary:draft.summary,
         isPinned:draft.isPinned,isFavorite:draft.isFavorite,isArchived:draft.isArchived,
         tagIds:draft.tags.map(item=>item.id),relations:draft.relations,createRevision,
