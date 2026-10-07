@@ -95,6 +95,19 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.match(photo, /photos_geo_idx/);
 });
 
+test("photo library can hand selected photos to a new Footprint draft", () => {
+  const dashboard = read("src/components/PhotoSyncDashboard.tsx");
+  const page = read("src/components/feature/footprints/Footprints.tsx");
+  const bridge = read("src/components/feature/footprints/footprintPhotoDraft.ts");
+
+  assert.match(dashboard, /添加到足迹/);
+  assert.match(dashboard, /writeFootprintPhotoDraft/);
+  assert.match(bridge, /FOOTPRINT_PHOTO_DRAFT_KEY/);
+  assert.match(bridge, /sessionStorage/);
+  assert.match(page, /consumeFootprintPhotoDraft/);
+  assert.match(page, /photoIds: photoDraft\.photoIds/);
+});
+
 test("Footprints discovers unlinked GPS photo clusters before creating entries", () => {
   const repository = read("src-tauri/src/database/repositories/footprints.rs");
   const server = read("src-tauri/src/server.rs");
