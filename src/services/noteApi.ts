@@ -57,7 +57,7 @@ export const noteApi={
   saveTag:(tag:Partial<NoteTag>&Pick<NoteTag,"name">)=>mutate<{ok:true;id:string}>({action:"tag.save",tag}),
   deleteTag:(id:string)=>mutate<{ok:true}>({action:"tag.delete",id}),
   restoreRevision:(id:string)=>mutate<Note>({action:"revision.restore",id}),
-  recordAttachment:(file:Record<string,unknown>)=>mutate<{ok:true}>({action:"attachment.record",file}),
+  recordAttachment:(file:object)=>mutate<{ok:true}>({action:"attachment.record",file}),
   deleteAttachment:(id:string)=>mutate<{ok:true}>({action:"attachment.delete",id}),
   restoreBackup:(data:Record<string,unknown>)=>mutate<{ok:true}>({action:"backup.restore",data}),
 };
