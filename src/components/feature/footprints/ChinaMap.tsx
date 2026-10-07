@@ -9,7 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
-import { geoArea, geoMercator, geoPath } from "d3-geo";
+import { geoArea, geoMercator, geoPath, type GeoPath, type GeoProjection } from "d3-geo";
 import rawChina from "@/src/assets/maps/china-provinces.json";
 import rawPrefectures from "@/src/assets/maps/china-prefectures.json";
 import type { CityFootprintSummary, ProvinceFootprintSummary } from "./types";
@@ -74,8 +74,8 @@ function shortAdminName(name: string, level: "province" | "city"): string {
 
 function labelPoint(
   feature: AdminFeature,
-  projection: ReturnType<typeof geoMercator>,
-  path: ReturnType<typeof geoPath>,
+  projection: GeoProjection,
+  path: GeoPath<unknown, AdminFeature>,
 ): [number, number] {
   const anchor = feature.properties.centroid ?? feature.properties.center;
   const projected = anchor ? projection(anchor) : null;
