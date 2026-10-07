@@ -35,6 +35,10 @@ pub fn query(connection: &Connection, request: &Value) -> Result<Value, String> 
             }
         }
         "meta" => notes_repo::meta(connection),
+        "graph" => crate::database::note_links::graph(
+            connection,
+            usize_value(object, "limit").unwrap_or(80),
+        ),
         "revisions" => {
             let note_id = text(object, "id").unwrap_or_default();
             Ok(Value::Array(notes_repo::list_revisions(connection, note_id)?))
