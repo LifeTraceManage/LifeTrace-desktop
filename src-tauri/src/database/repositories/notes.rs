@@ -898,7 +898,8 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
                user_id=excluded.user_id,
                name=excluded.name, icon=excluded.icon, color=excluded.color,
                parent_folder_id=excluded.parent_folder_id,
-               sort_order=excluded.sort_order, updated_at=excluded.updated_at",
+               sort_order=excluded.sort_order, updated_at=excluded.updated_at,
+               version=note_folders.version+1",
             params![
                 folder_id,
                 name,
@@ -934,21 +935,21 @@ pub fn delete_folder(connection: &Connection, folder_id: &str) -> Result<(), Str
         .flatten();
     connection
         .execute(
-            "UPDATE notes SET folder_id=?1, updated_at=?2
+            "UPDATE notes SET folder_id=?1, updated_at=?2, version=version+1
              WHERE folder_id=?3 AND user_id=?4",
             params![parent_folder_id, stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
         .execute(
-            "UPDATE note_folders SET parent_folder_id=?1, updated_at=?2
+            "UPDATE note_folders SET parent_folder_id=?1, updated_at=?2, version=version+1
              WHERE parent_folder_id=?3 AND user_id=?4 AND deleted_at IS NULL",
             params![parent_folder_id, stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
         .execute(
-            "UPDATE note_folders SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
+            "UPDATE note_folders SET deleted_at=?1, updated_at=?1, version=version+1 WHERE id=?2 AND user_id=?3",
             params![stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
@@ -972,7 +973,8 @@ pub fn save_tag(connection: &Connection, input: &Value) -> Result<String, String
              ) VALUES(?1,?6,?2,?3,?4,?5,NULL,1,NULL)
              ON CONFLICT(id) DO UPDATE SET
                user_id=excluded.user_id,
-               name=excluded.name, color=excluded.color, updated_at=excluded.updated_at",
+               name=excluded.name, color=excluded.color, updated_at=excluded.updated_at,
+               version=note_tags.version+1",
             params![
                 tag_id,
                 name,
@@ -992,7 +994,7 @@ pub fn delete_tag(connection: &Connection, tag_id: &str) -> Result<(), String> {
     let profile_id = crate::database::profile::active_profile_id(connection)?;
     connection
         .execute(
-            "UPDATE note_tags SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
+            "UPDATE note_tags SET deleted_at=?1, updated_at=?1, version=version+1 WHERE id=?2 AND user_id=?3",
             params![stamp, tag_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
