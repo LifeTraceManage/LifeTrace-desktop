@@ -190,40 +190,95 @@ pub fn enqueue_existing_profile(
             }
         }
     }
-    for (table, entity_type, columns) in [
-        (
-            "note_folders",
-            EntityType::NOTE_FOLDER,
-            "id,name,icon,color,sort_order,created_at,updated_at",
-        ),
-        (
-            "note_tags",
-            EntityType::NOTE_TAG,
-            "id,name,'' AS icon,color,0 AS sort_order,created_at,updated_at",
-        ),
-    ] {
-        let sql = format!("SELECT {columns} FROM {table} WHERE user_id=?1 AND deleted_at IS NULL");
-        let mut statement = connection
-            .prepare(&sql)
-            .map_err(|error| error.to_string())?;
-        let values = statement
-            .query_map([profile_id], |row| {
-                Ok(serde_json::json!({
-                    "id": row.get::<_,String>(0)?, "name": row.get::<_,String>(1)?,
-                    "icon": row.get::<_,String>(2)?, "color": row.get::<_,String>(3)?,
-                    "sortOrder": row.get::<_,i64>(4)?, "createdAt": row.get::<_,String>(5)?,
-                    "updatedAt": row.get::<_,String>(6)?, "userId": profile_id,
-                }))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|error| error.to_string())?;
+    {
+        let mut statement = connection.prepare(
+            "SELECT id,name,icon,color,parent_folder_id,sort_order,created_at,updated_at
+             FROM note_folders WHERE user_id=?1 AND deleted_at IS NULL"
+        ).map_err(|error| error.to_string())?;
+        let values = statement.query_map([profile_id], |row| Ok(serde_json::json!({
+            "id": row.get::<_,String>(0)?, "name": row.get::<_,String>(1)?,
+            "icon": row.get::<_,String>(2)?, "color": row.get::<_,String>(3)?,
+            "parentFolderId": row.get::<_,Option<String>>(4)?,
+            "sortOrder": row.get::<_,i64>(5)?, "createdAt": row.get::<_,String>(6)?,
+            "updatedAt": row.get::<_,String>(7)?, "userId": profile_id,
+        }))).map_err(|error| error.to_string())?
+          .collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?;
         for value in values {
-            if enqueue_upsert(connection, entity_type, &value, None, MutationOrigin::Local)?
-                .is_some()
-            {
-                total += 1;
-            }
+            if enqueue_upsert(connection, EntityType::NOTE_FOLDER, &value, None, MutationOrigin::Local)?.is_some() { total += 1; }
+        }
+    }
+    {
+        let mut statement = connection.prepare(
+            "SELECT id,name,color,created_at,updated_at FROM note_tags WHERE user_id=?1 AND deleted_at IS NULL"
+        ).map_err(|error| error.to_string())?;
+        let values = statement.query_map([profile_id], |row| Ok(serde_json::json!({
+            "id": row.get::<_,String>(0)?, "name": row.get::<_,String>(1)?,
+            "color": row.get::<_,String>(2)?, "createdAt": row.get::<_,String>(3)?,
+            "updatedAt": row.get::<_,String>(4)?, "userId": profile_id,
+        }))).map_err(|error| error.to_string())?
+          .collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?;
+        for value in values {
+            if enqueue_upsert(connection, EntityType::NOTE_TAG, &value, None, MutationOrigin::Local)?.is_some() { total += 1; }
+        }
+    }
+    {
+        let mut statement = connection.prepare(
+            "SELECT r.note_id,r.tag_id,r.created_at,n.updated_at
+             FROM note_tag_relations r JOIN notes n ON n.id=r.note_id
+             WHERE n.user_id=?1 AND n.deleted_at IS NULL"
+        ).map_err(|error| error.to_string())?;
+        let values = statement.query_map([profile_id], |row| {
+            let note_id = row.get::<_,String>(0)?;
+            let tag_id = row.get::<_,String>(1)?;
+            Ok(serde_json::json!({
+                "id": format!("{note_id}:{tag_id}"), "userId": profile_id,
+                "noteId": note_id, "tagId": tag_id,
+                "createdAt": row.get::<_,String>(2)?, "updatedAt": row.get::<_,String>(3)?,
+            }))
+        }).map_err(|error| error.to_string())?
+          .collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?;
+        for value in values {
+            if enqueue_upsert(connection, EntityType::NOTE_TAG_RELATION, &value, None, MutationOrigin::Local)?.is_some() { total += 1; }
+        }
+    }
+    {
+        let mut statement = connection.prepare(
+            "SELECT r.id,r.note_id,r.entity_type,r.entity_id,r.relation_type,r.created_at,n.updated_at
+             FROM note_relations r JOIN notes n ON n.id=r.note_id
+             WHERE n.user_id=?1 AND n.deleted_at IS NULL"
+        ).map_err(|error| error.to_string())?;
+        let values = statement.query_map([profile_id], |row| Ok(serde_json::json!({
+            "id": row.get::<_,String>(0)?, "userId": profile_id,
+            "noteId": row.get::<_,String>(1)?, "entityType": row.get::<_,String>(2)?,
+            "entityId": row.get::<_,String>(3)?, "relationType": row.get::<_,String>(4)?,
+            "createdAt": row.get::<_,String>(5)?, "updatedAt": row.get::<_,String>(6)?,
+        }))).map_err(|error| error.to_string())?
+          .collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?;
+        for value in values {
+            if enqueue_upsert(connection, EntityType::NOTE_RELATION, &value, None, MutationOrigin::Local)?.is_some() { total += 1; }
+        }
+    }
+    {
+        let mut statement = connection.prepare(
+            "SELECT r.id,r.note_id,r.revision_version,r.title,r.content_json,r.content_html,r.content_markdown,
+                    r.created_at,n.updated_at
+             FROM note_revisions r JOIN notes n ON n.id=r.note_id
+             WHERE n.user_id=?1 AND n.deleted_at IS NULL"
+        ).map_err(|error| error.to_string())?;
+        let values = statement.query_map([profile_id], |row| {
+            let raw = row.get::<_,String>(4)?;
+            let content_json = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| serde_json::json!({"type":"doc","content":[]}));
+            Ok(serde_json::json!({
+                "id": row.get::<_,String>(0)?, "userId": profile_id,
+                "noteId": row.get::<_,String>(1)?, "revisionVersion": row.get::<_,i64>(2)?,
+                "title": row.get::<_,Option<String>>(3)?, "contentJson": content_json,
+                "contentHtml": row.get::<_,String>(5)?, "contentMarkdown": row.get::<_,String>(6)?,
+                "createdAt": row.get::<_,String>(7)?, "updatedAt": row.get::<_,String>(8)?,
+            }))
+        }).map_err(|error| error.to_string())?
+          .collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?;
+        for value in values {
+            if enqueue_upsert(connection, EntityType::NOTE_REVISION, &value, None, MutationOrigin::Local)?.is_some() { total += 1; }
         }
     }
     Ok(total)
