@@ -75,8 +75,9 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
 
   assert.doesNotMatch(map, /countryDrillScale/);
   assert.match(map, /event\.detail > 1/);
-  assert.match(map, /onDoubleClick/);
+  assert.match(map, /onDoubleClickCapture=\{doubleClickProvince\}/);
   assert.match(map, /onEnterProvince/);
+  assert.match(map, /data-admin-level="province"/);
   assert.doesNotMatch(map, /event\.detail >= 2/);
   assert.doesNotMatch(map, /isDoubleRegionActivation/);
   assert.doesNotMatch(map, /provinceActivationRef/);
