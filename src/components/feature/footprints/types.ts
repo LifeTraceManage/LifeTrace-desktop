@@ -72,9 +72,37 @@ export type FootprintPhotoSuggestion = FootprintPhoto & {
   reason: string;
 };
 
+export type FootprintPhotoDiscovery = {
+  id: string;
+  photoIds: string[];
+  photoCount: number;
+  startedAt: string;
+  endedAt: string;
+  latitude: number;
+  longitude: number;
+  samplePhotoIds: string[];
+};
+
 export type FootprintEntryDetail = {
   entry: FootprintEntry;
   photos: FootprintPhoto[];
+};
+
+export type FootprintEntryLink = {
+  id: string;
+  entryId: string;
+  entityType: "note.note" | "execution.task";
+  entityId: string;
+  relationType: string;
+  label: string;
+  createdAt: string;
+};
+
+export type FootprintLinkCandidate = {
+  entityType: "note.note" | "execution.task";
+  entityId: string;
+  label: string;
+  detail: string;
 };
 
 export type ProvinceFootprintDetail = {

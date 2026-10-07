@@ -226,6 +226,19 @@ pub fn enqueue_existing_profile(
             }
         }
     }
+    for (entity_type, value) in super::footprints::existing_entities(connection, profile_id)? {
+        if enqueue_upsert(
+            connection,
+            &entity_type,
+            &value,
+            None,
+            MutationOrigin::Local,
+        )?
+        .is_some()
+        {
+            total += 1;
+        }
+    }
     Ok(total)
 }
 

@@ -55,6 +55,14 @@ pub struct PhotoLinksPayload {
     pub photo_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryLinkPayload {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub relation_type: Option<String>,
+}
+
 fn error(status: StatusCode, message: impl Into<String>) -> Response {
     (
         status,
@@ -424,6 +432,106 @@ pub async fn detach_photo(
     match footprints::detach_photo(&connection, &user_id, &id, &photo_id) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
         Ok(false) => error(StatusCode::NOT_FOUND, "照片关联不存在"),
+        Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, message),
+    }
+}
+
+pub async fn list_entry_links(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return error(StatusCode::INTERNAL_SERVER_ERROR, "数据库暂时不可用"),
+    };
+    let user_id = match profile(&connection) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match footprints::list_entry_links(&connection, &user_id, &id) {
+        Ok(value) => Json(value).into_response(),
+        Err(message) => error(StatusCode::BAD_REQUEST, message),
+    }
+}
+
+pub async fn create_entry_link(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<EntryLinkPayload>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return error(StatusCode::INTERNAL_SERVER_ERROR, "数据库暂时不可用"),
+    };
+    let user_id = match profile(&connection) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match footprints::save_entry_link(
+        &connection,
+        &user_id,
+        &id,
+        payload.entity_type.trim(),
+        payload.entity_id.trim(),
+        payload.relation_type.as_deref().unwrap_or("related"),
+    ) {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(message) => error(StatusCode::BAD_REQUEST, message),
+    }
+}
+
+pub async fn delete_entry_link(
+    State(state): State<AppState>,
+    Path((id, link_id)): Path<(String, String)>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return error(StatusCode::INTERNAL_SERVER_ERROR, "数据库暂时不可用"),
+    };
+    let user_id = match profile(&connection) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match footprints::delete_entry_link(&connection, &user_id, &id, &link_id) {
+        Ok(true) => Json(json!({ "ok": true })).into_response(),
+        Ok(false) => error(StatusCode::NOT_FOUND, "关联不存在"),
+        Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, message),
+    }
+}
+
+pub async fn link_candidates(
+    State(state): State<AppState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return error(StatusCode::INTERNAL_SERVER_ERROR, "数据库暂时不可用"),
+    };
+    let user_id = match profile(&connection) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match footprints::link_candidates(
+        &connection,
+        &user_id,
+        query.get("q").map(String::as_str),
+    ) {
+        Ok(value) => Json(value).into_response(),
+        Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, message),
+    }
+}
+
+pub async fn discoveries(State(state): State<AppState>) -> Response {
+    let connection = match state.database.lock() {
+        Ok(value) => value,
+        Err(_) => return error(StatusCode::INTERNAL_SERVER_ERROR, "数据库暂时不可用"),
+    };
+    let user_id = match profile(&connection) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match footprints::photo_discoveries(&connection, &user_id) {
+        Ok(value) => Json(value).into_response(),
         Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, message),
     }
 }

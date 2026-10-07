@@ -2,8 +2,11 @@ import type {
   FootprintEntry,
   FootprintEntryDetail,
   FootprintEntryInput,
+  FootprintEntryLink,
+  FootprintLinkCandidate,
   FootprintPhoto,
   FootprintPhotoPage,
+  FootprintPhotoDiscovery,
   FootprintPhotoSuggestion,
   FootprintSummary,
   ProvinceFootprintDetail,
@@ -73,6 +76,32 @@ export const footprintApi = {
       `/api/footprints/entries/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`,
       { method: "DELETE" },
     ),
+  links: (id: string) =>
+    request<FootprintEntryLink[]>(
+      `/api/footprints/entries/${encodeURIComponent(id)}/links`,
+    ),
+  linkCandidates: (q = "") => {
+    const query = new URLSearchParams();
+    if (q.trim()) query.set("q", q.trim());
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return request<FootprintLinkCandidate[]>(`/api/footprints/link-candidates${suffix}`);
+  },
+  attachLink: (id: string, candidate: FootprintLinkCandidate) =>
+    request<FootprintEntryLink>(
+      `/api/footprints/entries/${encodeURIComponent(id)}/links`,
+      json("POST", {
+        entityType: candidate.entityType,
+        entityId: candidate.entityId,
+        relationType: "related",
+      }),
+    ),
+  detachLink: (id: string, linkId: string) =>
+    request<{ ok: true }>(
+      `/api/footprints/entries/${encodeURIComponent(id)}/links/${encodeURIComponent(linkId)}`,
+      { method: "DELETE" },
+    ),
+  discoveries: () =>
+    request<FootprintPhotoDiscovery[]>("/api/footprints/discoveries"),
   photoSuggestions: (entryId: string) =>
     request<FootprintPhotoSuggestion[]>(
       `/api/footprints/photo-suggestions?entryId=${encodeURIComponent(entryId)}`,

@@ -1,5 +1,6 @@
 pub mod commands;
 mod execution;
+mod footprints;
 pub mod outbox;
 mod payload;
 pub(crate) mod photo_staging;

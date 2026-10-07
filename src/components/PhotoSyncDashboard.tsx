@@ -5,9 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
   AlertTriangle, CheckCircle2, Copy, EyeOff, Film, Image as ImageIcon, LockKeyhole,
-  LoaderCircle, RefreshCw, Smartphone, X,
+  LoaderCircle, MapPinned, RefreshCw, Smartphone, X,
 } from "lucide-react";
 import Toast from "@/src/components/Toast";
+import { writeFootprintPhotoDraft } from "@/src/components/feature/footprints/footprintPhotoDraft";
 
 type Photo = {
   id:string; original_file_name:string; media_type:"image"|"video"; mime_type:string|null;
@@ -125,6 +126,23 @@ export default function PhotoSyncModule() {
     setSelectMode(true);setSelectedIds(new Set());setMessage("");
   };
   const cancelSelect=()=>{setSelectMode(false);setSelectedIds(new Set())};
+  const addSelectedToFootprint=()=>{
+    const photos=(data?.photos??[]).filter(photo=>selectedIds.has(photo.id));
+    if(!photos.length){setMessage("请先选择要加入足迹的照片");return}
+    const dates=photos
+      .map(photo=>photo.captured_at||photo.imported_at)
+      .filter(Boolean)
+      .map(value=>new Date(value).toISOString().slice(0,10))
+      .sort();
+    writeFootprintPhotoDraft({
+      photoIds:photos.map(photo=>photo.id),
+      startedAt:dates[0],
+      endedAt:dates.at(-1),
+    });
+    setSelectMode(false);setSelectedIds(new Set());
+    window.history.pushState(null,"","/app/footprints");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
   const toggleSelect=(id:string)=>{
     setSelectedIds(current=>{
       const next=new Set(current);
@@ -214,7 +232,7 @@ export default function PhotoSyncModule() {
       <div className="photo-timeline">
         <header className="photo-section-head"><div><span>照片时间线</span><h2>{data?.total??0} 个本地媒体文件</h2></div><div className="photo-section-actions">
           {selectMode
-            ?<><span className="photo-select-count">已选 {selectedIds.size} 张</span><button className="hx-btn secondary" onClick={cancelSelect} disabled={loading}>取消</button><button className="hx-btn primary" onClick={()=>void hideSelected()} disabled={selectedIds.size===0||loading}><LockKeyhole/>隐藏到私密相册</button></>
+            ?<><span className="photo-select-count">已选 {selectedIds.size} 张</span><button className="hx-btn secondary" onClick={cancelSelect} disabled={loading}>取消</button><button className="hx-btn secondary" onClick={addSelectedToFootprint} disabled={selectedIds.size===0||loading}><MapPinned/>添加到足迹</button><button className="hx-btn primary" onClick={()=>void hideSelected()} disabled={selectedIds.size===0||loading}><LockKeyhole/>隐藏到私密相册</button></>
             :<><button className="hx-btn secondary" onClick={enterSelectMode} disabled={loading}><EyeOff/>批量隐藏</button><button className="hx-btn secondary" onClick={()=>load(page)} disabled={loading}><RefreshCw className={loading?"spin":""}/>刷新</button></>}
         </div></header>
         {selectMode&&<p className="photo-select-hint">选择要隐藏的照片，确认后会被加密移入私密相册并从同步相册移除。</p>}

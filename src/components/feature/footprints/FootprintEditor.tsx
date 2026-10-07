@@ -15,8 +15,24 @@ import type {
   FootprintEntryInput,
 } from "./types";
 import FootprintPhotoPicker from "./FootprintPhotoPicker";
+import {
+  citiesForProvince,
+  findCityByName,
+} from "./footprintRegion";
 
 type Province = { code: string; name: string };
+
+export type FootprintEditorDraft = {
+  title?: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  provinceCode?: string | null;
+  provinceName?: string | null;
+  cityCode?: string | null;
+  cityName?: string | null;
+};
 
 const provinces: Province[] = (
   rawChina as unknown as {
@@ -36,33 +52,46 @@ export default function FootprintEditor({
   entry,
   existingPhotoIds = [],
   preferredProvince,
+  draft,
   onSaved,
   onClose,
 }: {
   entry?: FootprintEntry | null;
   existingPhotoIds?: string[];
   preferredProvince?: { code: string; name: string } | null;
+  draft?: FootprintEditorDraft | null;
   onSaved: () => void;
   onClose: () => void;
 }) {
   const initialProvince = useMemo(() => {
     if (entry) return { code: entry.provinceCode, name: entry.provinceName };
     if (preferredProvince) return preferredProvince;
-    return provinces[0] ?? { code: "110000", name: "北京市" };
-  }, [entry, preferredProvince]);
+    if (draft?.provinceCode && draft?.provinceName) {
+      return { code: draft.provinceCode, name: draft.provinceName };
+    }
+    return null;
+  }, [draft?.provinceCode, draft?.provinceName, entry, preferredProvince]);
 
-  const [title, setTitle] = useState(entry?.title ?? "");
-  const [provinceCode, setProvinceCode] = useState(initialProvince.code);
-  const [cityName, setCityName] = useState(entry?.cityName ?? "");
+  const [title, setTitle] = useState(entry?.title ?? draft?.title ?? "");
+  const [provinceCode, setProvinceCode] = useState(initialProvince?.code ?? "");
+  const [cityName, setCityName] = useState(entry?.cityName ?? draft?.cityName ?? "");
   const [placeName, setPlaceName] = useState(entry?.placeName ?? "");
   const [startedAt, setStartedAt] = useState(
-    entry?.startedAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    entry?.startedAt.slice(0, 10)
+      ?? draft?.startedAt
+      ?? new Date().toISOString().slice(0, 10),
   );
-  const [endedAt, setEndedAt] = useState(entry?.endedAt?.slice(0, 10) ?? "");
+  const [endedAt, setEndedAt] = useState(
+    entry?.endedAt?.slice(0, 10) ?? draft?.endedAt ?? "",
+  );
   const [description, setDescription] = useState(entry?.description ?? "");
   const [favorite, setFavorite] = useState(entry?.favorite ?? false);
   const [rating, setRating] = useState(entry?.rating ?? 0);
   const [photoIds, setPhotoIds] = useState(existingPhotoIds);
+  const cityOptions = useMemo(
+    () => provinceCode ? citiesForProvince(provinceCode) : [],
+    [provinceCode],
+  );
   const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -70,6 +99,10 @@ export default function FootprintEditor({
   const save = async () => {
     if (!title.trim()) {
       setError("请输入足迹标题");
+      return;
+    }
+    if (!provinceCode) {
+      setError("请选择省份");
       return;
     }
     if (!cityName.trim()) {
@@ -80,8 +113,12 @@ export default function FootprintEditor({
       setError("结束日期不能早于开始日期");
       return;
     }
-    const province = provinces.find((item) => item.code === provinceCode)
-      ?? initialProvince;
+    const province = provinces.find((item) => item.code === provinceCode);
+    if (!province) {
+      setError("请选择有效省份");
+      return;
+    }
+    const city = findCityByName(province.code, cityName);
     const input: FootprintEntryInput = {
       title: title.trim(),
       description: description.trim() || null,
@@ -94,13 +131,14 @@ export default function FootprintEditor({
       location: {
         provinceCode: province.code,
         provinceName: province.name,
+        cityCode: entry?.cityCode ?? draft?.cityCode ?? city?.cityCode ?? null,
         cityName: cityName.trim(),
         placeName: placeName.trim() || null,
         countryCode: "CN",
         countryName: "中国",
-        source: "manual",
-        latitude: entry?.latitude ?? null,
-        longitude: entry?.longitude ?? null,
+        source: entry ? "manual" : draft?.latitude != null ? "exif" : "manual",
+        latitude: entry?.latitude ?? draft?.latitude ?? null,
+        longitude: entry?.longitude ?? draft?.longitude ?? null,
       },
     };
     setSaving(true);
@@ -159,8 +197,12 @@ export default function FootprintEditor({
               省份
               <select
                 value={provinceCode}
-                onChange={(event) => setProvinceCode(event.target.value)}
+                onChange={(event) => {
+                  setProvinceCode(event.target.value);
+                  setCityName("");
+                }}
               >
+                <option value="">请选择省份</option>
                 {provinces.map((province) => (
                   <option value={province.code} key={province.code}>
                     {province.name}
@@ -174,7 +216,13 @@ export default function FootprintEditor({
                 value={cityName}
                 onChange={(event) => setCityName(event.target.value)}
                 placeholder="成都市"
+                list="footprint-city-options"
               />
+              <datalist id="footprint-city-options">
+                {cityOptions.map((city) => (
+                  <option value={city.name} key={city.id} />
+                ))}
+              </datalist>
             </label>
             <label className="wide">
               具体地点（可选）

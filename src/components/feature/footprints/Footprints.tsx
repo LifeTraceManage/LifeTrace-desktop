@@ -19,14 +19,20 @@ import type {
   FootprintEntry,
   FootprintEntryDetail as EntryDetail,
   FootprintMode,
+  FootprintPhotoDiscovery,
   FootprintSummary as Summary,
   ProvinceFootprintDetail,
   ProvinceFootprintSummary,
 } from "./types";
 import { filterFootprints } from "./footprintViewModel";
+import { buildFootprintInsights } from "./footprintInsights";
+import { resolveCoordinates } from "./footprintRegion";
+import { consumeFootprintPhotoDraft } from "./footprintPhotoDraft";
 import ChinaMap from "./ChinaMap";
-import FootprintEditor from "./FootprintEditor";
+import FootprintDiscoveries from "./FootprintDiscoveries";
+import FootprintEditor, { type FootprintEditorDraft } from "./FootprintEditor";
 import FootprintEntryDetail from "./FootprintEntryDetail";
+import FootprintInsights from "./FootprintInsights";
 import FootprintSummary from "./FootprintSummary";
 import FootprintTimelineView from "./FootprintTimelineView";
 import ProvinceDrawer from "./ProvinceDrawer";
@@ -57,6 +63,7 @@ export default function Footprints() {
   const [editor, setEditor] = useState<{
     entry: FootprintEntry | null;
     photoIds: string[];
+    draft?: FootprintEditorDraft | null;
   } | null>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -89,6 +96,20 @@ export default function Footprints() {
     void load(null);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const photoDraft = consumeFootprintPhotoDraft();
+    if (!photoDraft) return;
+    setEditor({
+      entry: null,
+      photoIds: photoDraft.photoIds,
+      draft: {
+        title: "照片足迹",
+        startedAt: photoDraft.startedAt,
+        endedAt: photoDraft.endedAt ?? null,
+      },
+    });
+  }, []);
+
   const chooseProvince = async (code: string, name: string) => {
     setSelectedProvince({ code, name });
     setProvinceLoading(true);
@@ -105,6 +126,7 @@ export default function Footprints() {
     () => filterFootprints(entries, query),
     [entries, query],
   );
+  const insights = useMemo(() => buildFootprintInsights(entries), [entries]);
   const selectedSummary = selectedProvince
     ? provinces.find((province) =>
       province.provinceCode === selectedProvince.code) ?? null
@@ -121,6 +143,28 @@ export default function Footprints() {
     setEditor({
       entry: detail.entry,
       photoIds: detail.photos.map((photo) => photo.id),
+      draft: null,
+    });
+  };
+
+  const createFromDiscovery = (discovery: FootprintPhotoDiscovery) => {
+    const region = resolveCoordinates(discovery.latitude, discovery.longitude);
+    setEditor({
+      entry: null,
+      photoIds: discovery.photoIds,
+      draft: {
+        title: region?.cityName
+          ? `${region.cityName} · ${discovery.startedAt}`
+          : `照片足迹 · ${discovery.startedAt}`,
+        startedAt: discovery.startedAt,
+        endedAt: discovery.endedAt,
+        latitude: discovery.latitude,
+        longitude: discovery.longitude,
+        provinceCode: region?.provinceCode ?? null,
+        provinceName: region?.provinceName ?? null,
+        cityCode: region?.cityCode ?? null,
+        cityName: region?.cityName ?? null,
+      },
     });
   };
 
@@ -138,13 +182,19 @@ export default function Footprints() {
         <button
           className="hx-btn primary"
           type="button"
-          onClick={() => setEditor({ entry: null, photoIds: [] })}
+          onClick={() => setEditor({ entry: null, photoIds: [], draft: null })}
         >
           <Plus />添加足迹
         </button>
       </section>
 
       <FootprintSummary value={summary} />
+      <FootprintInsights value={insights} />
+
+      <FootprintDiscoveries
+        refreshToken={detailRefreshToken}
+        onCreate={createFromDiscovery}
+      />
 
       <section className="footprint-controls">
         <div className="footprint-mode-switch" role="tablist" aria-label="足迹视图">
@@ -236,6 +286,7 @@ export default function Footprints() {
           entry={editor.entry}
           existingPhotoIds={editor.photoIds}
           preferredProvince={selectedProvince}
+          draft={editor.draft}
           onSaved={() => void saved()}
           onClose={() => setEditor(null)}
         />

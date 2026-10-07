@@ -9,6 +9,7 @@ import {
   footprintVisitIntensity,
   groupFootprintsByYear,
 } from "../src/components/feature/footprints/footprintViewModel";
+import { buildFootprintInsights } from "../src/components/feature/footprints/footprintInsights";
 import type { FootprintEntry } from "../src/components/feature/footprints/types";
 
 const root = process.cwd();
@@ -67,6 +68,21 @@ test("footprint view model groups, searches, labels, and shades records", () => 
   assert.equal(footprintVisitIntensity(10, 10), 1);
 });
 
+test("footprint insights derive years, revisits, photo coverage, and top cities from real entries", () => {
+  const entries = [
+    { ...entry("a", "成都一", "2026-05-01", "成都市"), locationId: "chengdu", photoCount: 3 },
+    { ...entry("b", "成都二", "2026-10-02", "成都市"), locationId: "chengdu", photoCount: 0, favorite: true },
+    { ...entry("c", "上海", "2025-08-09", "上海市"), locationId: "shanghai", photoCount: 2 },
+  ];
+  const insights = buildFootprintInsights(entries);
+  assert.equal(insights.yearCount, 2);
+  assert.equal(insights.revisitCount, 1);
+  assert.equal(insights.photoCoveragePercent, 67);
+  assert.deepEqual(insights.years.map((year) => [year.year, year.visitCount]), [["2026", 2], ["2025", 1]]);
+  assert.equal(insights.topCities[0].label, "四川省 · 成都市");
+  assert.equal(insights.topCities[0].visitCount, 2);
+});
+
 test("desktop navigation exposes Footprints in both local and signed-in shells", () => {
   const localNavigation = read("src/components/layout/navigation.ts");
   const workbench = read("src/components/DesktopWorkbenchShell.tsx");
@@ -93,6 +109,79 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.match(server, /"\/api\/footprints\/photo-suggestions"/);
   assert.match(photo, /trg_footprint_photo_soft_delete/);
   assert.match(photo, /photos_geo_idx/);
+});
+
+test("photo library can hand selected photos to a new Footprint draft", () => {
+  const dashboard = read("src/components/PhotoSyncDashboard.tsx");
+  const page = read("src/components/feature/footprints/Footprints.tsx");
+  const bridge = read("src/components/feature/footprints/footprintPhotoDraft.ts");
+
+  assert.match(dashboard, /添加到足迹/);
+  assert.match(dashboard, /writeFootprintPhotoDraft/);
+  assert.match(bridge, /FOOTPRINT_PHOTO_DRAFT_KEY/);
+  assert.match(bridge, /sessionStorage/);
+  assert.match(page, /consumeFootprintPhotoDraft/);
+  assert.match(page, /photoIds: photoDraft\.photoIds/);
+});
+
+test("Footprints can associate real notes and tasks through the local API", () => {
+  const repository = read("src-tauri/src/database/repositories/footprints.rs");
+  const server = read("src-tauri/src/server.rs");
+  const api = read("src/services/footprintApi.ts");
+  const detail = read("src/components/feature/footprints/FootprintEntryDetail.tsx");
+  const links = read("src/components/feature/footprints/FootprintLinks.tsx");
+
+  assert.match(repository, /pub fn link_candidates/);
+  assert.match(repository, /pub fn save_entry_link/);
+  assert.match(repository, /"note\.note"/);
+  assert.match(repository, /"execution\.task"/);
+  assert.match(server, /"\/api\/footprints\/entries\/\{id\}\/links"/);
+  assert.match(server, /"\/api\/footprints\/link-candidates"/);
+  assert.match(api, /attachLink:/);
+  assert.match(api, /detachLink:/);
+  assert.match(detail, /<FootprintLinks entryId=\{entry\.id\}/);
+  assert.match(links, /搜索笔记或任务/);
+});
+
+test("Footprints discovers unlinked GPS photo clusters before creating entries", () => {
+  const repository = read("src-tauri/src/database/repositories/footprints.rs");
+  const server = read("src-tauri/src/server.rs");
+  const api = read("src/services/footprintApi.ts");
+  const page = read("src/components/feature/footprints/Footprints.tsx");
+  const discoveries = read("src/components/feature/footprints/FootprintDiscoveries.tsx");
+  const editor = read("src/components/feature/footprints/FootprintEditor.tsx");
+
+  assert.match(repository, /pub fn photo_discoveries/);
+  assert.match(repository, /p\.latitude IS NOT NULL/);
+  assert.match(repository, /JOIN footprint_entries e ON e\.id=ep\.entry_id/);
+  assert.match(repository, /cluster\.photo_ids\.len\(\) >= 2/);
+  assert.match(server, /"\/api\/footprints\/discoveries"/);
+  assert.match(api, /discoveries: \(\) =>/);
+  assert.match(page, /<FootprintDiscoveries/);
+  assert.match(discoveries, /生成足迹/);
+  assert.match(editor, /请选择省份/);
+  assert.match(editor, /draft\?\.latitude/);
+});
+
+test("Footprints sync through shared travel and entity-link contracts", () => {
+  const migration = read("src-tauri/src/database/migrations/m0019_footprints_sync.rs");
+  const adapter = read("src-tauri/src/sync/footprints.rs");
+  const store = read("src-tauri/src/sync/store.rs");
+  const outbox = read("src-tauri/src/sync/outbox.rs");
+  const payload = read("src-tauri/src/sync/payload.rs");
+  const contracts = read("vendor/shared/crates/lifetrace-contracts/src/domain/payload.rs");
+
+  assert.match(migration, /"travel\.place"/);
+  assert.match(migration, /"travel\.visit"/);
+  assert.match(migration, /"travel\.photo_link"/);
+  assert.match(migration, /"entity\.link"/);
+  assert.match(adapter, /footprint_sync_pending/);
+  assert.match(adapter, /pub fn existing_entities/);
+  assert.match(adapter, /pub fn apply_entity_link/);
+  assert.match(store, /super::footprints::apply_upsert/);
+  assert.match(outbox, /super::footprints::existing_entities/);
+  assert.match(payload, /"entity\.link" => json!/);
+  assert.match(contracts, /EntityType::TRAVEL_VISIT => registered/);
 });
 
 test("Footprints ships an offline China province dataset and Map of Us attribution", () => {
