@@ -301,7 +301,7 @@ impl SqliteSyncStore {
                 let mut note_input = legacy.clone();
                 if let Some(object) = note_input.as_object_mut() {
                     let note_id = object.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
-                    if let Some(existing) = notes::get_note(connection, &note_id)? {
+                    if let Some(existing) = notes::get_note(connection, &note_id).map_err(Self::db_error)? {
                         let tag_ids = existing
                             .get("tags")
                             .and_then(Value::as_array)
