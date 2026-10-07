@@ -26,6 +26,7 @@ import type {
 } from "./types";
 import { filterFootprints } from "./footprintViewModel";
 import { resolveCoordinates } from "./footprintRegion";
+import { consumeFootprintPhotoDraft } from "./footprintPhotoDraft";
 import ChinaMap from "./ChinaMap";
 import FootprintDiscoveries from "./FootprintDiscoveries";
 import FootprintEditor, { type FootprintEditorDraft } from "./FootprintEditor";
@@ -92,6 +93,20 @@ export default function Footprints() {
   useEffect(() => {
     void load(null);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const photoDraft = consumeFootprintPhotoDraft();
+    if (!photoDraft) return;
+    setEditor({
+      entry: null,
+      photoIds: photoDraft.photoIds,
+      draft: {
+        title: "照片足迹",
+        startedAt: photoDraft.startedAt,
+        endedAt: photoDraft.endedAt ?? null,
+      },
+    });
+  }, []);
 
   const chooseProvince = async (code: string, name: string) => {
     setSelectedProvince({ code, name });
