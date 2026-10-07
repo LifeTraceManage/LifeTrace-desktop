@@ -1,4 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import { instrumentedFetch } from "@/src/services/clientObservability";
+import { isTauriRuntime, localJsonRequest } from "@/src/services/localJsonTransport";
 import type { XunjiWorkout } from "@/src/types";
 
 export type ParsedXunjiImport = {
@@ -18,6 +20,11 @@ async function parseJson<T>(response: Response, fallback: string): Promise<T> {
 
 export const xunjiImportApi = {
   async parse(file: File): Promise<ParsedXunjiImport> {
+    if (isTauriRuntime()) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      return invoke<ParsedXunjiImport>("xunji_parse_image", bytes);
+    }
+
     const form = new FormData();
     form.set("image", file);
     const response = await instrumentedFetch(globalThis.fetch, "/api/xunji/parse", {
@@ -36,19 +43,19 @@ export const xunjiImportApi = {
     action: "confirm" | "cancel",
     workout?: XunjiWorkout,
   ): Promise<void> {
-    const response = await instrumentedFetch(globalThis.fetch, "/api/xunji/imports", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        importId,
-        action,
-        workout: action === "confirm" ? workout : undefined,
-      }),
-    }, {
-      module: "xunji-import",
-      action: "finish",
-      userMessage: "训练导入失败",
-    });
-    await parseJson<Record<string, unknown>>(response, "训练导入失败");
+    await localJsonRequest<Record<string, unknown>>(
+      "/api/xunji/imports",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          importId,
+          action,
+          workout: action === "confirm" ? workout : undefined,
+        }),
+      },
+      "训练导入失败",
+    );
   },
+
 };

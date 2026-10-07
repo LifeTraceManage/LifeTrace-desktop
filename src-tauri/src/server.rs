@@ -13,7 +13,7 @@ pub(crate) mod migration;
 mod notes;
 pub(crate) mod photo;
 mod state;
-mod xunji;
+pub(crate) mod xunji;
 
 use std::{
     net::SocketAddr,
@@ -347,6 +347,7 @@ fn local_json_routes() -> Router<AppState> {
             "/api/photo-sync/dashboard",
             get(photo::dashboard_get).post(photo::dashboard_post),
         )
+        .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
 }
 
 pub(crate) fn local_json_ipc_router(
@@ -467,7 +468,6 @@ pub async fn serve(
         .route("/api/notes", get(notes::get).post(notes::mutate))
         .merge(local_json_routes())
         .route("/api/xunji/parse", axum::routing::post(xunji::parse))
-        .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
         .layer(middleware::from_fn_with_state(
             sync_state,
             signal_local_sync,

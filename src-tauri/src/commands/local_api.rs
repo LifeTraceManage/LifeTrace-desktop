@@ -28,7 +28,9 @@ pub struct LocalJsonApiResponse {
 }
 
 fn allowed_path(path: &str) -> bool {
-    path.starts_with("/api/footprints/") || path == "/api/photo-sync/dashboard"
+    path.starts_with("/api/footprints/")
+        || path == "/api/photo-sync/dashboard"
+        || path == "/api/xunji/imports"
 }
 
 #[tauri::command]

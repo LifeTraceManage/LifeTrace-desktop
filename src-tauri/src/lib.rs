@@ -42,6 +42,7 @@ pub fn run() {
             commands::notes::notes_mutate,
             commands::state::state_get,
             commands::state::state_mutate,
+            commands::xunji::xunji_parse_image,
             cloud_auth::cloud_auth_http_request,
             cloud_auth::cloud_credential_set,
             cloud_auth::cloud_credential_get,
