@@ -177,6 +177,11 @@
   stroke-width: 3;
   filter: drop-shadow(0 5px 9px rgba(215, 153, 50, .28));
 }
+.footprint-map-hit-target {
+  fill: transparent;
+  stroke: none;
+  cursor: pointer;
+}
 .footprint-map-dashline {
   fill: color-mix(in srgb, var(--hx-muted, #738079) 28%, transparent);
   stroke: var(--hx-muted, #738079);
@@ -270,17 +275,34 @@
 }
 .footprint-province-drawer > header h2 { margin: 5px 0 6px; font-size: 21px; }
 .footprint-province-drawer > header p { margin: 0; color: var(--hx-muted, #738079); font-size: 10px; }
-.footprint-city-clear {
-  margin-top: 10px;
-  padding: 5px 9px;
+.footprint-drawer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.footprint-drawer-nav button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
   border: 1px solid var(--hx-line, #dfe5e1);
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--hx-accent, #2a7a5e);
   font: inherit;
   font-size: 9px;
   cursor: pointer;
 }
+.footprint-drawer-nav button:hover {
+  background: color-mix(in srgb, var(--hx-accent, #2a7a5e) 9%, transparent);
+}
+.footprint-drawer-nav button.primary {
+  border-color: color-mix(in srgb, var(--hx-accent, #2a7a5e) 45%, var(--hx-line, #dfe5e1));
+  background: color-mix(in srgb, var(--hx-accent, #2a7a5e) 10%, transparent);
+}
+.footprint-drawer-nav svg { width: 13px; }
 .footprint-city-list,
 .footprint-province-entries { margin-top: 18px; }
 .footprint-city-list h3,

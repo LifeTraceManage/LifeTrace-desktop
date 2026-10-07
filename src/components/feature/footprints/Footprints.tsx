@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -24,7 +25,7 @@ import type {
   ProvinceFootprintSummary,
 } from "./types";
 import { filterFootprints } from "./footprintViewModel";
-import ChinaMap from "./ChinaMap";
+import ChinaMap, { type FootprintMapLevel } from "./ChinaMap";
 import FootprintEditor from "./FootprintEditor";
 import FootprintEntryDetail from "./FootprintEntryDetail";
 import FootprintSummary from "./FootprintSummary";
@@ -43,6 +44,7 @@ const emptySummary: Summary = {
 
 export default function Footprints() {
   const [mode, setMode] = useState<FootprintMode>("map");
+  const [mapLevel, setMapLevel] = useState<FootprintMapLevel>("country");
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [provinces, setProvinces] = useState<ProvinceFootprintSummary[]>([]);
   const [entries, setEntries] = useState<FootprintEntry[]>([]);
@@ -57,6 +59,7 @@ export default function Footprints() {
     name: string;
   } | null>(null);
   const [provinceLoading, setProvinceLoading] = useState(false);
+  const provinceRequestRef = useRef(0);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{
     entry: FootprintEntry | null;
@@ -80,7 +83,12 @@ export default function Footprints() {
       setProvinces(nextProvinces);
       setEntries(nextEntries);
       if (province) {
-        setProvinceDetail(await footprintApi.province(province.code));
+        const requestId = provinceRequestRef.current + 1;
+        provinceRequestRef.current = requestId;
+        const detail = await footprintApi.province(province.code);
+        if (provinceRequestRef.current === requestId) {
+          setProvinceDetail(detail);
+        }
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "足迹加载失败");
@@ -94,16 +102,38 @@ export default function Footprints() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chooseProvince = async (code: string, name: string) => {
+    const requestId = provinceRequestRef.current + 1;
+    provinceRequestRef.current = requestId;
+
     setSelectedProvince({ code, name });
     setSelectedCity(null);
+    setProvinceDetail(null);
     setProvinceLoading(true);
+    setError("");
+
     try {
-      setProvinceDetail(await footprintApi.province(code));
+      const detail = await footprintApi.province(code);
+      if (provinceRequestRef.current !== requestId) return;
+      setProvinceDetail(detail);
     } catch (cause) {
+      if (provinceRequestRef.current !== requestId) return;
       setError(cause instanceof Error ? cause.message : "省份足迹读取失败");
     } finally {
-      setProvinceLoading(false);
+      if (provinceRequestRef.current === requestId) {
+        setProvinceLoading(false);
+      }
     }
+  };
+
+  const enterProvinceMap = () => {
+    if (!selectedProvince) return;
+    setSelectedCity(null);
+    setMapLevel("province");
+  };
+
+  const backToCountryMap = () => {
+    setSelectedCity(null);
+    setMapLevel("country");
   };
 
   const filtered = useMemo(
@@ -191,6 +221,7 @@ export default function Footprints() {
       {mode === "map" ? (
         <section className="footprint-map-layout">
           <ChinaMap
+            level={mapLevel}
             provinces={provinces}
             cities={provinceDetail?.cities ?? []}
             selectedProvinceCode={selectedProvince?.code}
@@ -198,8 +229,10 @@ export default function Footprints() {
             selectedCityName={selectedCity?.name}
             onSelectProvince={(code, name) => void chooseProvince(code, name)}
             onSelectCity={(code, name) => setSelectedCity({ code, name })}
+            onBackToCountry={backToCountryMap}
           />
           <ProvinceDrawer
+            mapLevel={mapLevel}
             summary={selectedSummary}
             name={selectedProvince?.name ?? "选择一个省份"}
             detail={provinceDetail}
@@ -207,6 +240,8 @@ export default function Footprints() {
             selectedCityCode={selectedCity?.code}
             selectedCityName={selectedCity?.name}
             onSelectCity={(code, name) => setSelectedCity({ code, name })}
+            onEnterProvinceMap={enterProvinceMap}
+            onBackToCountry={backToCountryMap}
             onOpenEntry={(entry) => setDetailId(entry.id)}
           />
         </section>
