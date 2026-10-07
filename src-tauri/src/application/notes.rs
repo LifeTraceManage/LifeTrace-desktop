@@ -86,6 +86,11 @@ pub fn mutate(
         "trash" | "restore" => {
             let note_id = text(object, "id").ok_or_else(|| "缺少笔记 id".to_owned())?;
             notes_repo::set_deleted(connection, note_id, action == "trash")?;
+            if action == "restore" {
+                if let Some(note) = notes_repo::get_note(connection, note_id)? {
+                    crate::database::note_links::sync_note_links(connection, &note)?;
+                }
+            }
             Ok(json!({ "ok": true }))
         }
         "delete" => {
