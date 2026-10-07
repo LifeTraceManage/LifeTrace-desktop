@@ -121,6 +121,34 @@ impl SqliteSyncStore {
                     }))
                 ).optional().map_err(Self::db_error)?
             }
+            "note.relation" => connection.query_row(
+                "SELECT n.user_id,r.id,r.note_id,r.entity_type,r.entity_id,r.relation_type,r.created_at,n.updated_at
+                 FROM note_relations r JOIN notes n ON n.id=r.note_id
+                 WHERE r.id=?1 AND n.user_id=?2",
+                params![entity_id,profile], |row| Ok(json!({
+                    "id":row.get::<_,String>(1)?,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(2)?,
+                    "entityType":row.get::<_,String>(3)?,"entityId":row.get::<_,String>(4)?,
+                    "relationType":row.get::<_,String>(5)?,"createdAt":row.get::<_,String>(6)?,
+                    "updatedAt":row.get::<_,String>(7)?
+                }))
+            ).optional().map_err(Self::db_error)?,
+            "note.revision" => connection.query_row(
+                "SELECT n.user_id,r.id,r.note_id,r.revision_version,r.title,r.content_json,r.content_html,
+                        r.content_markdown,r.created_at,n.updated_at
+                 FROM note_revisions r JOIN notes n ON n.id=r.note_id
+                 WHERE r.id=?1 AND n.user_id=?2",
+                params![entity_id,profile], |row| {
+                    let raw: String = row.get(5)?;
+                    let content_json = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({"type":"doc","content":[]}));
+                    Ok(json!({
+                        "id":row.get::<_,String>(1)?,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(2)?,
+                        "revisionVersion":row.get::<_,i64>(3)?,"title":row.get::<_,Option<String>>(4)?,
+                        "contentJson":content_json,"contentHtml":row.get::<_,String>(6)?,
+                        "contentMarkdown":row.get::<_,String>(7)?,"createdAt":row.get::<_,String>(8)?,
+                        "updatedAt":row.get::<_,String>(9)?
+                    }))
+                }
+            ).optional().map_err(Self::db_error)?,
             _ => connection.query_row(
                 "SELECT payload_json FROM sync_materialized_entities WHERE profile_id=?1 AND entity_type=?2 AND entity_id=?3 AND deleted_at IS NULL",
                 params![profile,entity_type,entity_id], |row| row.get::<_,String>(0),
