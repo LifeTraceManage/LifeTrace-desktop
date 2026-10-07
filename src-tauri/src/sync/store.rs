@@ -60,6 +60,26 @@ impl SqliteSyncStore {
             )
             .map_err(Self::db_error);
         }
+        if super::footprints::is_footprint(entity_type) {
+            return super::footprints::load_local_entity(
+                connection,
+                profile,
+                entity_type,
+                entity_id,
+            )
+            .map_err(Self::db_error);
+        }
+        if entity_type == EntityType::ENTITY_LINK {
+            if let Some(value) = super::footprints::load_entity_link(
+                connection,
+                profile,
+                entity_id,
+            )
+            .map_err(Self::db_error)?
+            {
+                return Ok(Some(value));
+            }
+        }
         let value = match entity_type {
             "finance.account" => Self::list_find(finance::list_accounts(connection).map_err(Self::db_error)?, entity_id),
             "finance.transaction" => Self::list_find(finance::list_transactions(connection).map_err(Self::db_error)?, entity_id),
@@ -257,6 +277,16 @@ impl SqliteSyncStore {
             return super::execution::apply_upsert(connection, profile, entity_type, &legacy)
                 .map_err(Self::db_error);
         }
+        if super::footprints::is_footprint(entity_type) {
+            return super::footprints::apply_upsert(connection, profile, entity_type, &legacy)
+                .map_err(Self::db_error);
+        }
+        if entity_type == EntityType::ENTITY_LINK
+            && super::footprints::apply_entity_link(connection, profile, &legacy)
+                .map_err(Self::db_error)?
+        {
+            return Ok(());
+        }
         let result = match entity_type {
             "finance.account" => finance::save_account(connection, &legacy),
             "finance.transaction" => finance::save_transaction(connection, &legacy),
@@ -296,6 +326,16 @@ impl SqliteSyncStore {
         if super::execution::is_execution(entity_type) {
             return super::execution::apply_delete(connection, profile, entity_type, entity_id)
                 .map_err(Self::db_error);
+        }
+        if super::footprints::is_footprint(entity_type) {
+            return super::footprints::apply_delete(connection, profile, entity_type, entity_id)
+                .map_err(Self::db_error);
+        }
+        if entity_type == EntityType::ENTITY_LINK
+            && super::footprints::delete_entity_link(connection, profile, entity_id)
+                .map_err(Self::db_error)?
+        {
+            return Ok(());
         }
         let result = match entity_type {
             "finance.account" => finance::delete_account(connection, entity_id),
