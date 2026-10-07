@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Archive,
+  BarChart3,
   Bell,
   CalendarDays,
   Check,
   ChevronRight,
   CircleDot,
   Clock3,
+  Flame,
+  Focus,
   FolderKanban,
   Inbox,
+  LayoutList,
   ListTodo,
   LoaderCircle,
   Pin,
   Pencil,
+  Play,
   Plus,
   RefreshCw,
   Repeat2,
@@ -29,7 +34,18 @@ import CalendarWorkspace from "@/src/components/feature/execution/CalendarWorksp
 import CalendarConflictDialog, { type CalendarConflict } from "@/src/components/feature/execution/CalendarConflictDialog";
 import CalendarRecurrencePanel from "@/src/components/feature/execution/CalendarRecurrencePanel";
 import ExecutionContextMenu, { type ExecutionMenuItem } from "@/src/components/feature/execution/ExecutionContextMenu";
-import { preserveTaskUpdateFields, waitingToTaskInput } from "@/src/components/feature/execution/executionViewModel";
+import {
+  executionReviewMetrics,
+  isExecutionInboxTask,
+  isOpenExecutionTask,
+  preserveTaskUpdateFields,
+  resizeScheduledTaskInput,
+  scheduleTaskInput,
+  shiftScheduledTaskInput,
+  waitingToTaskInput,
+} from "@/src/components/feature/execution/executionViewModel";
+import { useLifeStore } from "@/src/stores/useLifeStore";
+import { dayKey } from "@/src/utils/format";
 import {
   browserTimezone,
   executionApi,
@@ -51,11 +67,16 @@ import {
 
 const tabs = [
   ["today", "今天", CircleDot],
+  ["planner", "规划", CalendarDays],
+  ["inbox", "收集箱", Inbox],
   ["tasks", "任务", ListTodo],
   ["projects", "项目", FolderKanban],
-  ["calendar", "日历", CalendarDays],
+  ["habits", "坚持", Flame],
   ["waiting", "等待", Users],
-  ["memos", "Memo", Inbox],
+  ["focus", "专注", Focus],
+  ["calendar", "日历", CalendarDays],
+  ["memos", "Memo", LayoutList],
+  ["review", "复盘", BarChart3],
 ] as const;
 
 type Tab = (typeof tabs)[number][0];
@@ -280,7 +301,10 @@ function MemoEditor({ value, busy, close, save, remove }: { value?: Memo; busy: 
   return <div className="lt-exec-editor" role="dialog" aria-modal="true" aria-label="Memo"><header><div><strong>{value ? "编辑 Memo" : "快速记一下"}</strong><span>临时信息，不要求行动</span></div><button type="button" onClick={close} aria-label="关闭"><X/></button></header><div className="lt-exec-form"><label>内容<textarea autoFocus rows={9} value={content} onChange={(e) => setContent(e.target.value)} placeholder="先记下来，之后再决定是否转成任务或日历"/></label><label>标签<input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="工作, 生活"/></label><label>上下文<input value={context} onChange={(e) => setContext(e.target.value)} placeholder="可选"/></label></div><footer>{value ? <button className="lt-exec-danger" type="button" onClick={() => void remove()}><Trash2/>删除</button> : <span/>}<div><button type="button" onClick={close}>取消</button><button className="hx-btn primary" type="button" disabled={busy || !content.trim()} onClick={() => void save({ content, context: context || undefined, tags: tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean) })}>保存</button></div></footer></div>;
 }
 
-export default function ExecutionModule() {
+export default function ExecutionModule({ onNavigate }: { onNavigate?: (route: string) => void }) {
+  const activities = useLifeStore((value) => value.activities);
+  const habitLogs = useLifeStore((value) => value.logs);
+  const addHabitLog = useLifeStore((value) => value.addLog);
   const [tab, setTab] = useState<Tab>("today");
   const [data, setData] = useState<Data>(emptyData);
   const [loading, setLoading] = useState(true);
@@ -299,6 +323,14 @@ export default function ExecutionModule() {
   const [calendarRefreshToken, setCalendarRefreshToken] = useState(0);
   const [recurrenceEvent, setRecurrenceEvent] = useState<CalendarEvent | null>(null);
   const [pendingCalendarAction, setPendingCalendarAction] = useState<PendingCalendarAction>(null);
+  const [plannerTaskId, setPlannerTaskId] = useState("");
+  const [plannerStart, setPlannerStart] = useState("");
+  const [plannerMinutes, setPlannerMinutes] = useState("60");
+  const [focusTaskId, setFocusTaskId] = useState("");
+  const [focusWallStartedAt, setFocusWallStartedAt] = useState<number | null>(null);
+  const [focusSegmentStartedAt, setFocusSegmentStartedAt] = useState<number | null>(null);
+  const [focusAccumulatedSeconds, setFocusAccumulatedSeconds] = useState(0);
+  const [focusTick, setFocusTick] = useState(Date.now());
 
   const load = useCallback(async () => {
     setError("");
@@ -324,12 +356,33 @@ export default function ExecutionModule() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (focusSegmentStartedAt === null) return;
+    const tick = () => setFocusTick(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [focusSegmentStartedAt]);
+
   const projectById = useMemo(() => new Map(data.projects.map((item) => [item.id, item])), [data.projects]);
   const visibleTasks = useMemo(() => data.tasks.filter((task) => (!taskProjectFilter || task.projectId === taskProjectFilter) && (!taskStatusFilter || task.status === taskStatusFilter)), [data.tasks, taskProjectFilter, taskStatusFilter]);
   const todayTasks = useMemo(() => data.tasks.filter((task) => task.status !== "done" && task.status !== "cancelled" && (isToday(task.dueAt) || isToday(task.scheduledStartAt) || isOverdue(task.dueAt))).slice(0, 8), [data.tasks]);
   const openWaiting = useMemo(() => data.waiting.filter((item) => item.status === "open"), [data.waiting]);
   const todayEvents = useMemo(() => data.calendar.filter((item) => item.status === "scheduled" && (isToday(item.startAt) || item.startLocalDate === new Date().toISOString().slice(0, 10))), [data.calendar]);
   const pinnedMemos = useMemo(() => data.memos.filter((memo) => memo.isPinned).slice(0, 5), [data.memos]);
+  const openTasks = useMemo(() => data.tasks.filter(isOpenExecutionTask), [data.tasks]);
+  const inboxTasks = useMemo(() => openTasks.filter(isExecutionInboxTask), [openTasks]);
+  const unscheduledTasks = useMemo(() => openTasks.filter((task) => !task.scheduledStartAt), [openTasks]);
+  const scheduledTodayTasks = useMemo(() => openTasks
+    .filter((task) => isToday(task.scheduledStartAt))
+    .sort((left, right) => String(left.scheduledStartAt).localeCompare(String(right.scheduledStartAt))), [openTasks]);
+  const reviewMetrics = useMemo(
+    () => executionReviewMetrics(data.tasks, activities, habitLogs),
+    [data.tasks, activities, habitLogs],
+  );
+  const todayKey = dayKey();
+  const focusElapsedSeconds = focusAccumulatedSeconds
+    + (focusSegmentStartedAt === null ? 0 : Math.max(0, Math.floor((focusTick - focusSegmentStartedAt) / 1000)));
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
@@ -389,6 +442,104 @@ export default function ExecutionModule() {
 
   const setTaskStatus = (task: ExecutionTask, status: ExecutionTaskStatus) => void run(() => executionApi.tasks.setStatus(task.id, status), status === "done" ? "任务已完成" : "任务状态已更新");
 
+  const beginFocus = (taskId: string) => {
+    if (!taskId) return;
+    const stamp = Date.now();
+    setFocusTaskId(taskId);
+    setFocusWallStartedAt(stamp);
+    setFocusSegmentStartedAt(stamp);
+    setFocusAccumulatedSeconds(0);
+    setFocusTick(stamp);
+    setTab("focus");
+  };
+
+  const pauseFocus = () => {
+    if (focusSegmentStartedAt === null) return;
+    setFocusAccumulatedSeconds((value) => value + Math.max(0, Math.floor((Date.now() - focusSegmentStartedAt) / 1000)));
+    setFocusSegmentStartedAt(null);
+  };
+
+  const resumeFocus = () => {
+    if (!focusTaskId || focusSegmentStartedAt !== null) return;
+    const stamp = Date.now();
+    setFocusSegmentStartedAt(stamp);
+    setFocusTick(stamp);
+  };
+
+  const finishFocus = async (completeTask: boolean) => {
+    const task = data.tasks.find((item) => item.id === focusTaskId);
+    if (!task) return;
+    const seconds = Math.max(1, focusElapsedSeconds);
+    const wallStartedAt = focusWallStartedAt ?? Date.now() - seconds * 1000;
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    await run(async () => {
+      await executionApi.focusSessions.create({
+        taskId: task.id,
+        mode: "long",
+        startedAt: new Date(wallStartedAt).toISOString(),
+        endedAt: new Date().toISOString(),
+        focusSeconds: seconds,
+        completed: true,
+      });
+      await executionApi.tasks.update(task.id, preserveTaskUpdateFields(task, {
+        title: task.title,
+        actualMinutes: (task.actualMinutes ?? 0) + minutes,
+      }));
+      if (completeTask) await executionApi.tasks.setStatus(task.id, "done");
+    }, completeTask ? "专注记录已保存，任务已完成" : "专注记录已保存");
+    setFocusTaskId(completeTask ? "" : task.id);
+    setFocusWallStartedAt(null);
+    setFocusSegmentStartedAt(null);
+    setFocusAccumulatedSeconds(0);
+    setFocusTick(Date.now());
+  };
+
+  const schedulePlannerTask = async () => {
+    const task = data.tasks.find((item) => item.id === plannerTaskId);
+    if (!task || !plannerStart) return;
+    await run(
+      () => executionApi.tasks.update(task.id, scheduleTaskInput(task, plannerStart, Number(plannerMinutes))),
+      "任务已安排到时间轴",
+    );
+    setPlannerTaskId("");
+    setPlannerStart("");
+  };
+
+  const movePlannerTask = (task: ExecutionTask, delta: number) =>
+    void run(() => executionApi.tasks.update(task.id, shiftScheduledTaskInput(task, delta)), "时间块已移动");
+
+  const resizePlannerTask = (task: ExecutionTask, delta: number) =>
+    void run(() => executionApi.tasks.update(task.id, resizeScheduledTaskInput(task, delta)), "时间块时长已调整");
+
+  const moveInboxToday = (task: ExecutionTask) => {
+    const end = new Date();
+    end.setHours(23, 59, 0, 0);
+    void run(
+      () => executionApi.tasks.update(task.id, preserveTaskUpdateFields(task, {
+        title: task.title,
+        dueAt: end.toISOString(),
+        context: "planned",
+      })),
+      "任务已移到今天",
+    );
+  };
+
+  const checkHabit = async (activityId: string) => {
+    const activity = activities.find((item) => item.id === activityId);
+    if (!activity) return;
+    const done = habitLogs.some((log) =>
+      log.activityId === activityId
+      && log.createdAt.startsWith(todayKey)
+      && log.status !== "skipped");
+    if (done) return;
+    try {
+      await addHabitLog(activityId, activity.normalTarget ?? 1);
+      toast("坚持记录已完成");
+    } catch (cause) {
+      toast(cause instanceof Error ? cause.message : "坚持记录失败", "error");
+    }
+  };
+
   const menuPosition = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -438,6 +589,63 @@ export default function ExecutionModule() {
     {data.reminders.length ? <section className="lt-exec-due"><header><Bell/><strong>已到期提醒</strong><span>{data.reminders.length}</span></header><div>{data.reminders.slice(0, 6).map((reminder) => <button key={reminder.id} type="button" onClick={() => void run(() => executionApi.reminders.dismiss(reminder.id), "提醒已处理")}><Clock3/><span>{formatDateTime(reminder.snoozedUntil || reminder.triggerAt)}</span><small>点击处理</small></button>)}</div></section> : null}
   </div>;
 
+  const renderPlanner = () => <div className="lt-exec-planner">
+    <aside className="lt-exec-planner-pool">
+      <header><strong>待安排任务</strong><span>{unscheduledTasks.length} 项</span></header>
+      <div>{unscheduledTasks.length ? unscheduledTasks.slice(0, 40).map((task) => <button key={task.id} type="button" className={plannerTaskId === task.id ? "active" : ""} onClick={() => setPlannerTaskId(task.id)}><strong>{task.title}</strong><small>{task.projectId ? projectById.get(task.projectId)?.name || "项目" : "Inbox"} · {task.estimatedMinutes ?? 60} 分钟</small></button>) : <SectionEmpty>所有开放任务都已安排时间</SectionEmpty>}</div>
+    </aside>
+    <section className="lt-exec-planner-main">
+      <div className="lt-exec-planner-form">
+        <select value={plannerTaskId} onChange={(event) => setPlannerTaskId(event.target.value)} aria-label="选择待安排任务"><option value="">选择任务</option>{unscheduledTasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select>
+        <input type="datetime-local" value={plannerStart} onChange={(event) => setPlannerStart(event.target.value)} aria-label="计划开始时间"/>
+        <select value={plannerMinutes} onChange={(event) => setPlannerMinutes(event.target.value)} aria-label="预计时长"><option value="30">30 分钟</option><option value="60">1 小时</option><option value="90">1.5 小时</option><option value="120">2 小时</option></select>
+        <button className="hx-btn primary" type="button" disabled={!plannerTaskId || !plannerStart || busy} onClick={() => void schedulePlannerTask()}>安排</button>
+      </div>
+      <div className="lt-exec-planner-timeline">
+        <header><strong>今日时间轴</strong><span>{scheduledTodayTasks.length} 个任务时间块 · {todayEvents.length} 个日程</span></header>
+        {scheduledTodayTasks.map((task) => <article key={task.id}>
+          <time>{new Date(task.scheduledStartAt!).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>
+          <button className="lt-exec-planner-block" type="button" onClick={() => setInspectTask(task)}><strong>{task.title}</strong><small>{task.estimatedMinutes ?? 60} 分钟 · {task.projectId ? projectById.get(task.projectId)?.name || "项目" : "Inbox"}</small></button>
+          <div className="lt-exec-inline-actions"><button type="button" title="提前 15 分钟" onClick={() => movePlannerTask(task, -15)}>−15</button><button type="button" title="推后 15 分钟" onClick={() => movePlannerTask(task, 15)}>+15</button><button type="button" title="缩短 15 分钟" onClick={() => resizePlannerTask(task, -15)}>短</button><button type="button" title="延长 15 分钟" onClick={() => resizePlannerTask(task, 15)}>长</button><button type="button" title="开始专注" onClick={() => beginFocus(task.id)}><Play/>开始</button></div>
+        </article>)}
+        {todayEvents.map((event) => <article key={event.id} className="calendar"><time>{event.isAllDay ? "全天" : new Date(event.startAt!).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time><button className="lt-exec-planner-block" type="button" onClick={() => setEditor({ kind: "calendar", value: event })}><strong>{event.title}</strong><small>日历事件</small></button></article>)}
+        {!scheduledTodayTasks.length && !todayEvents.length ? <SectionEmpty>今天还没有时间块</SectionEmpty> : null}
+      </div>
+    </section>
+  </div>;
+
+  const renderInbox = () => <div className="lt-exec-workspace">
+    <div className="lt-exec-inbox-note"><Inbox/><span><strong>Inbox 只负责快速收集。</strong>整理后把任务放到今天、项目、具体时间或 Waiting。</span></div>
+    <div className="lt-exec-quick"><Plus/><input value={quickTask} onChange={(event) => setQuickTask(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && quickTask.trim()) { const title = quickTask.trim(); setQuickTask(""); void run(() => executionApi.tasks.create(quickTaskInput(title)), "已加入 Inbox"); } }} placeholder="快速收集一个任务，按 Enter 保存"/><span>{inboxTasks.length} 项</span></div>
+    <div className="lt-exec-list">{inboxTasks.length ? inboxTasks.map((task) => <article key={task.id} className="lt-exec-row lt-exec-inbox-row"><Inbox/><button className="lt-exec-row-main" type="button" onClick={() => setInspectTask(task)}><strong>{task.title}</strong><span>{task.description || priorityLabel(task.priority)}</span></button><div className="lt-exec-inbox-actions"><button type="button" onClick={() => moveInboxToday(task)}>今天</button><button type="button" onClick={() => setEditor({ kind: "task", value: task })}>整理</button><button type="button" onClick={() => beginFocus(task.id)}><Play/>开始</button><button type="button" className="danger" title="删除" onClick={() => void run(() => executionApi.tasks.remove(task.id), "任务已删除")}><Trash2/></button></div></article>) : <SectionEmpty>Inbox 已清空，所有任务都已经归位</SectionEmpty>}</div>
+  </div>;
+
+  const renderHabits = () => <div className="lt-exec-workspace">
+    <div className="lt-exec-toolbar"><div><strong>{activities.length}</strong><span> 个坚持项目</span></div><button type="button" onClick={() => onNavigate?.("/app/habits")}>打开完整坚持页<ChevronRight/></button></div>
+    <div className="lt-exec-habit-list">{activities.length ? activities.map((activity) => {
+      const todayLogs = habitLogs.filter((log) => log.activityId === activity.id && log.createdAt.startsWith(todayKey) && log.status !== "skipped");
+      const value = todayLogs.reduce((sum, log) => sum + (log.value ?? 1), 0);
+      const target = activity.normalTarget ?? 1;
+      const done = value >= target;
+      return <article key={activity.id}><span className={done ? "done" : ""}>{done ? <Check/> : <Flame/>}</span><div><strong>{activity.name}</strong><small>{value} / {target} {activity.unit}</small></div><div className="lt-exec-progress"><i style={{ width: `${Math.min(100, target ? value / target * 100 : 0)}%` }}/></div><button type="button" disabled={done} onClick={() => void checkHabit(activity.id)}>{done ? "已完成" : "打卡"}</button></article>;
+    }) : <SectionEmpty>还没有坚持项目</SectionEmpty>}</div>
+  </div>;
+
+  const renderFocus = () => {
+    const task = data.tasks.find((item) => item.id === focusTaskId);
+    const hours = String(Math.floor(focusElapsedSeconds / 3600)).padStart(2, "0");
+    const minutes = String(Math.floor(focusElapsedSeconds % 3600 / 60)).padStart(2, "0");
+    const seconds = String(focusElapsedSeconds % 60).padStart(2, "0");
+    return <div className="lt-exec-focus">
+      <div className="lt-exec-focus-card"><Focus/><span>专注执行</span>{task ? <><strong>{task.title}</strong><div className="lt-exec-focus-clock">{hours}:{minutes}:{seconds}</div><div className="lt-exec-focus-actions">{focusSegmentStartedAt !== null ? <button type="button" onClick={pauseFocus}>暂停</button> : <button className="hx-btn primary" type="button" onClick={resumeFocus}><Play/>继续</button>}<button type="button" onClick={() => void finishFocus(false)}>结束并记录</button><button className="hx-btn primary" type="button" onClick={() => void finishFocus(true)}><Check/>完成任务</button></div></> : <><strong>选择当前要专注的任务</strong><select value={focusTaskId} onChange={(event) => setFocusTaskId(event.target.value)}><option value="">选择任务</option>{openTasks.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><button className="hx-btn primary" type="button" disabled={!focusTaskId} onClick={() => beginFocus(focusTaskId)}><Play/>开始专注</button></>}</div>
+    </div>;
+  };
+
+  const renderReview = () => <div className="lt-exec-review">
+    <div className="lt-exec-review-grid"><article><span>7 天完成任务</span><strong>{reviewMetrics.completedTasks}</strong></article><article><span>任务完成率</span><strong>{reviewMetrics.completionRate}%</strong></article><article><span>坚持完成率</span><strong>{reviewMetrics.habitRate}%</strong></article><article><span>计划 / 实际</span><strong>{Math.round(reviewMetrics.plannedMinutes / 6) / 10}h / {Math.round(reviewMetrics.actualMinutes / 6) / 10}h</strong></article><article><span>逾期</span><strong>{reviewMetrics.overdueTasks}</strong></article></div>
+    <section><BarChart3/><div><strong>执行复盘</strong><p>这里汇总任务计划、实际投入和坚持执行率；能量、心情、最好的一件事等主观记录继续保留在 LifeTrace 日常复盘。</p></div><button type="button" onClick={() => onNavigate?.("/app/review")}>填写今日复盘<ChevronRight/></button></section>
+  </div>;
+
   const renderTasks = () => <div className="lt-exec-workspace"><div className="lt-exec-toolbar"><div><select aria-label="项目筛选" value={taskProjectFilter} onChange={(e) => setTaskProjectFilter(e.target.value)}><option value="">全部项目</option>{data.projects.filter((item) => item.status === "active").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="状态筛选" value={taskStatusFilter} onChange={(e) => setTaskStatusFilter(e.target.value)}><option value="">全部状态</option><option value="todo">待办</option><option value="in_progress">进行中</option><option value="waiting">等待</option><option value="done">完成</option><option value="cancelled">取消</option></select></div><button className="hx-btn primary" type="button" onClick={() => setEditor({ kind: "task" })}><Plus/>新建任务</button></div><div className="lt-exec-quick"><Plus/><input value={quickTask} onChange={(e) => setQuickTask(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void createQuickTask(); }} placeholder="快速添加任务，按 Enter 保存"/><span>{taskProjectFilter ? projectById.get(taskProjectFilter)?.name : "无项目"}</span></div><div className="lt-exec-list">{visibleTasks.length ? visibleTasks.map((task) => <TaskRow key={task.id} task={task} project={task.projectId ? projectById.get(task.projectId) : undefined} onStatus={setTaskStatus} onEdit={(value) => setInspectTask(value)} onSchedule={(sourceTask) => setEditor({ kind: "calendar", sourceTask })} onReminder={(value) => setReminderSubject({ subjectType: "task", subjectId: value.id, title: value.title })}onContextMenu={openTaskMenu}/>) : <SectionEmpty>当前筛选下没有任务</SectionEmpty>}</div></div>;
 
   const renderProjects = () => <div className="lt-exec-workspace"><div className="lt-exec-toolbar"><div><strong>{data.projects.filter((item) => item.status === "active").length}</strong><span> 个进行中项目</span></div><button className="hx-btn primary" type="button" onClick={() => setEditor({ kind: "project" })}><Plus/>新建项目</button></div><div className="lt-exec-project-grid">{data.projects.length ? data.projects.map((project) => { const tasks = data.tasks.filter((task) => task.projectId === project.id && task.status !== "cancelled"); const done = tasks.filter((task) => task.status === "done").length; const ratio = tasks.length ? Math.round(done / tasks.length * 100) : 0; return <button key={project.id} type="button" onClick={() => setEditor({ kind: "project", value: project })}><div><span className={`lt-exec-project-dot ${project.status}`}/><strong>{project.name}</strong><small>{project.status}</small></div><p>{project.description || "暂无说明"}</p><div className="lt-exec-progress"><i style={{ width: `${ratio}%` }}/></div><footer><span>{done}/{tasks.length} 完成</span><ChevronRight/></footer></button>; }) : <SectionEmpty>还没有项目</SectionEmpty>}</div></div>;
@@ -466,7 +674,19 @@ export default function ExecutionModule() {
   const renderMemos = () => <div className="lt-exec-workspace"><div className="lt-exec-toolbar"><div className="lt-exec-search"><Search/><input value={memoQuery} onChange={(e) => setMemoQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void refreshMemos(); }} placeholder="搜索 Memo、上下文或标签"/><button type="button" onClick={() => void refreshMemos()}>搜索</button></div><div><button type="button" className={memoArchived ? "active" : ""} onClick={() => { const next = !memoArchived; setMemoArchived(next); void refreshMemos(next); }}>{memoArchived ? <RotateCcw/> : <Archive/>}{memoArchived ? "返回当前" : "归档"}</button><button className="hx-btn primary" type="button" onClick={() => setEditor({ kind: "memo" })}><Plus/>快速记</button></div></div><div className="lt-exec-memo-grid">{data.memos.length ? data.memos.map((memo) => <article key={memo.id} className={memo.isPinned ? "pinned" : ""} onContextMenu={(event) => openMemoMenu(event, memo)}><header><button type="button" title={memo.isPinned ? "取消置顶" : "置顶"} onClick={() => void run(() => executionApi.memos.pin(memo.id, !memo.isPinned), memo.isPinned ? "已取消置顶" : "已置顶")}><Pin className={memo.isPinned ? "filled" : ""}/></button><span>{formatDateTime(memo.updatedAt)}</span></header><button className="lt-exec-memo-content" type="button" onClick={() => setEditor({ kind: "memo", value: memo })}>{memo.content}</button>{memo.tags.length ? <div className="lt-exec-tags">{memo.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div> : null}<footer>{memo.status === "active" ? <button type="button" onClick={() => void run(() => executionApi.memos.archive(memo.id), "Memo 已归档")}><Archive/>归档</button> : <button type="button" onClick={() => void run(() => executionApi.memos.restore(memo.id), "Memo 已恢复")}><RotateCcw/>恢复</button>}<button type="button" onClick={() => setReminderSubject({ subjectType: "memo", subjectId: memo.id, title: memo.plainText.slice(0, 30) })}><Bell/>提醒</button>{memo.status === "active" ? <button type="button" onClick={() => setConvertMemo(memo)}>转换<ChevronRight/></button> : null}</footer></article>) : <SectionEmpty>{memoArchived ? "没有已归档 Memo" : "还没有 Memo，先快速记一条"}</SectionEmpty>}</div></div>;
 
   const activeTab = tabs.find(([id]) => id === tab)!;
-  const renderContent = () => ({ today: renderToday, tasks: renderTasks, projects: renderProjects, calendar: renderCalendar, waiting: renderWaiting, memos: renderMemos }[tab])();
+  const renderContent = () => ({
+    today: renderToday,
+    planner: renderPlanner,
+    inbox: renderInbox,
+    tasks: renderTasks,
+    projects: renderProjects,
+    habits: renderHabits,
+    waiting: renderWaiting,
+    focus: renderFocus,
+    calendar: renderCalendar,
+    memos: renderMemos,
+    review: renderReview,
+  }[tab])();
 
   return <div className="lt-exec-root">
     <div className="lt-exec-head"><div><h1>执行中心</h1><span>把计划变成下一步行动</span></div><button type="button" className="lt-exec-refresh" onClick={() => void load()}><RefreshCw className={loading ? "spin" : ""}/>刷新</button></div>
