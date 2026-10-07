@@ -1,12 +1,12 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
 import { geoArea, geoMercator, geoPath } from "d3-geo";
@@ -96,6 +96,7 @@ export default function ChinaMap({
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   const summaryByCode = useMemo(
     () => new Map(provinces.map((province) => [province.provinceCode, province])),
@@ -209,9 +210,11 @@ export default function ChinaMap({
     });
   };
 
-  const wheel = (event: ReactWheelEvent<SVGSVGElement>) => {
+  const wheel = (event: WheelEvent) => {
     event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
+    event.stopPropagation();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const pointer = {
       x: (event.clientX - rect.left) / Math.max(rect.width, 1) * width,
       y: (event.clientY - rect.top) / Math.max(rect.height, 1) * height,
@@ -239,6 +242,14 @@ export default function ChinaMap({
 
     scaleAround(next, pointer);
   };
+
+  useEffect(() => {
+    const node = svgRef.current;
+    if (!node) return;
+    const handleWheel = (event: WheelEvent) => wheel(event);
+    node.addEventListener("wheel", handleWheel, { passive: false });
+    return () => node.removeEventListener("wheel", handleWheel);
+  });
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (scale <= 1) return;
@@ -326,10 +337,10 @@ export default function ChinaMap({
 
       <div className="footprint-map-canvas">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label={level === "country" ? "中国省级足迹地图" : `${provinceName}市级足迹地图`}
-          onWheel={wheel}
           onPointerDown={pointerDown}
           onPointerMove={pointerMove}
           onPointerUp={pointerEnd}
