@@ -76,7 +76,8 @@ test("desktop navigation exposes Footprints in both local and signed-in shells",
   assert.match(localNavigation, /"footprints"/);
   assert.match(localNavigation, /label: "足迹"/);
   assert.match(workbench, /path: "\/app\/footprints", label: "足迹"/);
-  assert.match(workspace, /path === "\/app\/footprints" \? <Footprints \/>/);
+  assert.match(nativeRoutes, /route === "\/app\/footprints"/);
+  assert.match(nativeRoutes, /<Footprints \/>/);
   assert.match(router, /path="\/app\/footprints"/);
 });
 

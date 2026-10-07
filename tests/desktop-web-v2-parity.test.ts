@@ -11,7 +11,7 @@ test("authenticated desktop workspace is local-first and does not mount web fron
 
   assert.match(workspace, /DesktopNativeRouteContent/);
   assert.match(workspace, /useLifeStore/);
-  assert.match(workspace, /sync\.now\(false\)/);
+  assert.match(workspace, /desktopSync\.now\(false\)/);
   assert.doesNotMatch(workspace, /vendor\/web|DesktopFeatureRouter|AppRuntimeProvider|CloudDataStore/);
 });
 
@@ -39,6 +39,7 @@ test("native desktop route owns all primary non-travel product pages", () => {
 
   assert.match(routes, /<NotesModule \/>/);
   assert.match(routes, /<PhotoSyncModule \/>/);
+  assert.match(routes, /<Footprints \/>/);
   assert.match(routes, /<CloudAgentModule \/>/);
   assert.match(routes, /<SettingsView \/>/);
   assert.doesNotMatch(routes, /vendor\/web|DesktopFeatureRouter/);
