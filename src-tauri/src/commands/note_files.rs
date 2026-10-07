@@ -285,10 +285,16 @@ pub async fn note_cloud_upload_attachment(
             "sizeBytes":metadata.len(),
             "sha256":checksum,
             "entityType":"note.note",
-            "entityId":note_id,
+            "entityId":&note_id,
         })),
     )
     .await?;
+
+    if prepare.file.entity_type.as_deref() != Some("note.note")
+        || prepare.file.entity_id.as_deref() != Some(note_id.as_str())
+    {
+        return Err("云文件去重结果属于另一篇笔记，已拒绝错误关联".to_owned());
+    }
 
     if prepare.file.status == "available" {
         return Ok(prepare.file);
