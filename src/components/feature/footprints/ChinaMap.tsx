@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
@@ -371,6 +372,21 @@ export default function ChinaMap({
     return false;
   };
 
+  const doubleClickProvince = (event: ReactMouseEvent<SVGSVGElement>) => {
+    if (level !== "country") return;
+    const target = event.target as Element | null;
+    const region = target?.closest?.("[data-admin-level='province']");
+    if (!region) return;
+
+    const code = region.getAttribute("data-admin-code");
+    const name = region.getAttribute("data-admin-name");
+    if (!code || !name) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onEnterProvince?.(code, name);
+  };
+
   const transformX = (1 - scale) * width / 2 + pan.x;
   const transformY = (1 - scale) * height / 2 + pan.y;
   const transform = `translate(${transformX} ${transformY}) scale(${scale})`;
@@ -425,6 +441,7 @@ export default function ChinaMap({
           role="img"
           aria-label={level === "country" ? "中国省级足迹地图" : `${provinceName}市级足迹地图`}
           onWheel={wheel}
+          onDoubleClickCapture={doubleClickProvince}
           onPointerDown={pointerDown}
           onPointerMove={pointerMove}
           onPointerUp={pointerEnd}
@@ -442,6 +459,8 @@ export default function ChinaMap({
                   key={item.code}
                   d={item.d}
                   data-admin-code={item.code}
+                  data-admin-name={item.name}
+                  data-admin-level="province"
                   className={[
                     "footprint-map-region",
                     "footprint-map-province",
@@ -469,10 +488,6 @@ export default function ChinaMap({
                     if (!allowRegionClick()) return;
                     onSelectProvince(item.code, item.name);
                   }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    onEnterProvince?.(item.code, item.name);
-                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -493,6 +508,8 @@ export default function ChinaMap({
                   key={item.code}
                   d={item.d}
                   data-admin-code={item.code}
+                  data-admin-name={item.name}
+                  data-admin-level="city"
                   className={[
                     "footprint-map-region",
                     "footprint-map-city",
@@ -543,6 +560,9 @@ export default function ChinaMap({
                       cx={item.x ?? undefined}
                       cy={item.y ?? undefined}
                       r={item.code === "820000" ? 24 : 19}
+                      data-admin-code={item.code}
+                      data-admin-name={item.name}
+                      data-admin-level="province"
                       className="footprint-map-hit-target"
                       aria-hidden="true"
                       onPointerEnter={() => setHovered({
@@ -559,10 +579,6 @@ export default function ChinaMap({
                         if (event.detail > 1) return;
                         if (!allowRegionClick()) return;
                         onSelectProvince(item.code, item.name);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        onEnterProvince?.(item.code, item.name);
                       }}
                     />
                   );
