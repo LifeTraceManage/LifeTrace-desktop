@@ -279,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn local_execution_writes_enqueue_and_remote_writes_are_suppressed() {
+    fn final_schema_enqueues_cloud_supported_execution_entities_only() {
         let (connection, profile) = db();
         connection.execute(
             "INSERT INTO execution_tasks(id,user_id,title,status,priority,created_at,updated_at)
@@ -291,37 +291,27 @@ mod tests {
              VALUES('m1',?1,'Memo','Memo','active','2026-08-09T00:00:00Z','2026-08-09T00:00:00Z')",
             [&profile],
         ).unwrap();
+
         let task_count: i64 = connection.query_row(
             "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='execution.task' AND entity_id='t1' AND operation='upsert'",
             [], |row| row.get(0)
         ).unwrap();
         let memo_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='execution.memo' AND entity_id='m1' AND operation='upsert'",
+            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='execution.memo'",
             [], |row| row.get(0)
         ).unwrap();
         assert_eq!(task_count, 1);
-        assert_eq!(memo_count, 1);
+        assert_eq!(memo_count, 0, "Memo is intentionally Desktop-local");
 
-        connection
-            .execute(
-                "UPDATE sync_context SET origin='remote' WHERE singleton=1",
-                [],
-            )
-            .unwrap();
-        connection.execute(
-            "INSERT INTO execution_memos(id,user_id,content,plain_text,status,created_at,updated_at)
-             VALUES('m2',?1,'Remote','Remote','active','2026-08-09T00:00:00Z','2026-08-09T00:00:00Z')",
-            [&profile],
-        ).unwrap();
-        let remote_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='execution.memo' AND entity_id='m2'",
+        let trigger_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_sync_execution_memos_%'",
             [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(remote_count, 0);
+        assert_eq!(trigger_count, 0, "v21 must retire Memo sync triggers");
     }
 
     #[test]
-    fn soft_delete_and_memo_tag_relation_use_expected_operations() {
+    fn memo_tags_and_relations_remain_local_without_outbox_noise() {
         let (connection, profile) = db();
         connection.execute(
             "INSERT INTO execution_memos(id,user_id,content,plain_text,status,created_at,updated_at)
@@ -333,27 +323,26 @@ mod tests {
              VALUES('tag1',?1,'Work','work','2026-08-09T00:00:00Z','2026-08-09T00:00:00Z')",
             [&profile],
         ).unwrap();
-        connection
-            .execute(
-                "INSERT INTO execution_memo_tag_relations(memo_id,tag_id,created_at)
+        connection.execute(
+            "INSERT INTO execution_memo_tag_relations(memo_id,tag_id,created_at)
              VALUES('m1','tag1','2026-08-09T00:00:00Z')",
-                [],
-            )
-            .unwrap();
-        let relation_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='execution.memo_tag_relation' AND entity_id='m1:tag1' AND operation='upsert'",
-            [], |row| row.get(0)
+            [],
         ).unwrap();
-        assert_eq!(relation_count, 1);
-
         connection.execute(
             "UPDATE execution_memos SET deleted_at='2026-08-09T01:00:00Z',updated_at='2026-08-09T01:00:00Z' WHERE id='m1'",
             [],
         ).unwrap();
-        let operation: String = connection.query_row(
-            "SELECT operation FROM sync_outbox WHERE entity_type='execution.memo' AND entity_id='m1' AND status='pending' ORDER BY created_at DESC LIMIT 1",
+
+        let count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type IN ('execution.memo','execution.memo_tag','execution.memo_tag_relation')",
             [], |row| row.get(0)
         ).unwrap();
-        assert_eq!(operation, "delete");
+        assert_eq!(count, 0);
+
+        let memo_rows: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM execution_memos WHERE id='m1'",
+            [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(memo_rows, 1, "local Memo data must remain intact");
     }
 }
