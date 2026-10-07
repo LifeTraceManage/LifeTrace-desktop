@@ -83,7 +83,12 @@ export default function Footprints() {
       setProvinces(nextProvinces);
       setEntries(nextEntries);
       if (province) {
-        setProvinceDetail(await footprintApi.province(province.code));
+        const requestId = provinceRequestRef.current + 1;
+        provinceRequestRef.current = requestId;
+        const detail = await footprintApi.province(province.code);
+        if (provinceRequestRef.current === requestId) {
+          setProvinceDetail(detail);
+        }
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "足迹加载失败");
