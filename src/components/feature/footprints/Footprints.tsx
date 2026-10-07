@@ -52,6 +52,10 @@ export default function Footprints() {
   } | null>(null);
   const [provinceDetail, setProvinceDetail] =
     useState<ProvinceFootprintDetail | null>(null);
+  const [selectedCity, setSelectedCity] = useState<{
+    code: string | null;
+    name: string;
+  } | null>(null);
   const [provinceLoading, setProvinceLoading] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{
@@ -91,6 +95,7 @@ export default function Footprints() {
 
   const chooseProvince = async (code: string, name: string) => {
     setSelectedProvince({ code, name });
+    setSelectedCity(null);
     setProvinceLoading(true);
     try {
       setProvinceDetail(await footprintApi.province(code));
@@ -187,14 +192,21 @@ export default function Footprints() {
         <section className="footprint-map-layout">
           <ChinaMap
             provinces={provinces}
+            cities={provinceDetail?.cities ?? []}
             selectedProvinceCode={selectedProvince?.code}
+            selectedCityCode={selectedCity?.code}
+            selectedCityName={selectedCity?.name}
             onSelectProvince={(code, name) => void chooseProvince(code, name)}
+            onSelectCity={(code, name) => setSelectedCity({ code, name })}
           />
           <ProvinceDrawer
             summary={selectedSummary}
             name={selectedProvince?.name ?? "选择一个省份"}
             detail={provinceDetail}
             loading={provinceLoading}
+            selectedCityCode={selectedCity?.code}
+            selectedCityName={selectedCity?.name}
+            onSelectCity={(code, name) => setSelectedCity({ code, name })}
             onOpenEntry={(entry) => setDetailId(entry.id)}
           />
         </section>
