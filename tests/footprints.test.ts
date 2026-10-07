@@ -94,7 +94,6 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.doesNotMatch(migration, /CREATE TABLE(?: IF NOT EXISTS)? footprint_photos/);
   assert.match(migrationRegistry, /18\/19 intentionally remain unregistered/);
   assert.match(migrationRegistry, /M0020Footprints/);
-  assert.repository;
   assert.match(repository, /JOIN photos p ON p\.id=ep\.photo_id/);
   assert.match(repository, /deleting an entry must never delete the photo/);
   assert.match(server, /"\/api\/footprints\/photo-suggestions"/);
