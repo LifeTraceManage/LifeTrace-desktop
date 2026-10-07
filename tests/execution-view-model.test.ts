@@ -57,11 +57,12 @@ test("weekday normalization removes duplicates and invalid values", () => {
 
 
 test("inbox classifier only includes unorganized open tasks", () => {
-  assert.equal(isExecutionInboxTask(task), true);
-  assert.equal(isExecutionInboxTask({ ...task, projectId: "p1" }), false);
-  assert.equal(isExecutionInboxTask({ ...task, dueAt: "2026-08-10T00:00:00Z" }), false);
-  assert.equal(isExecutionInboxTask({ ...task, scheduledStartAt: "2026-08-10T00:00:00Z" }), false);
-  assert.equal(isExecutionInboxTask({ ...task, status: "done" }), false);
+  const inboxTask = { ...task, scheduledStartAt: null, scheduledEndAt: null };
+  assert.equal(isExecutionInboxTask(inboxTask), true);
+  assert.equal(isExecutionInboxTask({ ...inboxTask, projectId: "p1" }), false);
+  assert.equal(isExecutionInboxTask({ ...inboxTask, dueAt: "2026-08-10T00:00:00Z" }), false);
+  assert.equal(isExecutionInboxTask({ ...inboxTask, scheduledStartAt: "2026-08-10T00:00:00Z" }), false);
+  assert.equal(isExecutionInboxTask({ ...inboxTask, status: "done" }), false);
 });
 
 test("planner schedule, move and resize preserve task fields", () => {
