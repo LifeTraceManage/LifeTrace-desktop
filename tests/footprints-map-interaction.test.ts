@@ -6,7 +6,6 @@ import {
   clampPan,
   clampScale,
   clientPointToViewBox,
-  isDoubleRegionActivation,
   isDragGesture,
   zoomAtPoint,
 } from "../src/components/feature/footprints/mapInteraction";
@@ -69,37 +68,17 @@ test("footprint map distinguishes a click from a drag", () => {
   assert.equal(isDragGesture({ x: 10, y: 10 }, { x: 16, y: 10 }), true);
 });
 
-test("footprint map recognizes a stable province double activation", () => {
-  const previous = { code: "510000", at: 1000, point: { x: 420, y: 300 } };
-
-  assert.equal(isDoubleRegionActivation(
-    previous,
-    { code: "510000", at: 1420, point: { x: 428, y: 307 } },
-  ), true);
-  assert.equal(isDoubleRegionActivation(
-    previous,
-    { code: "510000", at: 1600, point: { x: 428, y: 307 } },
-  ), false);
-  assert.equal(isDoubleRegionActivation(
-    previous,
-    { code: "510000", at: 1420, point: { x: 450, y: 330 } },
-  ), false);
-  assert.equal(isDoubleRegionActivation(
-    previous,
-    { code: "440000", at: 1420, point: { x: 428, y: 307 } },
-  ), false);
-});
-
 test("footprint map navigation is explicit rather than wheel-driven", () => {
   const map = read("src/components/feature/footprints/ChinaMap.tsx");
   const footprints = read("src/components/feature/footprints/Footprints.tsx");
   const drawer = read("src/components/feature/footprints/ProvinceDrawer.tsx");
 
   assert.doesNotMatch(map, /countryDrillScale/);
-  assert.doesNotMatch(map, /onDoubleClick/);
-  assert.match(map, /isDoubleRegionActivation/);
-  assert.match(map, /provinceActivationRef/);
+  assert.match(map, /event\.detail >= 2/);
+  assert.match(map, /onDoubleClick/);
   assert.match(map, /onEnterProvince/);
+  assert.doesNotMatch(map, /isDoubleRegionActivation/);
+  assert.doesNotMatch(map, /provinceActivationRef/);
   assert.doesNotMatch(map, /setLevel\(/);
   assert.match(map, /level: FootprintMapLevel/);
   assert.match(map, /\}, \[level\]\);/);
