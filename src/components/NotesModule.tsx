@@ -327,13 +327,13 @@ export default function NotesModule(){
     setOpenedIds(current=>current.includes(created.id)?current:[...current,created.id].slice(-12));
     notify(type==="quick"?"快速记录已创建":"新笔记已创建");
   },[folderId,loadList]);
-  const openDailyNote=useCallback(async()=>{
+  const openDailyNote=async()=>{
     const title=dayTitle();
     const daily=await noteApi.list({scope:"all",noteType:"daily",sort:"updated_desc",limit:250});
     const existing=daily.find(item=>titleOf(item)===title);
     if(existing){await open(existing.id);return}
     await create("daily",{title});
-  },[create]);
+  };
   const importMarkdown=useCallback(async()=>{
     if(!desktopNotes.available()){notify("Markdown 导入仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.importMarkdown();if(!result.ok||result.canceled)return;if(result.error){notify(result.error);return}
