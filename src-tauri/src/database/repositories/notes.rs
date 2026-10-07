@@ -915,26 +915,40 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
     Ok(folder_id)
 }
 
-/// 删除文件夹：软删除并清空笔记引用。
+/// 删除文件夹：软删除，并将直属子文件夹/笔记提升到被删文件夹的父级。
+///
+/// This mirrors Web Notes semantics. On local writes the normal sync triggers
+/// emit the child folder/note updates before the folder tombstone is pushed.
 pub fn delete_folder(connection: &Connection, folder_id: &str) -> Result<(), String> {
     let stamp = now();
     let profile_id = crate::database::profile::active_profile_id(connection)?;
+    let parent_folder_id: Option<String> = connection
+        .query_row(
+            "SELECT parent_folder_id FROM note_folders
+             WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+            params![folder_id, profile_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .flatten();
+    connection
+        .execute(
+            "UPDATE notes SET folder_id=?1, updated_at=?2
+             WHERE folder_id=?3 AND user_id=?4",
+            params![parent_folder_id, stamp, folder_id, profile_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE note_folders SET parent_folder_id=?1, updated_at=?2
+             WHERE parent_folder_id=?3 AND user_id=?4 AND deleted_at IS NULL",
+            params![parent_folder_id, stamp, folder_id, profile_id],
+        )
+        .map_err(|error| error.to_string())?;
     connection
         .execute(
             "UPDATE note_folders SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
-            params![stamp, folder_id, profile_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "UPDATE notes SET folder_id=NULL, updated_at=?1 WHERE folder_id=?2 AND user_id=?3",
-            params![stamp, folder_id, profile_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "UPDATE note_folders SET parent_folder_id=NULL, updated_at=?1
-             WHERE parent_folder_id=?2 AND user_id=?3",
             params![stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
