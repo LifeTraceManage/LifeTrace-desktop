@@ -80,13 +80,38 @@ pub fn parse_wiki_links(input: &str) -> Vec<ParsedWikiLink> {
     result
 }
 
+fn note_aliases(value: &Value) -> Vec<String> {
+    value
+        .get("properties")
+        .and_then(Value::as_object)
+        .and_then(|properties| properties.get("aliases"))
+        .and_then(Value::as_array)
+        .map(|aliases| {
+            aliases
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|alias| !alias.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn aliases_from_raw_json(raw: &str) -> Vec<String> {
+    serde_json::from_str::<Value>(raw)
+        .ok()
+        .map(|value| note_aliases(&value))
+        .unwrap_or_default()
+}
+
 fn resolve_target_id(
     connection: &Connection,
     user_id: &str,
     source_note_id: &str,
     target_title: &str,
 ) -> Result<Option<String>, String> {
-    connection
+    let direct = connection
         .query_row(
             "SELECT id
              FROM notes
@@ -98,7 +123,35 @@ fn resolve_target_id(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if direct.is_some() {
+        return Ok(direct);
+    }
+
+    let needle = target_title.trim().to_lowercase();
+    let mut statement = connection
+        .prepare(
+            "SELECT id, content_json
+             FROM notes
+             WHERE user_id=?1 AND deleted_at IS NULL AND id<>?2
+             ORDER BY updated_at DESC, id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![user_id, source_note_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    for row in rows {
+        let (id, raw) = row.map_err(|error| error.to_string())?;
+        if aliases_from_raw_json(&raw)
+            .iter()
+            .any(|alias| alias.to_lowercase() == needle)
+        {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }
 
 fn target_is_available(
@@ -122,6 +175,7 @@ fn sync_note_fields(
     note_id: &str,
     user_id: &str,
     title: Option<&str>,
+    aliases: &[String],
     markdown: &str,
 ) -> Result<usize, String> {
     if !table_exists(connection, "note_links") {
@@ -199,6 +253,21 @@ fn sync_note_fields(
             )
             .map_err(|error| error.to_string())?;
     }
+    for alias in aliases.iter().map(|value| value.trim()).filter(|value| !value.is_empty()) {
+        connection
+            .execute(
+                "UPDATE note_links
+                 SET target_note_id=?1, updated_at=?2
+                 WHERE target_note_id IS NULL
+                   AND trim(target_title)=?3 COLLATE NOCASE
+                   AND source_note_id<>?1
+                   AND source_note_id IN (
+                     SELECT id FROM notes WHERE user_id=?4 AND deleted_at IS NULL
+                   )",
+                params![note_id, stamp, alias, user_id],
+            )
+            .map_err(|error| error.to_string())?;
+    }
 
     Ok(parsed.len())
 }
@@ -216,7 +285,11 @@ pub fn sync_note_links(connection: &Connection, note: &Value) -> Result<usize, S
         .and_then(Value::as_str)
         .or_else(|| note.get("contentText").and_then(Value::as_str))
         .unwrap_or_default();
-    sync_note_fields(connection, note_id, &user_id, title, markdown)
+    let aliases = note
+        .get("contentJson")
+        .map(note_aliases)
+        .unwrap_or_default();
+    sync_note_fields(connection, note_id, &user_id, title, &aliases, markdown)
 }
 
 /// Rebuild the complete derived index. Used by migrations and backup restore.
@@ -227,7 +300,7 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
     let notes = {
         let mut statement = connection
             .prepare(
-                "SELECT id, user_id, title, content_markdown, content_text
+                "SELECT id, user_id, title, content_json, content_markdown, content_text
                  FROM notes WHERE deleted_at IS NULL",
             )
             .map_err(|error| error.to_string())?;
@@ -239,6 +312,7 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             })
             .map_err(|error| error.to_string())?;
@@ -250,13 +324,14 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
         .execute("DELETE FROM note_links", [])
         .map_err(|error| error.to_string())?;
     let mut total = 0usize;
-    for (note_id, user_id, title, markdown, text) in notes {
+    for (note_id, user_id, title, content_json, markdown, text) in notes {
         let source = if markdown.trim().is_empty() {
             &text
         } else {
             &markdown
         };
-        total += sync_note_fields(connection, &note_id, &user_id, title.as_deref(), source)?;
+        let aliases = aliases_from_raw_json(&content_json);
+        total += sync_note_fields(connection, &note_id, &user_id, title.as_deref(), &aliases, source)?;
     }
     Ok(total)
 }
