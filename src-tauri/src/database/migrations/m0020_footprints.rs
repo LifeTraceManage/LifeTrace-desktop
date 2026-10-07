@@ -224,7 +224,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO schema_migrations(version,name,checksum,applied_at,app_version)
-                 VALUES(19,'travel-sync','m0019-travel-sync-v1','now','0.3.3')",
+                 VALUES(19,'travel-sync-outbox','m0019-travel-sync-outbox-v1','now','0.3.3')",
                 [],
             )
             .unwrap();
