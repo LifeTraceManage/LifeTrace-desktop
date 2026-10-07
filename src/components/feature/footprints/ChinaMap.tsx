@@ -54,6 +54,41 @@ const countryDrillScale = 2.15;
 const countryMaxScale = 2.35;
 const provinceMaxScale = 4.2;
 
+function shortAdminName(name: string, level: "province" | "city"): string {
+  const replacements = level === "province"
+    ? [
+        ["维吾尔自治区", ""], ["壮族自治区", ""], ["回族自治区", ""],
+        ["特别行政区", ""], ["自治区", ""], ["省", ""], ["市", ""],
+      ]
+    : [["特别行政区", ""], ["自治州", ""], ["地区", ""], ["盟", ""], ["市", ""]];
+  let result = name.trim();
+  for (const [suffix, replacement] of replacements) {
+    if (result.endsWith(suffix)) {
+      result = result.slice(0, -suffix.length) + replacement;
+      break;
+    }
+  }
+  const limit = level === "province" ? 5 : 6;
+  return result.length > limit ? `${result.slice(0, limit)}…` : result;
+}
+
+function labelPoint(
+  feature: AdminFeature,
+  projection: ReturnType<typeof geoMercator>,
+  path: ReturnType<typeof geoPath>,
+): [number, number] {
+  const anchor = feature.properties.centroid ?? feature.properties.center;
+  const projected = anchor ? projection(anchor) : null;
+  if (projected && Number.isFinite(projected[0]) && Number.isFinite(projected[1])) {
+    return projected;
+  }
+  const centroid = path.centroid(feature);
+  return [
+    Number.isFinite(centroid[0]) ? centroid[0] : width / 2,
+    Number.isFinite(centroid[1]) ? centroid[1] : height / 2,
+  ];
+}
+
 function fixWinding(feature: AdminFeature): AdminFeature {
   if (geoArea(feature) <= 2 * Math.PI) return feature;
   if (feature.geometry.type === "Polygon") {
@@ -129,11 +164,16 @@ export default function ChinaMap({
     );
     const path = geoPath(projection);
     return {
-      paths: provinceFeatures.map((feature) => ({
-        code: String(feature.properties.adcode),
-        name: feature.properties.name,
-        d: path(feature) ?? "",
-      })),
+      paths: provinceFeatures.map((feature) => {
+        const [labelX, labelY] = labelPoint(feature, projection, path);
+        return {
+          code: String(feature.properties.adcode),
+          name: feature.properties.name,
+          labelX,
+          labelY,
+          d: path(feature) ?? "",
+        };
+      }),
       dashPath: dash ? path(fixWinding(dash)) ?? "" : "",
     };
   }, []);
@@ -157,11 +197,16 @@ export default function ChinaMap({
       featureCollection(features),
     );
     const path = geoPath(projection);
-    return features.map((feature) => ({
-      code: String(feature.properties.adcode),
-      name: feature.properties.name,
-      d: path(feature) ?? "",
-    }));
+    return features.map((feature) => {
+      const [labelX, labelY] = labelPoint(feature, projection, path);
+      return {
+        code: String(feature.properties.adcode),
+        name: feature.properties.name,
+        labelX,
+        labelY,
+        d: path(feature) ?? "",
+      };
+    });
   }, [selectedProvinceCode]);
 
   const resetTransform = () => {
@@ -275,7 +320,13 @@ export default function ChinaMap({
     dragRef.current = null;
   };
 
-  const transform = `translate(${(1 - scale) * width / 2 + pan.x} ${(1 - scale) * height / 2 + pan.y}) scale(${scale})`;
+  const transformX = (1 - scale) * width / 2 + pan.x;
+  const transformY = (1 - scale) * height / 2 + pan.y;
+  const transform = `translate(${transformX} ${transformY}) scale(${scale})`;
+  const labelPosition = (x: number, y: number) => ({
+    x: transformX + x * scale,
+    y: transformY + y * scale,
+  });
   const provinceName = selectedProvinceCode
     ? provinces.find((province) => province.provinceCode === selectedProvinceCode)?.provinceName
       || countryGeometry.paths.find((item) => item.code === selectedProvinceCode)?.name
@@ -446,6 +497,39 @@ export default function ChinaMap({
               ? <path d={countryGeometry.dashPath} className="footprint-map-dashline" pointerEvents="none" />
               : null}
           </g>
+          <g className="footprint-map-label-layer" pointerEvents="none">
+            {(level === "country" ? countryGeometry.paths : provinceGeometry).map((item) => {
+              const summary = level === "country"
+                ? summaryByCode.get(item.code)
+                : citySummaryByCode.get(item.code) || citySummaryByName.get(item.name);
+              const visited = Boolean(summary);
+              const selected = level === "country"
+                ? selectedProvinceCode === item.code
+                : selectedCityCode === item.code || (!selectedCityCode && selectedCityName === item.name);
+              const point = labelPosition(item.labelX, item.labelY);
+              const label = shortAdminName(item.name, level === "country" ? "province" : "city");
+              return (
+                <g
+                  key={`label-${item.code}`}
+                  className={[
+                    "footprint-map-admin-label",
+                    level === "country" ? "province" : "city",
+                    visited ? "visited" : "",
+                    selected ? "selected" : "",
+                  ].filter(Boolean).join(" ")}
+                  transform={`translate(${point.x} ${point.y})`}
+                >
+                  {visited ? <circle className="footprint-map-visit-marker" r={selected ? 7 : 5.5} /> : null}
+                  <text className="footprint-map-admin-name" y={visited ? -9 : 3}>{label}</text>
+                  {visited ? (
+                    <text className="footprint-map-visit-count" y={10}>
+                      {summary?.visitCount ?? 0}次
+                    </text>
+                  ) : null}
+                </g>
+              );
+            })}
+          </g>
         </svg>
 
         {hovered ? (
@@ -461,8 +545,8 @@ export default function ChinaMap({
         <span><i className="visited" />已去过</span>
         <small>
           {level === "country"
-            ? "滚轮放大；达到阈值后自动进入悬停省份 · 双击省份也可进入"
-            : "当前最小行政层级：市 / 地区 · 滚轮缩小到底返回全国"}
+            ? "省级名称常驻显示 · 去过的省份显示次数标记 · 滚轮放大后自动下钻"
+            : "市 / 地区名称常驻显示 · 去过的城市显示次数标记 · 滚轮缩小到底返回全国"}
         </small>
       </footer>
     </section>
