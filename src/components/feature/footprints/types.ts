@@ -88,6 +88,23 @@ export type FootprintEntryDetail = {
   photos: FootprintPhoto[];
 };
 
+export type FootprintEntryLink = {
+  id: string;
+  entryId: string;
+  entityType: "note.note" | "execution.task";
+  entityId: string;
+  relationType: string;
+  label: string;
+  createdAt: string;
+};
+
+export type FootprintLinkCandidate = {
+  entityType: "note.note" | "execution.task";
+  entityId: string;
+  label: string;
+  detail: string;
+};
+
 export type ProvinceFootprintDetail = {
   cities: CityFootprintSummary[];
   entries: FootprintEntry[];
