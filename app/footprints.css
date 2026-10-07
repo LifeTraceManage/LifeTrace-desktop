@@ -177,6 +177,11 @@
   stroke-width: 3;
   filter: drop-shadow(0 5px 9px rgba(215, 153, 50, .28));
 }
+.footprint-map-hit-target {
+  fill: transparent;
+  stroke: none;
+  cursor: pointer;
+}
 .footprint-map-dashline {
   fill: color-mix(in srgb, var(--hx-muted, #738079) 28%, transparent);
   stroke: var(--hx-muted, #738079);
