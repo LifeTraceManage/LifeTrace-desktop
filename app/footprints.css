@@ -168,6 +168,58 @@
   stroke-width: .7;
   opacity: .58;
 }
+.footprint-map-label-layer {
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+.footprint-map-admin-label {
+  opacity: .86;
+}
+.footprint-map-admin-label.city { opacity: .82; }
+.footprint-map-admin-name {
+  fill: color-mix(in srgb, var(--hx-ink, #223129) 88%, transparent);
+  font-size: 11px;
+  font-weight: 650;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--lt-color-surface, #fff) 92%, transparent);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.footprint-map-admin-label.city .footprint-map-admin-name {
+  font-size: 10px;
+  font-weight: 600;
+}
+.footprint-map-admin-label.visited .footprint-map-admin-name {
+  fill: var(--hx-accent2, #176b54);
+  font-weight: 780;
+}
+.footprint-map-admin-label.selected .footprint-map-admin-name {
+  fill: #a36512;
+}
+.footprint-map-visit-marker {
+  fill: var(--hx-accent, #2a7a5e);
+  stroke: var(--lt-color-surface, #fff);
+  stroke-width: 2px;
+  filter: drop-shadow(0 2px 3px rgba(20, 61, 42, .22));
+}
+.footprint-map-admin-label.selected .footprint-map-visit-marker {
+  fill: #d79932;
+}
+.footprint-map-visit-count {
+  fill: var(--hx-accent2, #176b54);
+  font-size: 8px;
+  font-weight: 750;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--lt-color-surface, #fff) 94%, transparent);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+.footprint-map-admin-label.selected .footprint-map-visit-count {
+  fill: #a36512;
+}
 .footprint-map-toolbar {
   position: absolute;
   z-index: 5;
@@ -735,6 +787,13 @@
 .footprint-suggestions figcaption span { display: flex; align-items: center; gap: 1px; margin-left: auto; }
 
 [data-theme="dark"] .footprint-map-region { fill: #26332e; stroke: #65736d; }
+[data-theme="dark"] .footprint-map-admin-name,
+[data-theme="dark"] .footprint-map-visit-count {
+  stroke: color-mix(in srgb, var(--lt-color-surface, #18221e) 94%, transparent);
+}
+[data-theme="dark"] .footprint-map-visit-marker {
+  stroke: var(--lt-color-surface, #18221e);
+}
 [data-theme="dark"] .footprint-map-region.visited {
   fill: color-mix(in srgb, #55a887 calc(32% + var(--footprint-intensity) * 45%), #26332e);
   stroke: #6cc09d;
