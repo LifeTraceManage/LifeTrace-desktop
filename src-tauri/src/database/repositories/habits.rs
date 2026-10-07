@@ -690,6 +690,28 @@ mod tests {
     }
 
     #[test]
+    fn cloud_web_sync_source_does_not_block_desktop_pull() {
+        let value = json!({
+            "id": "28e30765-cfe4-49f3-8d18-1e1f17facf9e", "userId": "cloud-user",
+            "name": "云端习惯", "type": "completion", "unit": "次",
+            "targetPeriod": "daily", "syncSource": "web", "isArchived": false,
+            "createdAt": "2026-10-07T00:00:00Z", "updatedAt": "2026-10-07T00:00:00Z"
+        });
+        let row = activity_from_legacy_json(&value).unwrap();
+        assert_eq!(row.sync_source, None, "web is provenance, not a local integration source");
+    }
+
+    #[test]
+    fn local_fitness_sync_source_is_preserved() {
+        let value = json!({
+            "id": "fitness", "name": "运动", "type": "duration", "unit": "分钟",
+            "targetPeriod": "daily", "syncSource": "fitness"
+        });
+        let row = activity_from_legacy_json(&value).unwrap();
+        assert_eq!(row.sync_source.as_deref(), Some("fitness"));
+    }
+
+    #[test]
     fn log_date_derives_from_created_at() {
         let connection = Connection::open_in_memory().unwrap();
         let value = json!({
