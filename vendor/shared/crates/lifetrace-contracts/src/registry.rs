@@ -76,6 +76,17 @@ const fn server_managed(entity_type: &'static str) -> EntityDescriptor {
     }
 }
 
+const fn device_local(entity_type: &'static str) -> EntityDescriptor {
+    EntityDescriptor {
+        entity_type,
+        schema_version: 1,
+        ownership: EntityOwnership::DeviceLocal,
+        sync_mode: SyncMode::NotSynced,
+        conflict_mode: ConflictMode::None,
+        contains_file_references: false,
+    }
+}
+
 const fn shared_catalog(entity_type: &'static str) -> EntityDescriptor {
     EntityDescriptor {
         entity_type,
@@ -132,16 +143,16 @@ pub const REGISTRY: &[EntityDescriptor] = &[
     user_owned(EntityType::EXECUTION_CALENDAR_OCCURRENCE, false),
     user_owned(EntityType::EXECUTION_IMPORTANT_DATE, false),
     user_owned(EntityType::EXECUTION_FOCUS_SESSION, false),
-    user_owned(EntityType::EXECUTION_MEMO, false),
-    user_owned(EntityType::EXECUTION_MEMO_TAG, false),
-    user_owned(EntityType::EXECUTION_MEMO_TAG_RELATION, false),
+    device_local(EntityType::EXECUTION_MEMO),
+    device_local(EntityType::EXECUTION_MEMO_TAG),
+    device_local(EntityType::EXECUTION_MEMO_TAG_RELATION),
     user_owned(EntityType::EXECUTION_REMINDER, false),
     user_owned(EntityType::EXECUTION_COMPLETION_RESULT, false),
     user_owned(EntityType::EXECUTION_ENTITY_LINK, false),
-    user_owned(EntityType::TRAVEL_TRIP, false),
-    user_owned(EntityType::TRAVEL_PLACE, false),
-    user_owned(EntityType::TRAVEL_VISIT, false),
-    user_owned(EntityType::TRAVEL_PHOTO_LINK, false),
+    device_local(EntityType::TRAVEL_TRIP),
+    device_local(EntityType::TRAVEL_PLACE),
+    device_local(EntityType::TRAVEL_VISIT),
+    device_local(EntityType::TRAVEL_PHOTO_LINK),
     user_owned(EntityType::FILE_METADATA, true),
     user_owned(EntityType::ENTITY_LINK, false),
     user_owned(EntityType::USER_PREFERENCE, false),
@@ -380,5 +391,8 @@ mod tests {
         assert!(!is_syncable("execution.memo"));
         assert!(!is_syncable("execution.memo_tag"));
         assert!(!is_syncable("execution.memo_tag_relation"));
+        assert!(!is_syncable("travel.trip"));
+        assert_eq!(describe("execution.memo").unwrap().ownership, EntityOwnership::DeviceLocal);
+        assert_eq!(describe("travel.trip").unwrap().sync_mode, SyncMode::NotSynced);
     }
 }
