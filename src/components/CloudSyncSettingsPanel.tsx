@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Cloud, RefreshCw } from "lucide-react";
 import { useCloudAuthStore } from "@/src/stores/useCloudAuthStore";
 import type { SyncConflictView, SyncStatusView } from "@/src/services/cloudSync";
+import { desktopSync } from "@/src/desktop/syncAdapter";
 
 const phaseLabel: Record<string, string> = {
   disabled: "同步已关闭",
@@ -25,10 +26,10 @@ export default function CloudSyncSettingsPanel() {
   const [syncing, setSyncing] = useState(false);
 
   const refresh = async () => {
-    if (!window.syncApi) return;
-    const next = await window.syncApi.status();
+    if (!desktopSync.available()) return;
+    const next = await desktopSync.status();
     setStatus(next);
-    setConflicts(next.conflictCount > 0 ? await window.syncApi.conflicts() : []);
+    setConflicts(next.conflictCount > 0 ? await desktopSync.conflicts() : []);
   };
 
   useEffect(() => {
@@ -38,11 +39,11 @@ export default function CloudSyncSettingsPanel() {
   }, [auth.authenticated, auth.binding?.profileId]);
 
   const runSync = async (forceSnapshot = false) => {
-    if (!window.syncApi || !auth.authenticated) return;
+    if (!desktopSync.available() || !auth.authenticated) return;
     setSyncing(true);
     auth.clearError();
     try {
-      await window.syncApi.now(forceSnapshot);
+      await desktopSync.now(forceSnapshot);
     } catch (error) {
       useCloudAuthStore.setState({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -71,7 +72,7 @@ export default function CloudSyncSettingsPanel() {
 
     {conflicts.length > 0 && <div className="hx-settings-conflicts">
       <h3>需要处理的冲突</h3>
-      {conflicts.map((item) => <div key={item.conflictId}><span><strong>{item.entityType}</strong><small>{item.entityId}</small></span><div><button className="hx-btn secondary" onClick={async () => { await window.syncApi?.resolveConflict(item.conflictId, "accept_remote"); await refresh(); }}>接受云端</button><button className="hx-btn secondary" onClick={async () => { await window.syncApi?.resolveConflict(item.conflictId, "keep_local"); await refresh(); }}>保留本地</button></div></div>)}
+      {conflicts.map((item) => <div key={item.conflictId}><span><strong>{item.entityType}</strong><small>{item.entityId}</small></span><div><button className="hx-btn secondary" onClick={async () => { await desktopSync.resolveConflict(item.conflictId, "accept_remote"); await refresh(); }}>接受云端</button><button className="hx-btn secondary" onClick={async () => { await desktopSync.resolveConflict(item.conflictId, "keep_local"); await refresh(); }}>保留本地</button></div></div>)}
     </div>}
 
     <details className="hx-settings-advanced"><summary>高级同步操作</summary><p>“从云端重新初始化”会重新获取当前账号的云端快照，仅建议在排查同步异常时使用。</p><button className="hx-btn secondary" type="button" disabled={syncing || auth.loading} onClick={() => void runSync(true)}>从云端重新初始化</button></details>

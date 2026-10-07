@@ -9,15 +9,12 @@ const bootstrapScript = () => readFileSync(new URL("../public/desktop-theme-boot
 const bootstrapStyles = () => readFileSync(new URL("../public/desktop-theme-bootstrap.css", import.meta.url), "utf8");
 const designTokens = () => readFileSync(new URL("../app/tokens.css", import.meta.url), "utf8");
 
-test("desktop cloud workspace applies the loaded cloud appearance preference", () => {
+test("authenticated desktop workspace no longer depends on web cloud appearance state", () => {
   const source = cloudWorkspace();
-  assert.match(source, /const \[cloudLoaded, setCloudLoaded\] = useState\(false\)/);
-  assert.match(source, /if \(!session \|\| !cloudLoaded\) return/);
-  assert.match(source, /item\.preferenceKey === "appearance\.theme"/);
-  assert.match(source, /mode === "dark" \|\| mode === "light" \|\| mode === "system"/);
-  assert.match(source, /setAppThemePreference\(resolveTheme\(next\)\)/);
+  assert.match(source, /useLifeStore/);
+  assert.match(source, /DesktopNativeRouteContent/);
+  assert.doesNotMatch(source, /cloudLoaded|CloudDataStore|appearance\.theme|AppRuntimeProvider/);
 });
-
 test("tauri restores the cached theme before the react entrypoint", () => {
   const html = tauriIndex();
   const bootstrap = html.indexOf('/desktop-theme-bootstrap.js');

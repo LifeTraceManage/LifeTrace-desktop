@@ -4,13 +4,7 @@ import { useRef, useState } from "react";
 import { Check, ChevronDown, FileImage, Pencil, Plus, QrCode, RotateCcw, Trash2, X } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { XunjiWorkout } from "@/src/types";
-
-type ParsedImport = {
-  importId: string;
-  shareUrl: string;
-  parser: "embedded-json" | "dom";
-  workout: XunjiWorkout;
-};
+import { xunjiImportApi, type ParsedXunjiImport } from "@/src/services/xunjiImportApi";
 
 const cloneWorkout = (workout: XunjiWorkout) => JSON.parse(JSON.stringify(workout)) as XunjiWorkout;
 
@@ -20,7 +14,7 @@ export default function XunjiImportPanel() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [parsed, setParsed] = useState<ParsedImport | null>(null);
+  const [parsed, setParsed] = useState<ParsedXunjiImport | null>(null);
   const [draft, setDraft] = useState<XunjiWorkout | null>(null);
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState("");
@@ -32,11 +26,7 @@ export default function XunjiImportPanel() {
     setMessage("");
     setSuccess(false);
     try {
-      const form = new FormData();
-      form.set("image", file);
-      const response = await fetch("/api/xunji/parse", { method: "POST", body: form });
-      const payload = await response.json() as ParsedImport & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "训记分享解析失败");
+      const payload = await xunjiImportApi.parse(file);
       setParsed(payload);
       setDraft(cloneWorkout(payload.workout));
       setEditing(false);
@@ -53,13 +43,7 @@ export default function XunjiImportPanel() {
     setLoading(true);
     setMessage("");
     try {
-      const response = await fetch("/api/xunji/imports", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ importId: parsed.importId, action, workout: action === "confirm" ? draft : undefined }),
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "训练导入失败");
+      await xunjiImportApi.finish(parsed.importId, action, action === "confirm" ? draft : undefined);
       if (action === "confirm") {
         await initialize();
         setSuccess(true);

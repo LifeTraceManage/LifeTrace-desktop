@@ -6,18 +6,18 @@ import test from "node:test";
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
-test("desktop cloud workspace mounts the maintained web feature snapshot", () => {
+test("authenticated desktop workspace is local-first and does not mount web frontend runtime", () => {
   const workspace = read("src/components/DesktopCloudWorkspace.tsx");
-  assert.match(workspace, /\.\.\/\.\.\/vendor\/web\/src\/app\/AppContext/);
-  assert.match(workspace, /DesktopFeatureRouter/);
-  assert.match(workspace, /setCloudFetchOverride\(desktopCloudFetch\)/);
-  assert.doesNotMatch(workspace, /web-client/);
+
+  assert.match(workspace, /DesktopNativeRouteContent/);
+  assert.match(workspace, /useLifeStore/);
+  assert.match(workspace, /desktopSync\.now\(false\)/);
+  assert.doesNotMatch(workspace, /vendor\/web|DesktopFeatureRouter|AppRuntimeProvider|CloudDataStore/);
 });
 
-test("desktop native shell owns navigation while web owns feature pages", () => {
-  const shell = read("src/components/DesktopWorkbenchShell.tsx");
-  const router = read("vendor/web/src/app/DesktopFeatureRouter.tsx");
-  assert.doesNotMatch(shell, /web-client/);
+test("native desktop route owns all primary non-travel product pages", () => {
+  const routes = read("src/components/DesktopNativeRouteContent.tsx");
+
   for (const route of [
     "/app/today",
     "/app/execution",
@@ -25,24 +25,31 @@ test("desktop native shell owns navigation while web owns feature pages", () => 
     "/app/habits",
     "/app/fitness",
     "/app/health",
-    "/app/notes",
     "/app/review",
+    "/app/notes",
+    "/app/photos",
+    "/app/footprints",
     "/app/finance",
     "/app/assistant",
     "/app/search",
     "/app/settings",
   ]) {
-    assert.match(router, new RegExp(route.replaceAll("/", "\\/")));
+    assert.match(routes, new RegExp(route.replaceAll("/", "\\/")));
   }
-  assert.doesNotMatch(workspaceSource(), /AppShell/);
+
+  assert.match(routes, /<NotesModule \/>/);
+  assert.match(routes, /<PhotoSyncModule \/>/);
+  assert.match(routes, /<Footprints \/>/);
+  assert.match(routes, /<CloudAgentModule \/>/);
+  assert.match(routes, /<SettingsView \/>/);
+  assert.doesNotMatch(routes, /vendor\/web|DesktopFeatureRouter/);
 });
 
-function workspaceSource(): string {
-  return read("src/components/DesktopCloudWorkspace.tsx");
-}
-
-test("tauri entry loads the current web visual contract instead of legacy css", () => {
+test("tauri entry and desktop typecheck no longer load web frontend page sources", () => {
   const entry = read("tauri-ui/main.tsx");
-  assert.match(entry, /vendor\/web\/src\/styles\/globals\.css/);
+  const tsconfig = read("tsconfig.json");
+
+  assert.doesNotMatch(entry, /vendor\/web|webWorkspaceStyles/);
+  assert.doesNotMatch(tsconfig, /vendor\/web\/src/);
   assert.doesNotMatch(entry, /web-client\/src/);
 });

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { Activity, ActivityLog, DailyReview, FinanceAccount, FinanceCategory, Transaction, WorkoutHistory } from "@/src/types";
 import { createId } from "@/src/utils/id";
 
@@ -25,22 +26,30 @@ export type SQLiteMutation =
   | { operation: "delete"; table: "transactions" | "accounts" | "categories" | "workoutHistory"; id: string }
   | { operation: "restore"; data: Omit<LifeData, "settings"> };
 
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 const request = async <T>(input: RequestInfo, init?: RequestInit): Promise<T> => {
   const response = await fetch(input, init);
   const payload = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || "SQLite 数据服务暂时不可用");
+  if(!response.ok) throw new Error(payload.error || "SQLite 数据服务暂时不可用");
   return payload;
 };
 
-const mutateServerSQLite = (mutation: SQLiteMutation) => request<{ ok: true }>("/api/state", {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(mutation),
-});
+export const loadSQLiteState = async (): Promise<LifeData> => {
+  if (isTauriRuntime()) return invoke<LifeData>("state_get");
+  return request<LifeData>("/api/state");
+};
 
-export const loadSQLiteState = () => request<LifeData>("/api/state");
-
-export const mutateSQLite = (mutation: SQLiteMutation) => mutateServerSQLite(mutation);
+export const mutateSQLite = async (mutation: SQLiteMutation): Promise<{ ok: true }> => {
+  if (isTauriRuntime()) return invoke<{ ok: true }>("state_mutate", { mutation });
+  return request<{ ok: true }>("/api/state", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(mutation),
+  });
+};
 
 export const now = () => new Date().toISOString();
 export const uid = createId;

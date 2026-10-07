@@ -3,23 +3,17 @@ import path from "node:path";
 import { defineConfig } from "vite";
 
 const projectRoot = path.resolve(import.meta.dirname);
-const webRoot = path.resolve(projectRoot, "vendor", "web");
 
 export default defineConfig({
   root: path.join(projectRoot, "tauri-ui"),
   publicDir: path.join(projectRoot, "public"),
   plugins: [react()],
-  css: {
-    postcss: path.join(webRoot, "postcss.config.cjs"),
-  },
   worker: {
     format: "es",
   },
   resolve: {
     alias: {
       "@": projectRoot,
-      "maplibre-gl": path.join(webRoot, "node_modules", "maplibre-gl"),
-      "pmtiles": path.join(webRoot, "node_modules", "pmtiles"),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -28,7 +22,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     fs: {
-      allow: [projectRoot, webRoot],
+      allow: [projectRoot],
     },
   },
   build: {

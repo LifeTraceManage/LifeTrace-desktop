@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { instrumentedFetch } from "@/src/services/clientObservability";
 
 export type ExecutionProject = {
@@ -239,28 +240,64 @@ export type RecurrenceInput = {
 
 export type ApiErrorPayload = { error?: string; code?: string };
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+type NativeExecutionResponse = {
+  status: number;
+  body: string;
+  contentType?: string | null;
+};
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function parsePayload(raw: string): unknown {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function unwrapPayload<T>(payload: unknown, status: number): T {
+  if (status < 200 || status >= 300) {
+    const error = payload as ApiErrorPayload | string | null;
+    const message = typeof error === "string" ? error : error?.error;
+    throw new Error(message || `执行服务请求失败（${status}）`);
+  }
+  return payload as T;
+}
+
+async function nativeRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || "GET").toUpperCase();
+  const parsed = new URL(url, "http://lifetrace.local");
+  const body = init?.body;
+  if (body !== undefined && body !== null && typeof body !== "string") {
+    throw new Error("执行 IPC 当前只支持 JSON/文本请求体");
+  }
+  const response = await invoke<NativeExecutionResponse>("execution_api_request", {
+    request: {
+      path: parsed.pathname,
+      query: parsed.search ? parsed.search.slice(1) : null,
+      method,
+      body: typeof body === "string" ? body : null,
+    },
+  });
+  return unwrapPayload<T>(parsePayload(response.body), response.status);
+}
+
+async function httpRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || "GET").toUpperCase();
   const response = await instrumentedFetch(globalThis.fetch, url, init, {
     module: "execution",
     action: `${method} ${url.split("?", 1)[0]}`,
     userMessage: "执行服务请求失败",
   });
-  const raw = await response.text();
-  let payload: unknown = null;
-  if (raw) {
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      payload = raw;
-    }
-  }
-  if (!response.ok) {
-    const error = payload as ApiErrorPayload | string | null;
-    const message = typeof error === "string" ? error : error?.error;
-    throw new Error(message || `执行服务请求失败（${response.status}）`);
-  }
-  return payload as T;
+  return unwrapPayload<T>(parsePayload(await response.text()), response.status);
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  return isTauriRuntime() ? nativeRequest<T>(url, init) : httpRequest<T>(url, init);
 }
 
 function json(method: string, body?: unknown): RequestInit {

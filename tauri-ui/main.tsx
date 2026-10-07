@@ -11,11 +11,8 @@ import { installTauriApiBridge, waitForTauriBackend } from "./apiBridge";
 import { installVaultBridge } from "./vaultBridge";
 import { installWindowPlacementPersistence, restoreWindowPlacement } from "./windowState";
 
-/* The authenticated cloud workspace reuses the current apps/web feature layer.
- * Compile its Tailwind visual contract first, then keep desktop/local styles in
- * control of native shell and local-only tools. */
-import "../vendor/web/src/styles/globals.css";
-
+/* Desktop-owned visual layers. The authenticated workspace no longer mounts
+ * LifeTrace Web frontend pages; shared build dependencies are handled separately. */
 import "@/app/tokens.css";
 import "@/app/globals.css";
 import "@/app/hengxu.css";
@@ -39,6 +36,7 @@ import "@/app/module-layout-overrides.css";
 import "@/app/apple-polish.css";
 import "@/app/interaction-performance.css";
 import "@/app/desktop-cloud-workspace.css";
+import "@/app/cloud-agent.css";
 import "@/app/desktop-local-tools.css";
 
 installGlobalFetchInstrumentation();
@@ -73,37 +71,28 @@ async function start() {
   void installWindowPlacementPersistence();
   installTauriApiBridge();
   installVaultBridge();
-  root!.innerHTML = '<div class="hx-loading"><span>LT</span><p>正在启动本地 SQLite 服务…</p></div>';
+  root!.innerHTML = '<div class="hx-loading"><span>LT</span><p>正在启动 LifeTrace Desktop…</p></div>';
   clientLogger.info("desktop.start.begin");
-  try {
-    await waitForTauriBackend();
-    clientLogger.info("desktop.backend.ready");
-    createRoot(root!).render(
-      <StrictMode>
-        <ClientErrorBoundary>
-          <DesktopApp />
-        </ClientErrorBoundary>
-      </StrictMode>,
-    );
-  } catch (error) {
-    clientLogger.fatal("desktop.start.failed", undefined, error);
-    const message = error instanceof Error ? error.message : "本地服务启动失败";
-    root!.innerHTML = "";
-    const panel = document.createElement("div");
-    panel.className = "hx-loading";
-    const badge = document.createElement("span");
-    badge.textContent = "!";
-    const title = document.createElement("h1");
-    title.textContent = "LifeTrace 启动失败";
-    const detail = document.createElement("p");
-    detail.textContent = message;
-    const retry = document.createElement("button");
-    retry.className = "hx-btn primary";
-    retry.textContent = "重新启动";
-    retry.addEventListener("click", () => window.location.reload());
-    panel.append(badge, title, detail, retry);
-    root!.append(panel);
-  }
+
+  createRoot(root!).render(
+    <StrictMode>
+      <ClientErrorBoundary>
+        <DesktopApp />
+      </ClientErrorBoundary>
+    </StrictMode>,
+  );
+  clientLogger.info("desktop.ui.ready");
+
+  // The localhost Axum server is now a compatibility transport for remaining
+  // modules. Core startup, auth, SQLite state, Notes and Search use Tauri IPC
+  // and must not wait for this server.
+  void waitForTauriBackend(10_000)
+    .then(() => clientLogger.info("desktop.compat_backend.ready"))
+    .catch((error) => {
+      clientLogger.warn("desktop.compat_backend.unavailable", {
+        impact: "legacy-local-http-features-only",
+      }, error);
+    });
 }
 
 void start();

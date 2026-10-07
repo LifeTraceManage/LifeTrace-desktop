@@ -35,8 +35,6 @@
     "src/services/**/*.ts",
     "src/types/**/*.ts",
     "vendor/shared/contracts/typescript/**/*.ts",
-    "vendor/web/src/**/*.ts",
-    "vendor/web/src/**/*.tsx",
     "vite.tauri.config.ts",
     "vite.browser.config.ts",
     "src/ui/**/*.ts",

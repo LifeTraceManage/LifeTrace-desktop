@@ -1,3 +1,4 @@
+import { localJsonRequest } from "@/src/services/localJsonTransport";
 import type {
   FootprintEntry,
   FootprintEntryDetail,
@@ -11,12 +12,7 @@ import type {
 } from "@/src/components/feature/footprints/types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", ...init });
-  const payload = await response.json() as T & { error?: string; message?: string };
-  if (!response.ok) {
-    throw new Error(payload.message || payload.error || "足迹服务暂时不可用");
-  }
-  return payload;
+  return localJsonRequest<T>(url, init, "足迹服务暂时不可用");
 }
 
 function json(method: string, body: unknown): RequestInit {

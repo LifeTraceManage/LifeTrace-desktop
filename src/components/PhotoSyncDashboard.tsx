@@ -8,6 +8,9 @@ import {
   LoaderCircle, RefreshCw, Smartphone, X,
 } from "lucide-react";
 import Toast from "@/src/components/Toast";
+import { desktopPhotoSync } from "@/src/desktop/photoSyncAdapter";
+import { desktopVault } from "@/src/desktop/vaultAdapter";
+import { loadPhotoSyncDashboard, photoMediaUrl } from "@/src/services/photoSyncApi";
 
 type Photo = {
   id:string; original_file_name:string; media_type:"image"|"video"; mime_type:string|null;
@@ -29,7 +32,6 @@ type Dashboard = {
 };
 type Pairing = { pairCode:string; expiresAt:string; entryUrl:string };
 
-const mediaBase = "http://127.0.0.1:3444/photo-sync/media";
 const formatBytes = (value:number) => new Intl.NumberFormat("zh-CN", {
   style:"unit", unit:value >= 1024 ** 2 ? "megabyte" : "kilobyte", maximumFractionDigits:1,
 }).format(value / (value >= 1024 ** 2 ? 1024 ** 2 : 1024));
@@ -67,9 +69,7 @@ export default function PhotoSyncModule() {
   const load=useCallback(async(targetPage=page)=>{
     setLoading(true);
     try{
-      const response=await fetch(`/api/photo-sync/dashboard?page=${targetPage}&pageSize=30`,{cache:"no-store"});
-      const payload=await response.json() as Dashboard&{error?:string};
-      if(!response.ok)throw new Error(payload.error||"照片数据读取失败");
+      const payload=await loadPhotoSyncDashboard(targetPage,30);
       setData(payload);setPage(targetPage);
     }catch(error){setMessage(error instanceof Error?error.message:"照片数据读取失败")}
     finally{setLoading(false)}
@@ -109,15 +109,15 @@ export default function PhotoSyncModule() {
   },[data?.photos]);
 
   const createPairing=async()=>{
-    if(!window.photoSyncApi){setMessage("请在 LifeTrace Electron 桌面应用中创建配对二维码");return}
+    if(!desktopPhotoSync.available()){setMessage("请在 LifeTrace Electron 桌面应用中创建配对二维码");return}
     setMessage("");
-    const response=await window.photoSyncApi.createPairing();
+    const response=await desktopPhotoSync.createPairing();
     const status=response.status as {pairing?:Pairing}|undefined;
     if(!response.ok||!status?.pairing){setMessage(response.error||"无法创建配对码");return}
     setPairing(status.pairing);
   };
   const cancelPairing=async()=>{
-    if(pairing&&window.photoSyncApi)await window.photoSyncApi.cancelPairing(pairing.pairCode);
+    if(pairing&&desktopPhotoSync.available())await desktopPhotoSync.cancelPairing(pairing.pairCode);
     setPairing(null);setQr("");
   };
   const enterSelectMode=()=>{
@@ -135,7 +135,7 @@ export default function PhotoSyncModule() {
   const performHide=async(ids:string[])=>{
     setMessage("");
     try{
-      const result=await window.vaultApi!.hidePhotosFromSyncAlbum(ids,null);
+      const result=await desktopVault.hidePhotosFromSyncAlbum(ids,null);
       if(!result.started){setMessage("隐藏任务未能启动，请重试。");return}
       // 立即从当前列表移除，加密在后台执行，做到无感隐藏。
       const idSet=new Set(ids);
@@ -154,13 +154,13 @@ export default function PhotoSyncModule() {
   const hideSelected=async()=>{
     const ids=Array.from(selectedIds);
     if(!ids.length)return;
-    if(typeof window.vaultApi?.hidePhotosFromSyncAlbum!=="function"){
+    if(!desktopVault.canHidePhotosFromSyncAlbum()){
       setMessage("当前版本缺少隐藏命令，请重新构建桌面端后重试。");
       return;
     }
     setMessage("");
     try{
-      const vault=await window.vaultApi.status();
+      const vault=await desktopVault.status();
       if(!vault.configured){setVaultGate("create");return}
       if(!vault.unlocked){setVaultGate("unlock");return}
       await performHide(ids);
@@ -170,7 +170,7 @@ export default function PhotoSyncModule() {
     }
   };
   const submitVaultGate=async()=>{
-    if(!window.vaultApi||!vaultGate)return;
+    if(!desktopVault.available()||!vaultGate)return;
     if(vaultGate==="create"){
       if(!vaultAccepted){setVaultGateError("请先确认密码丢失后无法恢复");return}
       if(vaultPassword!==vaultRepeat){setVaultGateError("两次输入的密码不一致");return}
@@ -183,9 +183,9 @@ export default function PhotoSyncModule() {
     setVaultBusy(true);setVaultGateError("");
     try{
       if(gate==="create"){
-        await window.vaultApi.initialize(password);
+        await desktopVault.initialize(password);
       }else{
-        await window.vaultApi.unlock(password);
+        await desktopVault.unlock(password);
       }
       await performHide(Array.from(selectedIds));
     }catch(error){
@@ -225,7 +225,7 @@ export default function PhotoSyncModule() {
               {selectedIds.has(photo.id)&&<i className="photo-select-mark">✓</i>}
               <span className="photo-thumb">
                 {photo.processing_status==="completed"
-                  ?<img src={`${mediaBase}/${photo.id}/thumbnail`} alt="" loading="lazy" decoding="async"/>
+                  ?<img src={photoMediaUrl(photo.id,"thumbnail")} alt="" loading="lazy" decoding="async"/>
                   :<span className={`photo-placeholder ${photo.processing_status}`}><StateIcon status={photo.processing_status}/><small>{statusLabel[photo.processing_status]||photo.processing_status}</small></span>}
                 {photo.media_type==="video"&&<i><Film/>视频</i>}
               </span>
@@ -270,8 +270,8 @@ export default function PhotoSyncModule() {
       <article><header><div><strong>{selected.original_file_name}</strong><small>{formatDateTime(selected.captured_at)} · {selected.device_name||"iPhone"} · {formatBytes(selected.file_size)}</small></div><button ref={closeRef} aria-label="关闭预览" onClick={()=>setSelected(null)}><X/></button></header>
         <div className="photo-preview-media">{selected.processing_status==="completed"
           ?selected.media_type==="video"
-            ?<video controls preload="metadata" poster={`${mediaBase}/${selected.id}/thumbnail`} src={`${mediaBase}/${selected.id}/original`}/>
-            :<img src={`${mediaBase}/${selected.id}/original`} alt={selected.original_file_name}/>
+            ?<video controls preload="metadata" poster={photoMediaUrl(selected.id,"thumbnail")} src={photoMediaUrl(selected.id,"original")}/>
+            :<img src={photoMediaUrl(selected.id,"original")} alt={selected.original_file_name}/>
           :<div className="photo-preview-error"><StateIcon status={selected.processing_status}/><h3>{statusLabel[selected.processing_status]||selected.processing_status}</h3><p>{selected.processing_error||"原文件已保存，缩略图仍在处理中。"}</p></div>}</div>
         <footer><span>{selected.width&&selected.height?`${selected.width} × ${selected.height}`:"尺寸待提取"}{selected.duration_ms?` · ${Math.round(selected.duration_ms/1000)} 秒`:""}</span><span>同步于 {formatDateTime(selected.imported_at)}</span></footer>
       </article>

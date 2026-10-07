@@ -1,3 +1,8 @@
+//! Browser/dev compatibility adapter for local analytics.
+//!
+//! Tauri Desktop uses the analytics_query command. HTTP routes stay available
+//! for browser tooling and delegate to the same application service.
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -5,9 +10,9 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
-use crate::database::{profile, repositories::analytics as analytics_repo};
+use crate::{application, database::repositories::analytics as analytics_repo};
 
 use super::AppState;
 
@@ -15,42 +20,33 @@ fn failure(status: StatusCode, message: impl Into<String>) -> Response {
     (status, Json(json!({ "error": message.into() }))).into_response()
 }
 
-fn storage_error(message: impl Into<String>) -> Response {
-    failure(StatusCode::INTERNAL_SERVER_ERROR, message)
-}
-
-fn user_id(connection: &rusqlite::Connection) -> Result<String, String> {
-    profile::active_profile_id(connection)
+fn finish(result: Result<Value, String>) -> Response {
+    match result {
+        Ok(value) => Json(value).into_response(),
+        Err(message) => failure(StatusCode::BAD_REQUEST, message),
+    }
 }
 
 pub async fn status(State(state): State<AppState>) -> Response {
-    let connection = match state.database.lock() {
+    let mut connection = match state.database.lock() {
         Ok(value) => value,
-        Err(_) => return storage_error("SQLite 锁已损坏"),
+        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
     };
-    let user_id = match user_id(&connection) {
-        Ok(value) => value,
-        Err(message) => return storage_error(message),
-    };
-    match analytics_repo::projection_status(&connection, &user_id) {
-        Ok(value) => Json(value).into_response(),
-        Err(message) => storage_error(message),
-    }
+    finish(application::analytics::query(
+        &mut connection,
+        &json!({ "action": "status" }),
+    ))
 }
 
 pub async fn rebuild(State(state): State<AppState>) -> Response {
     let mut connection = match state.database.lock() {
         Ok(value) => value,
-        Err(_) => return storage_error("SQLite 锁已损坏"),
+        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
     };
-    let user_id = match user_id(&connection) {
-        Ok(value) => value,
-        Err(message) => return storage_error(message),
-    };
-    match analytics_repo::rebuild(&mut connection, &user_id) {
-        Ok(value) => Json(value).into_response(),
-        Err(message) => storage_error(message),
-    }
+    finish(application::analytics::query(
+        &mut connection,
+        &json!({ "action": "rebuild" }),
+    ))
 }
 
 pub async fn timeline(
@@ -59,19 +55,16 @@ pub async fn timeline(
 ) -> Response {
     let mut connection = match state.database.lock() {
         Ok(value) => value,
-        Err(_) => return storage_error("SQLite 锁已损坏"),
+        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
     };
-    let user_id = match user_id(&connection) {
+    let query = match serde_json::to_value(query) {
         Ok(value) => value,
-        Err(message) => return storage_error(message),
+        Err(error) => return failure(StatusCode::BAD_REQUEST, error.to_string()),
     };
-    if let Err(message) = analytics_repo::ensure_current(&mut connection, &user_id) {
-        return storage_error(message);
-    }
-    match analytics_repo::timeline(&connection, &user_id, &query) {
-        Ok(value) => Json(value).into_response(),
-        Err(message) => failure(StatusCode::BAD_REQUEST, message),
-    }
+    finish(application::analytics::query(
+        &mut connection,
+        &json!({ "action": "timeline", "query": query }),
+    ))
 }
 
 pub async fn search(
@@ -80,22 +73,19 @@ pub async fn search(
 ) -> Response {
     let mut connection = match state.database.lock() {
         Ok(value) => value,
-        Err(_) => return storage_error("SQLite 锁已损坏"),
+        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
     };
-    let user_id = match user_id(&connection) {
+    let query = match serde_json::to_value(query) {
         Ok(value) => value,
-        Err(message) => return storage_error(message),
+        Err(error) => return failure(StatusCode::BAD_REQUEST, error.to_string()),
     };
-    if let Err(message) = analytics_repo::ensure_current(&mut connection, &user_id) {
-        return storage_error(message);
-    }
-    match analytics_repo::search(&connection, &user_id, &query) {
-        Ok(value) => Json(value).into_response(),
-        Err(message) => failure(StatusCode::BAD_REQUEST, message),
-    }
+    finish(application::analytics::query(
+        &mut connection,
+        &json!({ "action": "search", "query": query }),
+    ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportQuery {
     report_type: String,
@@ -105,29 +95,21 @@ pub struct ReportQuery {
 }
 
 pub async fn report(State(state): State<AppState>, Query(query): Query<ReportQuery>) -> Response {
-    let connection = match state.database.lock() {
+    let mut connection = match state.database.lock() {
         Ok(value) => value,
-        Err(_) => return storage_error("SQLite 锁已损坏"),
+        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
     };
-    let user_id = match user_id(&connection) {
+    let query = match serde_json::to_value(query) {
         Ok(value) => value,
-        Err(message) => return storage_error(message),
+        Err(error) => return failure(StatusCode::BAD_REQUEST, error.to_string()),
     };
-    let timezone = query.timezone.as_deref().unwrap_or("UTC");
-    match analytics_repo::generate_report(
-        &connection,
-        &user_id,
-        &query.report_type,
-        &query.period_start,
-        &query.period_end,
-        timezone,
-    ) {
-        Ok(value) => Json(value).into_response(),
-        Err(message) => failure(StatusCode::BAD_REQUEST, message),
-    }
+    finish(application::analytics::query(
+        &mut connection,
+        &json!({ "action": "report", "query": query }),
+    ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InsightQuery {
     period_start: String,
@@ -138,23 +120,18 @@ pub async fn insights(
     State(state): State<AppState>,
     Query(query): Query<InsightQuery>,
 ) -> Response {
-    let connection = match state.database.lock() {
+    let mut connection = match state.database.lock() {
         Ok(value) => value,
-        Err(_) => return storage_error("SQLite 锁已损坏"),
+        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
     };
-    let user_id = match user_id(&connection) {
+    let query = match serde_json::to_value(query) {
         Ok(value) => value,
-        Err(message) => return storage_error(message),
+        Err(error) => return failure(StatusCode::BAD_REQUEST, error.to_string()),
     };
-    match analytics_repo::generate_insights(
-        &connection,
-        &user_id,
-        &query.period_start,
-        &query.period_end,
-    ) {
-        Ok(value) => Json(value).into_response(),
-        Err(message) => failure(StatusCode::BAD_REQUEST, message),
-    }
+    finish(application::analytics::query(
+        &mut connection,
+        &json!({ "action": "insights", "query": query }),
+    ))
 }
 
 #[cfg(test)]

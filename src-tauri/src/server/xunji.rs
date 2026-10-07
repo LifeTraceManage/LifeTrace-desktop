@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use axum::{
     extract::{Multipart, State},
     http::StatusCode,
@@ -464,6 +466,85 @@ fn read_entities(connection: &Connection, table: &str) -> Result<Vec<Value>, Str
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ParseImageError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ParseImageError {
+    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ParseImageError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+pub(crate) async fn parse_image_bytes(
+    data_dir: PathBuf,
+    image: Vec<u8>,
+) -> Result<Value, ParseImageError> {
+    let share_url = match tokio::task::spawn_blocking(move || decode_qr(&image)).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(message)) => {
+            return Err(ParseImageError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                message,
+            ))
+        }
+        Err(_) => {
+            return Err(ParseImageError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "训练图片解析任务意外中止，请重新上传",
+            ))
+        }
+    };
+    let (final_url, html) = fetch_page(share_url)
+        .await
+        .map_err(|message| ParseImageError::new(StatusCode::BAD_GATEWAY, message))?;
+    let Some((workout, raw_data, parser)) = parse_page(&html) else {
+        return Err(ParseImageError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "二维码已识别，但分享页面中没有可导入的结构化训练数据",
+        ));
+    };
+    let now = stamp();
+    let record = json!({
+        "id": identifier(),
+        "userId": "local-user",
+        "source": "xunji",
+        "shareUrl": final_url.as_str(),
+        "rawData": raw_data,
+        "workout": workout,
+        "status": "pending",
+        "createdAt": now,
+        "updatedAt": now
+    });
+    let connection = crate::database::connection::open(&data_dir.join("lifetrace.db"))
+        .map_err(|error| {
+            ParseImageError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("无法打开本机数据库: {error}"),
+            )
+        })?;
+    put_entity(&connection, "workout_import_records", &record).map_err(|message| {
+        ParseImageError::new(StatusCode::INTERNAL_SERVER_ERROR, message)
+    })?;
+    Ok(json!({
+        "importId": record["id"],
+        "shareUrl": final_url.as_str(),
+        "parser": parser,
+        "workout": workout
+    }))
+}
+
 pub async fn parse(State(state): State<AppState>, mut multipart: Multipart) -> Response {
     let mut image = None;
     while let Ok(Some(field)) = multipart.next_field().await {
@@ -475,52 +556,10 @@ pub async fn parse(State(state): State<AppState>, mut multipart: Multipart) -> R
     let Some(image) = image else {
         return failure(StatusCode::BAD_REQUEST, "请选择训练分享图片");
     };
-    let share_url = match tokio::task::spawn_blocking(move || decode_qr(&image)).await {
-        Ok(Ok(value)) => value,
-        Ok(Err(message)) => return failure(StatusCode::UNPROCESSABLE_ENTITY, message),
-        Err(_) => {
-            return failure(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "训练图片解析任务意外中止，请重新上传",
-            )
-        }
-    };
-    let (final_url, html) = match fetch_page(share_url).await {
-        Ok(value) => value,
-        Err(message) => return failure(StatusCode::BAD_GATEWAY, message),
-    };
-    let Some((workout, raw_data, parser)) = parse_page(&html) else {
-        return failure(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "二维码已识别，但分享页面中没有可导入的结构化训练数据",
-        );
-    };
-    let stamp = stamp();
-    let record = json!({
-        "id": identifier(),
-        "userId": "local-user",
-        "source": "xunji",
-        "shareUrl": final_url.as_str(),
-        "rawData": raw_data,
-        "workout": workout,
-        "status": "pending",
-        "createdAt": stamp,
-        "updatedAt": stamp
-    });
-    let connection = match state.database.lock() {
-        Ok(value) => value,
-        Err(_) => return failure(StatusCode::INTERNAL_SERVER_ERROR, "SQLite 锁已损坏"),
-    };
-    if let Err(message) = put_entity(&connection, "workout_import_records", &record) {
-        return failure(StatusCode::INTERNAL_SERVER_ERROR, message);
+    match parse_image_bytes(state.data_dir.clone(), image.to_vec()).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => failure(error.status, error.message),
     }
-    Json(json!({
-        "importId": record["id"],
-        "shareUrl": final_url.as_str(),
-        "parser": parser,
-        "workout": workout
-    }))
-    .into_response()
 }
 
 pub async fn list(State(state): State<AppState>) -> Response {

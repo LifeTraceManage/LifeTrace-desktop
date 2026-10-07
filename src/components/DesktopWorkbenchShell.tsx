@@ -11,13 +11,13 @@ import {
   Dumbbell,
   Eye,
   EyeOff,
-  GraduationCap,
   HardDrive,
   HeartPulse,
   Home,
   Images,
   LoaderCircle,
   LogOut,
+  Mail,
   MapPinned,
   NotebookPen,
   RefreshCw,
@@ -64,9 +64,9 @@ const NAV_GROUPS: DesktopNavGroup[] = [
     label: "知识与资产",
     items: [
       { path: "/app/notes", label: "笔记", icon: NotebookPen },
-      { path: "/app/english", label: "英语学习", icon: GraduationCap },
       { path: "/app/photos", label: "相册", icon: Images },
       { path: "/app/footprints", label: "足迹", icon: MapPinned },
+      { path: "/app/mail", label: "邮件", icon: Mail },
       { path: "/app/finance", label: "财务", icon: WalletCards },
     ],
   },
@@ -87,12 +87,14 @@ const PAGE_COPY: Record<string, [string, string]> = {
   "/app/health": ["健康", "查看健康相关记录与趋势。"],
   "/app/review": ["复盘", "回顾阶段表现、完成情况与变化趋势。"],
   "/app/notes": ["笔记", "记录与整理个人知识。"],
-  "/app/english": ["英语学习", "管理英语学习内容与练习记录。"],
   "/app/photos": ["相册", "管理同步相册与本机私密相册。"],
   "/app/footprints": ["足迹", "用地图、时间与照片整理去过的地方。"],
-  "/app/finance": ["财务", "使用 BeeCount Cloud Web 管理账单与资产。"],
-  "/app/finance/transactions": ["账单", "查看财务交易记录。"],
-  "/app/search": ["全局搜索", "跨模块检索 LifeTrace 云端内容。"],
+  "/app/mail": ["邮件", "在桌面端原生处理邮箱、回复、附件与行动转换。"],
+  "/app/finance": ["财务", "管理本机账单、账户与资产数据。"],
+  "/app/finance/transactions": ["账单", "查看和编辑本机账单记录。"],
+  "/app/finance/accounts": ["账户", "管理本机财务账户。"],
+  "/app/finance/import": ["账单导入", "从文件导入账单到本机数据库。"],
+  "/app/search": ["全局搜索", "使用本机 SQLite 索引跨模块检索 LifeTrace 数据。"],
   "/app/settings": ["设置", "管理账户、外观、设备与偏好。"],
 };
 
@@ -126,7 +128,12 @@ type DesktopWorkbenchShellProps = {
   loading: boolean;
   privacy: boolean;
   error: string;
+  syncLabel?: string;
   onNavigate: (route: string) => void;
+  onBack: () => void;
+  onForward: () => void;
+  canBack: boolean;
+  canForward: boolean;
   onRefresh: () => void;
   onTogglePrivacy: () => void;
   onLogout: () => void;
@@ -159,7 +166,12 @@ export default function DesktopWorkbenchShell({
   loading,
   privacy,
   error,
+  syncLabel,
   onNavigate,
+  onBack,
+  onForward,
+  canBack,
+  canForward,
   onRefresh,
   onTogglePrivacy,
   onLogout,
@@ -286,15 +298,15 @@ export default function DesktopWorkbenchShell({
         <section className="lt-desk-stage">
           <header className="lt-desktop-commandbar">
             <div className="lt-desk-history-actions">
-              <button type="button" title="后退" onClick={() => window.history.back()}><ChevronLeft /></button>
-              <button type="button" title="前进" onClick={() => window.history.forward()}><ChevronRight /></button>
+              <button type="button" title="后退" disabled={!canBack} onClick={onBack}><ChevronLeft /></button>
+              <button type="button" title="前进" disabled={!canForward} onClick={onForward}><ChevronRight /></button>
             </div>
             <div className="lt-desk-page-heading"><strong>{title}</strong><span>{description}</span></div>
             <div className="lt-desk-command-actions">
               <button type="button" title="命令面板（Ctrl+K）" onClick={() => setCommandOpen(true)}><Search /></button>
               <button type="button" className={`lt-desk-sync${!online ? " offline" : ""}`} title={online ? "立即同步" : "当前离线"} disabled={!online || loading} onClick={onRefresh}>
                 {!online ? <WifiOff /> : loading ? <LoaderCircle className="spin" /> : <RefreshCw />}
-                <span>{online ? (loading ? "同步中" : "已连接") : "离线"}</span>
+                <span>{online ? (loading ? "同步中" : syncLabel || "已连接") : "离线"}</span>
               </button>
               <button type="button" title={privacy ? "关闭隐私模式" : "开启隐私模式"} onClick={onTogglePrivacy}>{privacy ? <EyeOff /> : <Eye />}</button>
             </div>

@@ -71,7 +71,7 @@ test("cloud auth module does not persist access or refresh tokens in web storage
   const source = await readFile("src/services/cloudAuth.ts", "utf8");
   assert.equal(source.includes('localStorage.setItem("access'), false);
   assert.equal(source.includes('localStorage.setItem("refresh'), false);
-  assert.match(source, /cloudCredentialApi/);
+  assert.match(source, /desktopCredentials/);
 });
 
 test("cloud auth persists only the non-sensitive cloud origin needed for restart restore", async () => {

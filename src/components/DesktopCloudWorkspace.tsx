@@ -1,312 +1,186 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AppRuntimeProvider,
-  type AppContextValue,
-  type ThemeMode,
-} from "../../vendor/web/src/app/AppContext";
-import { DesktopFeatureRouter } from "../../vendor/web/src/app/DesktopFeatureRouter";
-import { AgentSidebarProvider } from "../../vendor/web/src/features/assistant/AgentSidebarContext";
-import {
-  CloudDataStore,
-  EMPTY_CLOUD_STATE,
-  createPreference,
-  setCloudFetchOverride,
-  type CloudState,
-  type EntityType,
-  type JsonEntity,
-  type WebSession,
-} from "../../vendor/web/src/services/core";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DesktopLocalToolsCenter from "@/src/components/DesktopLocalToolsCenter";
-import DesktopFitnessImport from "@/src/components/DesktopFitnessImport";
+import DesktopNativeRouteContent from "@/src/components/DesktopNativeRouteContent";
 import DesktopWorkbenchShell from "@/src/components/DesktopWorkbenchShell";
-import PhotoSyncModule from "@/src/components/PhotoSyncModule";
-import Footprints from "@/src/components/feature/footprints/Footprints";
-import { cloudAuthClient, CLIENT_VERSION } from "@/src/services/cloudAuth";
-import { setAppThemePreference } from "@/src/services/appPreferences";
+import { useDesktopNavigation } from "@/src/hooks/useDesktopNavigation";
 import { useCloudAuthStore } from "@/src/stores/useCloudAuthStore";
+import { useLifeStore } from "@/src/stores/useLifeStore";
+import { desktopSync } from "@/src/desktop/syncAdapter";
+import type { SyncStatusView } from "@/src/services/cloudSync";
 
-type NativeCloudApiResponse = {
-  status: number;
-  body: string;
-  contentType?: string | null;
-};
-
-function requestHeaders(request: Request | undefined, init: RequestInit): Headers {
-  const merged = new Headers(request?.headers);
-  new Headers(init.headers).forEach((value, key) => merged.set(key, value));
-  return merged;
+function hardSyncError(status: SyncStatusView | null): string {
+  if (!status) return "";
+  if (status.phase !== "error" && status.phase !== "auth_required") return "";
+  return status.lastErrorMessage || status.lastErrorCode || "云端同步需要处理";
 }
 
-function desktopApiPath(path: string): string {
-  if (path === "/api/v1/photo-challenge/admin") return "/api/v1/photo-challenge/desktop-admin";
-  if (path === "/api/v1/web/assistant") return "/api/v1/assistant";
-  if (path === "/api/v1/web/devices" || path.startsWith("/api/v1/web/devices/")) {
-    return path.replace("/api/v1/web/devices", "/api/v1/auth/devices");
+function syncStatusLabel(status: SyncStatusView | null): string {
+  if (!status) return "已连接";
+  switch (status.phase) {
+    case "up_to_date": return status.pendingCount ? `待同步 ${status.pendingCount}` : "已同步";
+    case "pushing": return "正在上传";
+    case "pulling": return "正在下载";
+    case "initializing_snapshot": return "初始化同步";
+    case "backoff": return "自动重试中";
+    case "offline": return "云端暂离线";
+    case "conflict": return status.conflictCount ? `${status.conflictCount} 个冲突` : "有冲突";
+    case "auth_required": return "需重新登录";
+    case "error": return "同步异常";
+    case "local_only": return "仅本机";
+    default: return "已连接";
   }
-  if (path === "/api/v1/web/sessions" || path.startsWith("/api/v1/web/sessions/")) {
-    return path.replace("/api/v1/web/sessions", "/api/v1/auth/sessions");
-  }
-  return path;
-}
-
-async function desktopCloudFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const request = input instanceof Request ? input : undefined;
-  const rawUrl = request?.url ?? (input instanceof URL ? input.toString() : String(input));
-  const url = new URL(rawUrl, window.location.href);
-  if (!url.pathname.startsWith("/api/v1/")) {
-    throw new Error(`桌面云工作台拒绝非 LifeTrace API 请求：${url.pathname}`);
-  }
-
-  const method = (init.method ?? request?.method ?? "GET").toUpperCase();
-  let body = init.body;
-  if (body === undefined && request && method !== "GET" && method !== "HEAD") body = await request.clone().text();
-  if (body != null && typeof body !== "string") {
-    if (body instanceof URLSearchParams) body = body.toString();
-    else throw new Error("桌面云工作台当前只支持 JSON/文本请求体");
-  }
-
-  const headers = requestHeaders(request, init);
-  if (body != null) {
-    const contentType = headers.get("content-type")?.toLowerCase() ?? "application/json";
-    if (!contentType.includes("application/json")) throw new Error("桌面云工作台当前只允许 JSON API 请求体");
-  }
-
-  const invokeApi = async (): Promise<Response> => {
-    const result = await invoke<NativeCloudApiResponse>("cloud_api_http_request", {
-      request: {
-        path: desktopApiPath(url.pathname),
-        query: url.search ? url.search.slice(1) : null,
-        method,
-        body: typeof body === "string" ? body : null,
-      },
-    });
-    const responseBody = [204, 205, 304].includes(result.status) ? null : result.body;
-    return new Response(responseBody, {
-      status: result.status,
-      headers: result.contentType ? { "content-type": result.contentType } : { "content-type": "application/json" },
-    });
-  };
-
-  let response = await invokeApi();
-  if (response.status === 401) {
-    await cloudAuthClient.refresh();
-    response = await invokeApi();
-  }
-  return response;
-}
-
-setCloudFetchOverride(desktopCloudFetch);
-
-function syncLocalReplica(): void {
-  const api = window.syncApi;
-  if (!api) return;
-  void api.now(false).catch(() => undefined);
-}
-
-function resolveTheme(mode: ThemeMode): "light" | "dark" {
-  if (mode === "system") return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  return mode;
 }
 
 export default function DesktopCloudWorkspace() {
   const user = useCloudAuthStore((value) => value.user);
-  const desktopSession = useCloudAuthStore((value) => value.session);
-  const scopes = useCloudAuthStore((value) => value.scopes);
+  const authenticated = useCloudAuthStore((value) => value.authenticated);
+  const phase = useCloudAuthStore((value) => value.phase);
+  const authError = useCloudAuthStore((value) => value.error);
   const logoutNative = useCloudAuthStore((value) => value.logout);
-  const [state, setState] = useState<CloudState>(EMPTY_CLOUD_STATE);
-  const [cloudLoaded, setCloudLoaded] = useState(false);
+  const ready = useLifeStore((value) => value.ready);
+  const storageError = useLifeStore((value) => value.storageError);
+  const initialize = useLifeStore((value) => value.initialize);
+  const navigation = useDesktopNavigation();
+  const cloudReady = authenticated && phase === "authenticated";
+
   const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusView | null>(null);
+  const [manualSyncError, setManualSyncError] = useState("");
   const [privacy, setPrivacy] = useState(false);
-  const [theme, setThemeState] = useState<ThemeMode>("system");
   const [localToolsOpen, setLocalToolsOpen] = useState(false);
-  const storeRef = useRef<CloudDataStore | null>(null);
 
-  const session = useMemo<WebSession | null>(() => {
-    if (!user || !desktopSession) return null;
-    return {
-      user: { id: user.id, email: user.email, displayName: user.displayName },
-      session: {
-        id: desktopSession.id,
-        appId: desktopSession.appId,
-        deviceId: desktopSession.deviceId,
-        scopes: [...scopes],
-        idleExpiresAt: desktopSession.absoluteExpiresAt,
-        absoluteExpiresAt: desktopSession.absoluteExpiresAt,
-        publicDevice: false,
-      },
-      csrfToken: "",
-    };
-  }, [desktopSession, scopes, user]);
+  const reloadLocal = useCallback(async () => {
+    await initialize();
+  }, [initialize]);
 
-  useEffect(() => {
-    const wentOnline = () => setNetworkOnline(true);
-    const wentOffline = () => setNetworkOnline(false);
-    window.addEventListener("online", wentOnline);
-    window.addEventListener("offline", wentOffline);
-    return () => {
-      window.removeEventListener("online", wentOnline);
-      window.removeEventListener("offline", wentOffline);
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    if (!session) {
-      storeRef.current = null;
-      setState(EMPTY_CLOUD_STATE);
-      setCloudLoaded(false);
-      return () => { active = false; };
+  const refreshSyncStatus = useCallback(async () => {
+    if (!desktopSync.available() || !cloudReady) {
+      setSyncStatus(null);
+      return null;
     }
-
-    const store = new CloudDataStore(session.user.id, session.session.deviceId, "", desktopCloudFetch, {
-      appId: session.session.appId,
-      clientVersion: CLIENT_VERSION,
-      platform: "windows",
-    });
-    storeRef.current = store;
-    setLoading(true);
-    setCloudLoaded(false);
-    setError("");
-    void store.load()
-      .then((next) => {
-        if (!active) return;
-        setState(next);
-        setCloudLoaded(true);
-      })
-      .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : "无法加载云端数据");
-      })
-      .finally(() => { if (active) setLoading(false); });
-
-    return () => { active = false; };
-  }, [session?.session.deviceId, session?.user.id]);
-
-  useEffect(() => {
-    if (!session || !cloudLoaded) return;
-    const preference = Object.values(state.entities["user.preference"] ?? {})
-      .find((item) => item.preferenceKey === "appearance.theme");
-    const mode = preference?.value;
-    const next: ThemeMode = mode === "dark" || mode === "light" || mode === "system" ? mode : "system";
-    setThemeState(next);
-    setAppThemePreference(resolveTheme(next));
-  }, [cloudLoaded, session?.user.id, state]);
+    try {
+      const status = await desktopSync.status();
+      setSyncStatus(status);
+      if (!hardSyncError(status)) setManualSyncError("");
+      return status;
+    } catch {
+      return null;
+    }
+  }, [cloudReady]);
 
   const refresh = useCallback(async () => {
-    const store = storeRef.current;
-    if (!store || !navigator.onLine) return;
-    setLoading(true);
-    setError("");
-    try {
-      setState(await store.refresh());
-      syncLocalReplica();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "刷新失败");
-    } finally {
-      setLoading(false);
+    if (!desktopSync.available()) {
+      setManualSyncError("桌面同步服务尚未就绪");
+      return;
     }
-  }, []);
-
-  const run = useCallback(async (action: (store: CloudDataStore) => Promise<CloudState>) => {
-    const store = storeRef.current;
-    if (!store) throw new Error("云端数据服务尚未就绪");
-    if (!navigator.onLine) throw new Error("当前无网络，数据未保存");
-    setLoading(true);
-    setError("");
-    try {
-      const next = await action(store);
-      setState(next);
-      syncLocalReplica();
-      return next;
-    } catch (cause) {
-      setState(store.snapshot());
-      setError(cause instanceof Error ? cause.message : "云端操作失败");
-      throw cause;
-    } finally {
-      setLoading(false);
+    if (!navigator.onLine || !cloudReady) {
+      setNetworkOnline(navigator.onLine);
+      setManualSyncError(
+        navigator.onLine
+          ? "云端会话暂不可用；本地数据仍可使用，恢复后会自动同步。"
+          : "",
+      );
+      return;
     }
-  }, []);
+    setSyncing(true);
+    setManualSyncError("");
+    try {
+      await desktopSync.now(false);
+      await reloadLocal();
+      await refreshSyncStatus();
+    } catch (cause) {
+      const status = await refreshSyncStatus();
+      const hardError = hardSyncError(status);
+      if (hardError) {
+        setManualSyncError(hardError);
+      } else if (!status) {
+        setManualSyncError(cause instanceof Error ? cause.message : "云端同步失败");
+      }
+      // Offline/backoff are retryable scheduler states, not permanent UI errors.
+    } finally {
+      setSyncing(false);
+    }
+  }, [cloudReady, reloadLocal, refreshSyncStatus]);
 
-  const upsert = useCallback((entityType: EntityType, entity: JsonEntity) => run((store) => store.upsert(entityType, entity)), [run]);
-  const remove = useCallback((entityType: EntityType, entityId: string) => run((store) => store.delete(entityType, entityId)), [run]);
+  useEffect(() => {
+    void reloadLocal();
+  }, [reloadLocal]);
 
-  const setTheme = useCallback(async (mode: ThemeMode) => {
-    setThemeState(mode);
-    setAppThemePreference(resolveTheme(mode));
-    if (!session || !networkOnline) return;
-    const existing = Object.values(state.entities["user.preference"] ?? {})
-      .find((item) => item.preferenceKey === "appearance.theme");
-    const preference = existing
-      ? { ...existing, value: mode }
-      : createPreference(session.user.id, session.session.deviceId, "appearance.theme", mode);
-    try { await upsert("user.preference", preference); }
-    catch { /* Native appearance still applies if cloud persistence is unavailable. */ }
-  }, [networkOnline, session, state.entities, upsert]);
+  useEffect(() => {
+    const online = () => {
+      setNetworkOnline(true);
+      void refresh();
+    };
+    const offline = () => {
+      setNetworkOnline(false);
+      setManualSyncError("");
+    };
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    };
+  }, [refresh]);
 
-  const logout = useCallback(async () => {
-    await logoutNative();
-  }, [logoutNative]);
+  useEffect(() => {
+    if (!ready || !cloudReady) {
+      setSyncStatus(null);
+      return;
+    }
+    void refreshSyncStatus();
+    const timer = window.setInterval(() => {
+      void refreshSyncStatus();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [cloudReady, ready, refreshSyncStatus]);
 
-  const login = useCallback(async () => {
-    throw new Error("桌面端登录由原生账户入口管理");
-  }, []);
+  const statusError = hardSyncError(syncStatus);
+  const visibleError = storageError || authError || statusError || manualSyncError || "";
+  const statusLabel = useMemo(() => syncStatusLabel(syncStatus), [syncStatus]);
 
-  const appContext = useMemo<AppContextValue>(() => ({
-    session,
-    state,
-    authLoading: false,
-    loading,
-    online: networkOnline,
-    error,
-    privacy,
-    theme,
-    login,
-    logout,
-    refresh,
-    run,
-    upsert,
-    remove,
-    setPrivacy,
-    setTheme,
-    clearError: () => setError(""),
-  }), [error, loading, login, logout, networkOnline, privacy, refresh, remove, run, session, setTheme, state, theme, upsert]);
+  if (!user) {
+    return <div className="hx-loading"><span>LT</span><p>正在恢复桌面账号状态…</p></div>;
+  }
 
-  if (!session) {
-    return <div className="hx-loading"><span>LT</span><p>正在恢复桌面云会话…</p></div>;
+  if (!ready) {
+    return <div className="hx-loading"><span>LT</span><p>正在打开本机 SQLite 数据…</p></div>;
   }
 
   return (
-    <AppRuntimeProvider value={appContext}>
-      <AgentSidebarProvider>
-        <DesktopFeatureRouter
-          render={({ path, navigate, content }) => (
-            <DesktopWorkbenchShell
-              route={path}
-              titleOverride={localToolsOpen ? "本机工具" : undefined}
-              descriptionOverride={localToolsOpen ? "SQLite 与其他仅桌面端提供的本机能力。" : undefined}
-              userLabel={session.user.displayName || session.user.email}
-              online={networkOnline}
-              loading={loading}
-              privacy={privacy}
-              error={error}
-              onNavigate={(next) => { setLocalToolsOpen(false); navigate(next); }}
-              onRefresh={() => void refresh()}
-              onTogglePrivacy={() => setPrivacy((value) => !value)}
-              onLogout={() => void logout()}
-              onOpenLocalTools={() => setLocalToolsOpen(true)}
-            >
-              {localToolsOpen
-                ? <DesktopLocalToolsCenter onClose={() => setLocalToolsOpen(false)} />
-                : path === "/app/photos" ? <PhotoSyncModule />
-                  : path === "/app/footprints" ? <Footprints />
-                  : path === "/app/fitness" ? <><DesktopFitnessImport />{content}</>
-                    : content}
-            </DesktopWorkbenchShell>
-          )}
-        />
-      </AgentSidebarProvider>
-    </AppRuntimeProvider>
+    <DesktopWorkbenchShell
+      route={navigation.route}
+      titleOverride={localToolsOpen ? "本机工具" : undefined}
+      descriptionOverride={localToolsOpen ? "SQLite、文件、日志与其他桌面专属能力。" : undefined}
+      userLabel={user.displayName || user.email}
+      online={networkOnline && cloudReady}
+      loading={syncing}
+      syncLabel={statusLabel}
+      privacy={privacy}
+      error={visibleError}
+      onNavigate={(next) => {
+        setLocalToolsOpen(false);
+        navigation.navigate(next);
+      }}
+      onBack={() => {
+        setLocalToolsOpen(false);
+        navigation.back();
+      }}
+      onForward={() => {
+        setLocalToolsOpen(false);
+        navigation.forward();
+      }}
+      canBack={navigation.canBack}
+      canForward={navigation.canForward}
+      onRefresh={() => void refresh()}
+      onTogglePrivacy={() => setPrivacy((value) => !value)}
+      onLogout={() => void logoutNative()}
+      onOpenLocalTools={() => setLocalToolsOpen(true)}
+    >
+      {localToolsOpen
+        ? <DesktopLocalToolsCenter onClose={() => setLocalToolsOpen(false)} />
+        : <DesktopNativeRouteContent route={navigation.route} navigate={navigation.navigate} />}
+    </DesktopWorkbenchShell>
   );
 }

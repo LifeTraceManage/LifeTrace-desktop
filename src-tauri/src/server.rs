@@ -1,5 +1,4 @@
 mod analytics;
-mod assistant;
 mod execution;
 mod execution_calendar;
 mod execution_cloud;
@@ -14,7 +13,7 @@ pub(crate) mod migration;
 mod notes;
 pub(crate) mod photo;
 mod state;
-mod xunji;
+pub(crate) mod xunji;
 
 use std::{
     net::SocketAddr,
@@ -79,86 +78,9 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-pub async fn serve(
-    data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
-    sync_state: crate::sync::SyncDesktopState,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    tokio::fs::create_dir_all(&data_dir).await?;
-    let database_path = data_dir.join("lifetrace.db");
-    // 启动顺序：打开数据库 → 设置 PRAGMA → 版本化 Migration → 初始化模块 → 启动服务。
-    let mut connection = database::connection::open(&database_path)?;
-    let migration_context = database::migration_runner::MigrationContext::new(data_dir.clone());
-    let summary = {
-        let migrations = database::migrations::all();
-        database::migration_runner::run(&mut connection, &migration_context, &migrations).map_err(
-            |error| {
-                Box::<dyn std::error::Error + Send + Sync>::from(format!("数据库迁移失败: {error}"))
-            },
-        )
-    }?;
-    if !summary.applied.is_empty() {
-        for applied in &summary.applied {
-            eprintln!(
-                "LifeTrace applied migration v{} ({})：迁移 {} 条，warning {} 条，error {} 条，metrics {:?}",
-                applied.version,
-                applied.name,
-                applied.report.migrated,
-                applied.report.warnings,
-                applied.report.errors,
-                applied.report.metrics
-            );
-        }
-    }
-    state::ensure_schema(&connection)?;
-    assistant::ensure_schema(&connection)?;
-    imports::ensure_schema(&connection)?;
-    crate::database::repositories::notes::seed_default_folders(&connection)?;
-    photo::ensure_schema(&connection)?;
-    match crate::database::legacy::d1_import::import_once(&mut connection, &data_dir) {
-        Ok(count) if count > 0 => eprintln!("LifeTrace migrated {count} legacy records"),
-        Ok(_) => {}
-        Err(error) => eprintln!("LifeTrace legacy migration skipped: {error}"),
-    }
-    let state = AppState {
-        data_dir,
-        database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
-    };
-    let exif_state = state.clone();
-    tokio::spawn(async move {
-        photo::run_exif_background_indexer(exif_state).await;
-    });
-    let lan_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_lan(lan_state).await {
-            eprintln!("LifeTrace photo sync service stopped: {error}");
-        }
-    });
-    let compatibility_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_compatibility(compatibility_state).await {
-            eprintln!("LifeTrace photo compatibility service stopped: {error}");
-        }
-    });
-    let media_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_media(media_state).await {
-            eprintln!("LifeTrace photo media service stopped: {error}");
-        }
-    });
-    let app = Router::new()
-        .route("/api/health", get(health))
-        .route("/api/state", get(state::get).post(state::mutate))
-        .route("/api/analytics/status", get(analytics::status))
-        .route(
-            "/api/analytics/rebuild",
-            axum::routing::post(analytics::rebuild),
-        )
-        .route("/api/analytics/timeline", get(analytics::timeline))
-        .route("/api/analytics/search", get(analytics::search))
-        .route("/api/analytics/report", get(analytics::report))
-        .route("/api/analytics/insights", get(analytics::insights))
+
+fn execution_routes() -> Router<AppState> {
+    Router::new()
         .route(
             "/api/execution/projects",
             get(execution::list_projects).post(execution::create_project),
@@ -387,28 +309,10 @@ pub async fn serve(
             "/api/execution/entity-links/{id}",
             axum::routing::delete(execution_relation::delete_link),
         )
-        .route("/api/assistant/catalog", get(assistant::catalog))
-        .route("/api/assistant/chat", axum::routing::post(assistant::chat))
-        .route(
-            "/api/assistant/conversations",
-            get(assistant::conversations_get)
-                .post(assistant::conversations_save)
-                .delete(assistant::conversations_remove),
-        )
-        .route(
-            "/api/settings/ai",
-            get(assistant::settings_get)
-                .post(assistant::settings_save)
-                .delete(assistant::settings_remove),
-        )
-        .route(
-            "/api/imports",
-            get(imports::get)
-                .post(imports::create)
-                .patch(imports::update)
-                .delete(imports::remove),
-        )
-        .route("/api/notes", get(notes::get).post(notes::mutate))
+}
+
+fn local_json_routes() -> Router<AppState> {
+    Router::new()
         .route("/api/footprints/summary", get(footprints::summary))
         .route(
             "/api/footprints/locations",
@@ -439,12 +343,131 @@ pub async fn serve(
             "/api/footprints/photo-suggestions",
             get(footprints::photo_suggestions),
         )
-        .route("/api/xunji/parse", axum::routing::post(xunji::parse))
-        .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
         .route(
             "/api/photo-sync/dashboard",
             get(photo::dashboard_get).post(photo::dashboard_post),
         )
+        .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
+}
+
+pub(crate) fn local_json_ipc_router(
+    data_dir: PathBuf,
+    photo_runtime: Arc<photo::Runtime>,
+) -> Result<Router, String> {
+    let connection = database::connection::open(&data_dir.join("lifetrace.db"))
+        .map_err(|error| format!("无法打开本机 JSON 数据库: {error}"))?;
+    let state = AppState {
+        data_dir,
+        database: Arc::new(Mutex::new(connection)),
+        photo_runtime,
+    };
+    Ok(local_json_routes().with_state(state))
+}
+
+pub(crate) fn execution_ipc_router(
+    data_dir: PathBuf,
+    photo_runtime: Arc<photo::Runtime>,
+) -> Result<Router, String> {
+    let connection = database::connection::open(&data_dir.join("lifetrace.db"))
+        .map_err(|error| format!("无法打开本机执行数据库: {error}"))?;
+    let state = AppState {
+        data_dir,
+        database: Arc::new(Mutex::new(connection)),
+        photo_runtime,
+    };
+    Ok(execution_routes().with_state(state))
+}
+
+pub async fn serve(
+    data_dir: PathBuf,
+    photo_runtime: Arc<photo::Runtime>,
+    sync_state: crate::sync::SyncDesktopState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    tokio::fs::create_dir_all(&data_dir).await?;
+    let database_path = data_dir.join("lifetrace.db");
+    // 启动顺序：打开数据库 → 设置 PRAGMA → 版本化 Migration → 初始化模块 → 启动服务。
+    let mut connection = database::connection::open(&database_path)?;
+    let migration_context = database::migration_runner::MigrationContext::new(data_dir.clone());
+    let summary = {
+        let migrations = database::migrations::all();
+        database::migration_runner::run(&mut connection, &migration_context, &migrations).map_err(
+            |error| {
+                Box::<dyn std::error::Error + Send + Sync>::from(format!("数据库迁移失败: {error}"))
+            },
+        )
+    }?;
+    if !summary.applied.is_empty() {
+        for applied in &summary.applied {
+            eprintln!(
+                "LifeTrace applied migration v{} ({})：迁移 {} 条，warning {} 条，error {} 条，metrics {:?}",
+                applied.version,
+                applied.name,
+                applied.report.migrated,
+                applied.report.warnings,
+                applied.report.errors,
+                applied.report.metrics
+            );
+        }
+    }
+    state::ensure_schema(&connection)?;
+    imports::ensure_schema(&connection)?;
+    crate::database::repositories::notes::seed_default_folders(&connection)?;
+    photo::ensure_schema(&connection)?;
+    match crate::database::legacy::d1_import::import_once(&mut connection, &data_dir) {
+        Ok(count) if count > 0 => eprintln!("LifeTrace migrated {count} legacy records"),
+        Ok(_) => {}
+        Err(error) => eprintln!("LifeTrace legacy migration skipped: {error}"),
+    }
+    let state = AppState {
+        data_dir,
+        database: Arc::new(Mutex::new(connection)),
+        photo_runtime,
+    };
+    let exif_state = state.clone();
+    tokio::spawn(async move {
+        photo::run_exif_background_indexer(exif_state).await;
+    });
+    let lan_state = state.clone();
+    tokio::spawn(async move {
+        if let Err(error) = photo::serve_lan(lan_state).await {
+            eprintln!("LifeTrace photo sync service stopped: {error}");
+        }
+    });
+    let compatibility_state = state.clone();
+    tokio::spawn(async move {
+        if let Err(error) = photo::serve_compatibility(compatibility_state).await {
+            eprintln!("LifeTrace photo compatibility service stopped: {error}");
+        }
+    });
+    let media_state = state.clone();
+    tokio::spawn(async move {
+        if let Err(error) = photo::serve_media(media_state).await {
+            eprintln!("LifeTrace photo media service stopped: {error}");
+        }
+    });
+    let app = Router::new()
+        .route("/api/health", get(health))
+        .route("/api/state", get(state::get).post(state::mutate))
+        .route("/api/analytics/status", get(analytics::status))
+        .route(
+            "/api/analytics/rebuild",
+            axum::routing::post(analytics::rebuild),
+        )
+        .route("/api/analytics/timeline", get(analytics::timeline))
+        .route("/api/analytics/search", get(analytics::search))
+        .route("/api/analytics/report", get(analytics::report))
+        .route("/api/analytics/insights", get(analytics::insights))
+        .merge(execution_routes())
+        .route(
+            "/api/imports",
+            get(imports::get)
+                .post(imports::create)
+                .patch(imports::update)
+                .delete(imports::remove),
+        )
+        .route("/api/notes", get(notes::get).post(notes::mutate))
+        .merge(local_json_routes())
+        .route("/api/xunji/parse", axum::routing::post(xunji::parse))
         .layer(middleware::from_fn_with_state(
             sync_state,
             signal_local_sync,

@@ -18,28 +18,29 @@ test("desktop workbench provides native command and persistent layout behaviors"
 });
 
 test("desktop photos return to the primary navigation without duplicating the local tools page", () => {
-  const workspace = readFileSync("src/components/DesktopCloudWorkspace.tsx", "utf8");
+  const routes = readFileSync("src/components/DesktopNativeRouteContent.tsx", "utf8");
   const localTools = readFileSync("src/components/DesktopLocalToolsCenter.tsx", "utf8");
 
-  assert.match(workspace, /path === "\/app\/photos" \? <PhotoSyncModule \/>/);
+  assert.match(routes, /route === "\/app\/photos"/);
+  assert.match(routes, /<PhotoSyncModule \/>/);
   assert.doesNotMatch(localTools, /PhotoSyncModule|id: "photos"/);
 });
 
 test("manual bookkeeping stays absent while finance remains available and fitness import lives in fitness", () => {
   const shell = readFileSync("src/components/DesktopWorkbenchShell.tsx", "utf8");
-  const router = readFileSync("vendor/web/src/app/DesktopFeatureRouter.tsx", "utf8");
-  const workspace = readFileSync("src/components/DesktopCloudWorkspace.tsx", "utf8");
+  const routes = readFileSync("src/components/DesktopNativeRouteContent.tsx", "utf8");
   const localTools = readFileSync("src/components/DesktopLocalToolsCenter.tsx", "utf8");
-  const fitnessImport = readFileSync("src/components/DesktopFitnessImport.tsx", "utf8");
+  const fitness = readFileSync("src/components/feature/fitness/Fitness.tsx", "utf8");
 
   assert.doesNotMatch(shell, /手动记账/);
   assert.match(shell, /path: "\/app\/finance", label: "财务"/);
-  assert.match(router, /path="\/app\/finance\/\*"/);
+  assert.match(routes, /\/app\/finance\/transactions/);
+  assert.match(routes, /\/app\/finance\/accounts/);
+  assert.match(routes, /\/app\/finance\/import/);
   assert.doesNotMatch(localTools, /训练和账单|健身数据/);
   assert.match(localTools, /label: "账单导入"/);
-  assert.match(workspace, /path === "\/app\/fitness"/);
-  assert.doesNotMatch(fitnessImport, /MobileUploadControl|手机上传/);
-  assert.match(fitnessImport, /XunjiImportPanel/);
+  assert.match(routes, /route === "\/app\/fitness"/);
+  assert.match(fitness, /XunjiImportPanel/);
 });
 
 test("desktop restores and tracks native window placement without losing the visibility fallback", () => {

@@ -66,7 +66,6 @@ function AccountDialog({ initialMode, close }: { initialMode: AuthDialogMode; cl
     setPassword("");
     setConfirmPassword("");
     close();
-    window.setTimeout(() => window.location.reload(), 50);
   };
 
   const submitLogin = async (event: React.FormEvent) => {
@@ -185,7 +184,6 @@ export function AccountEntry({ autoOpen = false }: { autoOpen?: boolean }) {
     });
     if (!accepted) return;
     await auth.logout(false);
-    window.location.reload();
   };
 
   const hasIdentity = Boolean(auth.user && (auth.authenticated || auth.phase === "offline"));
@@ -222,7 +220,7 @@ export function AccountEntryHost() {
     void auth.initialize().then(() => {
       const current = useCloudAuthStore.getState();
       if (hadCachedUser && current.phase === "anonymous") {
-        window.location.reload();
+        setTarget(null);
       }
     });
     const locate = () => {

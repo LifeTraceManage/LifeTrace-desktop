@@ -44,7 +44,6 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      - run: npm run prepare:web-shared
       - run: npm run lint
       - run: npm run test:unit
       - run: npm run web:build

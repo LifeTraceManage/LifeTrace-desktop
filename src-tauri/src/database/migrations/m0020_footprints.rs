@@ -6,15 +6,15 @@ use crate::database::migration_runner::{
 
 /// Adds the local-first Footprints domain.
 ///
-/// Footprints deliberately references the existing photo catalog by id instead
-/// of owning photo files or EXIF metadata. The photo table is initialized by
-/// the photo service after migrations on a fresh install, so photo_id remains a
-/// logical reference while entry/location ownership is enforced by SQLite FKs.
-pub struct M0018Footprints;
+/// Versions 18 and 19 were previously used by the removed Travel feature and
+/// must never be reused. This migration is intentionally idempotent so
+/// databases that briefly applied the old v18 Footprints migration can also
+/// advance safely to the canonical v20 record.
+pub struct M0020Footprints;
 
-impl Migration for M0018Footprints {
+impl Migration for M0020Footprints {
     fn version(&self) -> i64 {
-        18
+        20
     }
 
     fn name(&self) -> &'static str {
@@ -22,7 +22,7 @@ impl Migration for M0018Footprints {
     }
 
     fn checksum(&self) -> &'static str {
-        "m0018-footprints-v1"
+        "m0020-footprints-v1"
     }
 
     fn up(
@@ -32,7 +32,7 @@ impl Migration for M0018Footprints {
     ) -> Result<MigrationReport, MigrationError> {
         transaction.execute_batch(
             r#"
-            CREATE TABLE footprint_locations (
+            CREATE TABLE IF NOT EXISTS footprint_locations (
               id TEXT PRIMARY KEY,
               user_id TEXT NOT NULL REFERENCES local_profiles(id) ON DELETE CASCADE,
               country_code TEXT NOT NULL DEFAULT 'CN',
@@ -50,7 +50,7 @@ impl Migration for M0018Footprints {
               created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
               updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
             );
-            CREATE UNIQUE INDEX idx_footprint_locations_natural
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_footprint_locations_natural
               ON footprint_locations(
                 user_id,
                 country_code,
@@ -60,10 +60,10 @@ impl Migration for M0018Footprints {
                 IFNULL(district_code,''),
                 IFNULL(place_name,'')
               );
-            CREATE INDEX idx_footprint_locations_region
+            CREATE INDEX IF NOT EXISTS idx_footprint_locations_region
               ON footprint_locations(user_id,province_code,city_code,city_name);
 
-            CREATE TABLE footprint_entries (
+            CREATE TABLE IF NOT EXISTS footprint_entries (
               id TEXT PRIMARY KEY,
               user_id TEXT NOT NULL REFERENCES local_profiles(id) ON DELETE CASCADE,
               location_id TEXT NOT NULL REFERENCES footprint_locations(id) ON DELETE RESTRICT,
@@ -79,14 +79,14 @@ impl Migration for M0018Footprints {
               deleted_at TEXT,
               CHECK(ended_at IS NULL OR ended_at >= started_at)
             );
-            CREATE INDEX idx_footprint_entries_user_started
+            CREATE INDEX IF NOT EXISTS idx_footprint_entries_user_started
               ON footprint_entries(user_id,started_at DESC)
               WHERE deleted_at IS NULL;
-            CREATE INDEX idx_footprint_entries_location
+            CREATE INDEX IF NOT EXISTS idx_footprint_entries_location
               ON footprint_entries(location_id,started_at DESC)
               WHERE deleted_at IS NULL;
 
-            CREATE TABLE footprint_entry_photos (
+            CREATE TABLE IF NOT EXISTS footprint_entry_photos (
               entry_id TEXT NOT NULL REFERENCES footprint_entries(id) ON DELETE CASCADE,
               photo_id TEXT NOT NULL,
               sort_order INTEGER NOT NULL DEFAULT 0,
@@ -94,12 +94,12 @@ impl Migration for M0018Footprints {
               created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
               PRIMARY KEY(entry_id,photo_id)
             );
-            CREATE INDEX idx_footprint_entry_photos_entry
+            CREATE INDEX IF NOT EXISTS idx_footprint_entry_photos_entry
               ON footprint_entry_photos(entry_id,sort_order,photo_id);
-            CREATE INDEX idx_footprint_entry_photos_photo
+            CREATE INDEX IF NOT EXISTS idx_footprint_entry_photos_photo
               ON footprint_entry_photos(photo_id,entry_id);
 
-            CREATE TABLE footprint_entry_links (
+            CREATE TABLE IF NOT EXISTS footprint_entry_links (
               id TEXT PRIMARY KEY,
               entry_id TEXT NOT NULL REFERENCES footprint_entries(id) ON DELETE CASCADE,
               entity_type TEXT NOT NULL,
@@ -108,12 +108,12 @@ impl Migration for M0018Footprints {
               created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
               UNIQUE(entry_id,entity_type,entity_id,relation_type)
             );
-            CREATE INDEX idx_footprint_entry_links_entry
+            CREATE INDEX IF NOT EXISTS idx_footprint_entry_links_entry
               ON footprint_entry_links(entry_id,entity_type);
             "#,
         )
         .map_err(|error| MigrationError {
-            version: 18,
+            version: 20,
             message: error.to_string(),
         })?;
 
@@ -127,12 +127,12 @@ impl Migration for M0018Footprints {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::migration_runner::{bootstrap, run};
     use rusqlite::Connection;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn creates_footprint_schema_and_constraints() {
-        let mut connection = Connection::open_in_memory().unwrap();
+    fn prepare_profile(connection: &Connection) {
         connection
             .execute_batch(
                 "PRAGMA foreign_keys=ON;
@@ -146,9 +146,15 @@ mod tests {
                  INSERT INTO local_profiles VALUES('profile-1','Test','local_only','now','now');",
             )
             .unwrap();
+    }
+
+    #[test]
+    fn creates_footprint_schema_and_constraints() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_profile(&connection);
 
         let tx = connection.transaction().unwrap();
-        let report = M0018Footprints
+        let report = M0020Footprints
             .up(&tx, &MigrationContext::new(PathBuf::from(".")))
             .unwrap();
         assert_eq!(report.migrated, 4);
@@ -194,5 +200,78 @@ mod tests {
             [],
         );
         assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn runner_accepts_legacy_travel_migration_versions() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let data_dir = std::env::temp_dir().join(format!("lifetrace-footprints-v20-{unique}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let mut connection = Connection::open(data_dir.join("test.db")).unwrap();
+        prepare_profile(&connection);
+        bootstrap(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO schema_migrations(version,name,checksum,applied_at,app_version)
+                 VALUES(18,'travel-mvp','m0018-travel-mvp-v1','now','0.3.3')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO schema_migrations(version,name,checksum,applied_at,app_version)
+                 VALUES(19,'travel-sync-outbox','m0019-travel-sync-outbox-v1','now','0.3.3')",
+                [],
+            )
+            .unwrap();
+
+        let migrations: Vec<Box<dyn Migration>> = vec![Box::new(M0020Footprints)];
+        let summary = run(
+            &mut connection,
+            &MigrationContext::new(data_dir.clone()),
+            &migrations,
+        )
+        .unwrap();
+
+        assert_eq!(summary.applied.len(), 1);
+        assert_eq!(summary.applied[0].version, 20);
+        let checksum: String = connection
+            .query_row(
+                "SELECT checksum FROM schema_migrations WHERE version=20",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(checksum, "m0020-footprints-v1");
+
+        std::fs::remove_dir_all(data_dir).ok();
+    }
+
+    #[test]
+    fn migration_is_idempotent_for_old_v18_footprints_schema() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_profile(&connection);
+
+        for _ in 0..2 {
+            let tx = connection.transaction().unwrap();
+            M0020Footprints
+                .up(&tx, &MigrationContext::new(PathBuf::from(".")))
+                .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type='table' AND name LIKE 'footprint_%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 4);
     }
 }

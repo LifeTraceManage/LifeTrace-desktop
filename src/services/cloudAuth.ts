@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { SessionBindingResult } from "@/src/services/cloudSync";
 import { clientLogger } from "@/src/services/clientObservability";
 import { rawCloudAuthErrorMessage } from "@/src/services/cloudAuthError";
+import { desktopSync } from "@/src/desktop/syncAdapter";
+import { desktopCredentials } from "@/src/desktop/credentialAdapter";
 
 export type CloudAuthUser = {
   id: string;
@@ -48,12 +50,6 @@ export type CloudAuthSnapshot = {
   scopes: string[];
   authenticated: boolean;
   binding?: SessionBindingResult;
-};
-
-type CredentialApi = {
-  set(refreshToken: string): Promise<void>;
-  get(): Promise<string | null>;
-  clear(): Promise<void>;
 };
 
 type NativeCloudAuthResponse = {
@@ -103,18 +99,9 @@ export const CLIENT_VERSION = "0.3.3";
 const DEVICE_KEY = "lifetrace-cloud-device-id";
 const CLOUD_ORIGIN_KEY = "lifetrace-cloud-origin";
 
-function credentialApi(): CredentialApi {
-  const api = window.cloudCredentialApi;
-  if (!api) {
-    return {
-      set: async () => { throw new Error("Windows 安全凭据存储不可用"); },
-      get: async () => null,
-      clear: async () => undefined,
-    };
-  }
-  return api;
+function credentialApi() {
+  return desktopCredentials;
 }
-
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -451,26 +438,25 @@ export class CloudAuthClient {
   }
 
   private async selectUserProfile(tokens: CloudTokenResponse): Promise<SessionBindingResult | undefined> {
-    const api = window.syncApi;
-    if (!api) return undefined;
-    const profiles = await api.profiles();
+    if (!desktopSync.available()) return undefined;
+    const profiles = await desktopSync.profiles();
     const existing = profiles.find((profile) => profile.cloudUserId === tokens.user.id);
     if (existing) {
-      await api.setActiveProfile(existing.id);
-      let binding = await api.setSession(this.origin, tokens.accessToken, deviceId());
+      await desktopSync.setActiveProfile(existing.id);
+      let binding = await desktopSync.setSession(this.origin, tokens.accessToken, deviceId());
       if (existing.cloudBindingState !== "bound") {
-        await api.bindCurrentProfile();
-        binding = await api.setSession(this.origin, tokens.accessToken, deviceId());
+        await desktopSync.bindCurrentProfile();
+        binding = await desktopSync.setSession(this.origin, tokens.accessToken, deviceId());
       }
       if (binding.cloudUserId !== tokens.user.id || binding.bindingRequired) throw new Error("无法切换到当前账号的数据空间");
       clientLogger.info("cloud.auth.profile_selected", { userId: tokens.user.id, profileId: existing.id });
       return binding;
     }
     const localProfile = profiles.find((profile) => !profile.cloudUserId);
-    if (localProfile) await api.setActiveProfile(localProfile.id);
-    await api.setSession(this.origin, tokens.accessToken, deviceId());
-    const profileId = await api.createCloudProfile(tokens.user.displayName || tokens.user.email || "LifeTrace 用户");
-    const binding = await api.setSession(this.origin, tokens.accessToken, deviceId());
+    if (localProfile) await desktopSync.setActiveProfile(localProfile.id);
+    await desktopSync.setSession(this.origin, tokens.accessToken, deviceId());
+    const profileId = await desktopSync.createCloudProfile(tokens.user.displayName || tokens.user.email || "LifeTrace 用户");
+    const binding = await desktopSync.setSession(this.origin, tokens.accessToken, deviceId());
     if (binding.profileId !== profileId || binding.cloudUserId !== tokens.user.id || binding.bindingRequired) throw new Error("无法创建当前账号的数据空间");
     clientLogger.info("cloud.auth.profile_created", { userId: tokens.user.id, profileId });
     return binding;
@@ -576,12 +562,12 @@ export class CloudAuthClient {
     this.accessToken = undefined;
     this.snapshot = { scopes: [], authenticated: false };
     await credentialApi().clear();
-    if (window.syncApi) {
-      await window.syncApi.clearSession().catch((error) => clientLogger.warn("cloud.auth.sync_session_clear_failed", undefined, error));
+    if (desktopSync.available()) {
+      await desktopSync.clearSession().catch((error) => clientLogger.warn("cloud.auth.sync_session_clear_failed", undefined, error));
       try {
-        const profiles = await window.syncApi.profiles();
+        const profiles = await desktopSync.profiles();
         const localProfile = profiles.find((profile) => !profile.cloudUserId);
-        if (localProfile) await window.syncApi.setActiveProfile(localProfile.id);
+        if (localProfile) await desktopSync.setActiveProfile(localProfile.id);
       } catch (error) { clientLogger.warn("cloud.auth.local_profile_restore_failed", undefined, error); }
     }
   }

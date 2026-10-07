@@ -40,7 +40,6 @@ import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
 import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
 import Footprints from "@/src/components/feature/footprints/Footprints";
-import AIAssistantModule from "@/src/components/AIAssistantModule";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import AppUpdaterHost from "@/src/components/AppUpdaterHost";
 import type { ToastPayload } from "@/src/ui/feedback/toastBus";
@@ -314,11 +313,7 @@ export default function HengXuShell() {
           />
         ) : null}
         {view === "execution" ? <ExecutionModule /> : null}
-        {view === "assistant" ? (
-          <AIAssistantModule openSettings={() => setView("settings")} />
-        ) : null}
         {view === "mail" ? <MailActionCenter /> : null}
-        {view === "footprints" ? <Footprints /> : null}
         {view === "habits" ? (
           <Habits
             edit={(value) => setModal({ kind: "activity", value })}
@@ -348,6 +343,7 @@ export default function HengXuShell() {
           />
         ) : null}
         {view === "photos" ? <PhotoSyncModule /> : null}
+        {view === "footprints" ? <Footprints /> : null}
         {view === "notes" ? <NotesModule /> : null}
         {view === "finance" ? <Finance /> : null}
         {view === "transactions" ? (

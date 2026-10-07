@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderCog, HardDrive, LoaderCircle, RotateCcw } from "lucide-react";
+import { desktopStorage } from "@/src/desktop/storageAdapter";
 
 function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
@@ -32,12 +33,12 @@ export default function StorageLocationPanel() {
   const [status, setStatus] = useState<StorageMigrationStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const desktopAvailable = Boolean(window.storageApi);
+  const desktopAvailable = desktopStorage.available();
 
   const refresh = useCallback(async () => {
-    if (!window.storageApi) return;
+    if (!desktopStorage.available()) return;
     try {
-      setStatus(await window.storageApi.status());
+      setStatus(await desktopStorage.status());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
@@ -48,17 +49,17 @@ export default function StorageLocationPanel() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!window.storageApi || !status || !["copying", "finalizing"].includes(status.phase)) return;
+    if (!desktopStorage.available() || !status || !["copying", "finalizing"].includes(status.phase)) return;
     const timer = window.setInterval(() => void refresh(), 600);
     return () => window.clearInterval(timer);
   }, [refresh, status?.phase]);
 
   const chooseLocation = async () => {
-    if (!window.storageApi) return;
+    if (!desktopStorage.available()) return;
     setBusy(true);
     setMessage(null);
     try {
-      const result = await window.storageApi.chooseAndMigrate();
+      const result = await desktopStorage.chooseAndMigrate();
       if (result.canceled) return;
       if (result.error) {
         setMessage(result.error);
@@ -72,11 +73,11 @@ export default function StorageLocationPanel() {
   };
 
   const restart = async () => {
-    if (!window.storageApi) return;
+    if (!desktopStorage.available()) return;
     setBusy(true);
     setMessage(null);
     try {
-      await window.storageApi.restart();
+      await desktopStorage.restart();
     } catch (error) {
       setBusy(false);
       setMessage(error instanceof Error ? error.message : String(error));

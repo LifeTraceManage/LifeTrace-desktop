@@ -5,6 +5,7 @@ import { Cloud, LockKeyhole } from "lucide-react";
 import PhotoSyncDashboard from "@/src/components/PhotoSyncDashboard";
 import LocalVaultModule from "@/src/components/LocalVaultModule";
 import { lockVaultBeforeLeave } from "@/src/lib/vaultAutoLock";
+import { desktopVault } from "@/src/desktop/vaultAdapter";
 
 export default function PhotoSyncModule() {
   const [mode, setMode] = useState<"sync" | "vault">("sync");
@@ -16,7 +17,7 @@ export default function PhotoSyncModule() {
 
   useEffect(() => () => {
     if (modeRef.current !== "vault" || typeof window === "undefined") return;
-    void lockVaultBeforeLeave(window.vaultApi).catch(() => undefined);
+    void lockVaultBeforeLeave(desktopVault.available() ? desktopVault : undefined).catch(() => undefined);
   }, []);
 
   const switchMode = async (nextMode: "sync" | "vault") => {
@@ -24,7 +25,7 @@ export default function PhotoSyncModule() {
 
     if (mode === "vault" && nextMode === "sync") {
       try {
-        await lockVaultBeforeLeave(typeof window === "undefined" ? undefined : window.vaultApi);
+        await lockVaultBeforeLeave(desktopVault.available() ? desktopVault : undefined);
       } catch (cause) {
         console.error("Failed to lock the private vault before leaving its tab", cause);
         window.alert("私密相册锁定失败，请重试后再离开此页签。");
