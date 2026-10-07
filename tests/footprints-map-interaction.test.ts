@@ -74,11 +74,16 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
   const drawer = read("src/components/feature/footprints/ProvinceDrawer.tsx");
 
   assert.doesNotMatch(map, /countryDrillScale/);
-  assert.doesNotMatch(map, /onDoubleClick/);
+  assert.match(map, /onDoubleClick/);
+  assert.match(map, /onEnterProvince/);
   assert.doesNotMatch(map, /setLevel\(/);
   assert.match(map, /level: FootprintMapLevel/);
   assert.match(footprints, /const \[mapLevel, setMapLevel\]/);
   assert.match(footprints, /selected=\{Boolean\(selectedProvince\)\}/);
+  assert.match(footprints, /selectedProvinceCodeRef/);
+  assert.match(footprints, /setSelectedProvince\(null\)/);
+  assert.match(footprints, /setProvinceDetail\(null\)/);
+  assert.match(footprints, /setMapLevel\("country"\)/);
   assert.match(drawer, /selected: boolean/);
   assert.match(drawer, /查看省内地图/);
   assert.match(drawer, /先选择省份/);

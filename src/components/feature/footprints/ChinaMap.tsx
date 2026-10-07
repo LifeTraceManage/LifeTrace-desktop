@@ -49,6 +49,7 @@ type ChinaMapProps = {
   selectedCityCode?: string | null;
   selectedCityName?: string | null;
   onSelectProvince: (code: string, name: string) => void;
+  onEnterProvince?: (code: string, name: string) => void;
   onSelectCity?: (code: string, name: string) => void;
   onBackToCountry?: () => void;
 };
@@ -169,6 +170,7 @@ export default function ChinaMap({
   selectedCityCode,
   selectedCityName,
   onSelectProvince,
+  onEnterProvince,
   onSelectCity,
   onBackToCountry,
 }: ChinaMapProps) {
@@ -269,6 +271,12 @@ export default function ChinaMap({
   useEffect(() => {
     setHovered(null);
     resetTransform();
+    dragRef.current = null;
+    suppressClickRef.current = false;
+    if (suppressTimerRef.current) {
+      clearTimeout(suppressTimerRef.current);
+      suppressTimerRef.current = null;
+    }
   }, [level, selectedProvinceCode]);
 
   useEffect(() => () => {
@@ -454,8 +462,14 @@ export default function ChinaMap({
                   onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (event.detail > 1) return;
                     if (!allowRegionClick()) return;
                     onSelectProvince(item.code, item.name);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    if (!allowRegionClick()) return;
+                    onEnterProvince?.(item.code, item.name);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -540,8 +554,14 @@ export default function ChinaMap({
                       onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                       onClick={(event) => {
                         event.stopPropagation();
+                        if (event.detail > 1) return;
                         if (!allowRegionClick()) return;
                         onSelectProvince(item.code, item.name);
+                      }}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        if (!allowRegionClick()) return;
+                        onEnterProvince?.(item.code, item.name);
                       }}
                     />
                   );
@@ -605,7 +625,7 @@ export default function ChinaMap({
         <span><i className="visited" />已去过</span>
         <small>
           {level === "country"
-            ? "省级名称常驻显示 · 滚轮 / +/- 仅缩放 · 点击省份查看详情"
+            ? "省级名称常驻显示 · 单击省份查看详情 · 双击进入省内地图"
             : "市 / 地区名称常驻显示 · 滚轮 / +/- 仅缩放 · 点击城市筛选足迹"}
         </small>
       </footer>
