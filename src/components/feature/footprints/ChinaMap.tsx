@@ -18,9 +18,11 @@ import { footprintVisitIntensity } from "./footprintViewModel";
 import {
   clampPan,
   clientPointToViewBox,
+  isDoubleRegionActivation,
   isDragGesture,
   zoomAtPoint,
   type MapPoint,
+  type RegionActivation,
 } from "./mapInteraction";
 
 type Position = [number, number];
@@ -178,6 +180,7 @@ export default function ChinaMap({
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState<MapPoint>({ x: 0, y: 0 });
   const dragRef = useRef<DragState | null>(null);
+  const provinceActivationRef = useRef<RegionActivation | null>(null);
   const suppressClickRef = useRef(false);
   const suppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -272,12 +275,13 @@ export default function ChinaMap({
     setHovered(null);
     resetTransform();
     dragRef.current = null;
+    provinceActivationRef.current = null;
     suppressClickRef.current = false;
     if (suppressTimerRef.current) {
       clearTimeout(suppressTimerRef.current);
       suppressTimerRef.current = null;
     }
-  }, [level, selectedProvinceCode]);
+  }, [level]);
 
   useEffect(() => () => {
     if (suppressTimerRef.current) {
@@ -367,6 +371,34 @@ export default function ChinaMap({
     suppressClickRef.current = false;
     return false;
   };
+
+  const activateProvince = (
+    code: string,
+    name: string,
+    clientX: number,
+    clientY: number,
+    timeStamp: number,
+  ) => {
+    const current: RegionActivation = {
+      code,
+      at: timeStamp,
+      point: { x: clientX, y: clientY },
+    };
+    const doubleActivation = isDoubleRegionActivation(
+      provinceActivationRef.current,
+      current,
+    );
+
+    if (doubleActivation) {
+      provinceActivationRef.current = null;
+      onEnterProvince?.(code, name);
+      return;
+    }
+
+    provinceActivationRef.current = current;
+    onSelectProvince(code, name);
+  };
+
 
   const transformX = (1 - scale) * width / 2 + pan.x;
   const transformY = (1 - scale) * height / 2 + pan.y;
@@ -462,14 +494,14 @@ export default function ChinaMap({
                   onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (event.detail > 1) return;
                     if (!allowRegionClick()) return;
-                    onSelectProvince(item.code, item.name);
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    if (!allowRegionClick()) return;
-                    onEnterProvince?.(item.code, item.name);
+                    activateProvince(
+                      item.code,
+                      item.name,
+                      event.clientX,
+                      event.clientY,
+                      event.timeStamp,
+                    );
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -554,14 +586,14 @@ export default function ChinaMap({
                       onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (event.detail > 1) return;
                         if (!allowRegionClick()) return;
-                        onSelectProvince(item.code, item.name);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        if (!allowRegionClick()) return;
-                        onEnterProvince?.(item.code, item.name);
+                        activateProvince(
+                          item.code,
+                          item.name,
+                          event.clientX,
+                          event.clientY,
+                          event.timeStamp,
+                        );
                       }}
                     />
                   );
