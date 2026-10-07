@@ -336,6 +336,84 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
     Ok(total)
 }
 
+/// Return a compact Wiki Link graph for the active profile.
+///
+/// The note_links table is derived from note Markdown, so graph reads never
+/// need to reinterpret note.relation or duplicate relation semantics.
+pub fn graph(connection: &Connection, limit: usize) -> Result<Value, String> {
+    if !table_exists(connection, "note_links") {
+        return Ok(json!({"nodes":[],"edges":[]}));
+    }
+    let profile_id = crate::database::profile::active_profile_id(connection)?;
+    let limit = limit.clamp(1, 80) as i64;
+    let mut statement = connection
+        .prepare(
+            "SELECT id,title,summary,is_favorite
+             FROM notes
+             WHERE user_id=?1 AND deleted_at IS NULL AND is_archived=0
+             ORDER BY updated_at DESC,id
+             LIMIT ?2",
+        )
+        .map_err(|error| error.to_string())?;
+    let nodes = statement
+        .query_map(params![profile_id, limit], |row| {
+            let id: String = row.get(0)?;
+            let title: Option<String> = row.get(1)?;
+            let summary: String = row.get(2)?;
+            Ok(json!({
+                "id": id,
+                "title": title.filter(|value| !value.trim().is_empty()).unwrap_or_else(|| {
+                    let trimmed = summary.trim();
+                    if trimmed.is_empty() { "无标题笔记".to_owned() } else { trimmed.chars().take(80).collect() }
+                }),
+                "favorite": row.get::<_, bool>(3)?
+            }))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+
+    let ids = nodes
+        .iter()
+        .filter_map(|node| node.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    if ids.is_empty() {
+        return Ok(json!({"nodes":[],"edges":[]}));
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT l.source_note_id,l.target_note_id
+             FROM note_links l
+             JOIN notes s ON s.id=l.source_note_id
+             JOIN notes t ON t.id=l.target_note_id
+             WHERE s.user_id=?1 AND t.user_id=?1
+               AND s.deleted_at IS NULL AND t.deleted_at IS NULL
+               AND l.target_note_id IS NOT NULL
+             ORDER BY l.source_note_id,l.target_note_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([profile_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    let mut edges = Vec::new();
+    let mut seen = HashSet::<(String, String)>::new();
+    for row in rows {
+        let (source_id, target_id) = row.map_err(|error| error.to_string())?;
+        if ids.contains(&source_id)
+            && ids.contains(&target_id)
+            && seen.insert((source_id.clone(), target_id.clone()))
+        {
+            edges.push(json!({"sourceId":source_id,"targetId":target_id}));
+        }
+    }
+    Ok(json!({"nodes":nodes,"edges":edges}))
+}
+
 /// Attach outgoing wiki links and backlinks to a full note DTO.
 pub fn enrich_note(connection: &Connection, mut note: Value) -> Result<Value, String> {
     let note_id = note
