@@ -282,6 +282,19 @@ pub fn legacy_to_wire(
             "source": text(object.get("source"), "manual"),
             "noteDate": text(object.get("noteDate"), Utc::now().date_naive().to_string().as_str())
         }),
+        "entity.link" => json!({
+            "meta": meta,
+            "source": object.get("source").cloned().unwrap_or_else(|| json!({
+                "entityType": text(object.get("sourceType"), ""),
+                "entityId": text(object.get("sourceId"), "")
+            })),
+            "target": object.get("target").cloned().unwrap_or_else(|| json!({
+                "entityType": text(object.get("targetType"), ""),
+                "entityId": text(object.get("targetId"), "")
+            })),
+            "relationType": text(object.get("relationType"), "related"),
+            "metadata": object.get("metadata").cloned().unwrap_or(Value::Null)
+        }),
         // English and relation entities already use names close to the public
         // contract. Preserve fields while replacing ownership metadata.
         _ => {
@@ -347,6 +360,34 @@ mod tests {
     use super::*;
     use lifetrace_contracts::domain::payload::EntityPayload;
     use lifetrace_contracts::EntityType;
+
+    #[test]
+    fn footprint_sync_payloads_match_registered_travel_and_entity_link_contracts() {
+        let place = json!({
+            "id":"place-1","userId":"profile-1","provinceCode":"510000","provinceName":"四川省",
+            "createdAt":"2026-05-01T00:00:00Z","updatedAt":"2026-05-01T00:00:00Z"
+        });
+        let place_wire = legacy_to_wire(EntityType::TRAVEL_PLACE, &place, "profile-1", None).unwrap();
+        assert!(EntityPayload::try_from((
+            &EntityType::new(EntityType::TRAVEL_PLACE),
+            place_wire.clone().into(),
+        )).is_ok(), "{place_wire}");
+
+        let link = json!({
+            "id":"link-1","userId":"profile-1",
+            "sourceType":EntityType::TRAVEL_VISIT,"sourceId":"visit-1",
+            "targetType":EntityType::NOTE_NOTE,"targetId":"note-1",
+            "relationType":"related",
+            "createdAt":"2026-05-01T00:00:00Z","updatedAt":"2026-05-01T00:00:00Z"
+        });
+        let link_wire = legacy_to_wire(EntityType::ENTITY_LINK, &link, "profile-1", None).unwrap();
+        assert!(EntityPayload::try_from((
+            &EntityType::new(EntityType::ENTITY_LINK),
+            link_wire.clone().into(),
+        )).is_ok(), "{link_wire}");
+        assert_eq!(link_wire["source"]["entityType"], EntityType::TRAVEL_VISIT);
+        assert_eq!(link_wire["target"]["entityType"], EntityType::NOTE_NOTE);
+    }
 
     #[test]
     fn asset_payloads_do_not_receive_entity_meta() {
