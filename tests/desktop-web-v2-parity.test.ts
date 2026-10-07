@@ -28,6 +28,7 @@ test("native desktop route owns all primary non-travel product pages", () => {
     "/app/review",
     "/app/notes",
     "/app/photos",
+    "/app/footprints",
     "/app/finance",
     "/app/assistant",
     "/app/search",
