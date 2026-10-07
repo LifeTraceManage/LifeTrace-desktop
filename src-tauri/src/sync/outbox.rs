@@ -284,3 +284,100 @@ pub fn enqueue_existing_profile(
     Ok(total)
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::migration_runner::{run, MigrationContext};
+    use crate::database::migrations::all;
+    use crate::database::repositories::notes;
+    use rusqlite::Connection;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn db() -> (Connection, String) {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let data_dir = std::env::temp_dir().join(format!("lifetrace-note-sync-{unique}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let mut connection = Connection::open(data_dir.join("test.db")).unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        run(&mut connection, &MigrationContext::new(data_dir), &all()).unwrap();
+        let profile = crate::database::profile::active_profile_id(&connection).unwrap();
+        (connection, profile)
+    }
+
+    #[test]
+    fn profile_bind_enqueues_complete_note_graph_and_folder_hierarchy() {
+        let (connection, profile) = db();
+        let root = notes::save_folder(&connection, &json!({
+            "name":"Knowledge","icon":"folder","color":"#2a7a5e","sortOrder":0
+        })).unwrap();
+        let child = notes::save_folder(&connection, &json!({
+            "name":"Projects","icon":"folder","color":"#2a7a5e","sortOrder":1,"parentFolderId":root
+        })).unwrap();
+        let tag = notes::save_tag(&connection, &json!({
+            "name":"work","color":"#64748b"
+        })).unwrap();
+
+        let note = notes::save_note(&connection, &json!({
+            "title":"Sync Notes",
+            "noteType":"document",
+            "folderId":child,
+            "contentJson":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]},
+            "contentHtml":"<p>hello</p>",
+            "contentText":"hello",
+            "contentMarkdown":"hello",
+            "summary":"hello",
+            "isPinned":false,
+            "isFavorite":false,
+            "isArchived":false,
+            "tagIds":[tag],
+            "relations":[{
+                "id":"relation-1","entityType":"note.note","entityId":"target-note",
+                "relationType":"wiki_link","createdAt":"2026-10-07T00:00:00Z"
+            }]
+        }), false, false).unwrap();
+        let note_id = note["id"].as_str().unwrap().to_owned();
+
+        let mut updated = note.clone();
+        updated["contentText"] = json!("hello again");
+        updated["contentMarkdown"] = json!("hello again");
+        updated["contentHtml"] = json!("<p>hello again</p>");
+        updated["contentJson"] = json!({"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hello again"}]}]});
+        updated["tagIds"] = json!([tag]);
+        updated["relations"] = json!([{
+            "id":"relation-1","noteId":note_id,"entityType":"note.note","entityId":"target-note",
+            "relationType":"wiki_link","createdAt":"2026-10-07T00:00:00Z"
+        }]);
+        notes::save_note(&connection, &updated, true, true).unwrap();
+
+        connection.execute("DELETE FROM sync_outbox", []).unwrap();
+        let total = enqueue_existing_profile(&connection, &profile).unwrap();
+        assert!(total >= 7, "expected note graph entities in backfill, got {total}");
+
+        for entity_type in [
+            "note.folder",
+            "note.note",
+            "note.tag",
+            "note.tag_relation",
+            "note.relation",
+            "note.revision",
+        ] {
+            let count: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM sync_outbox WHERE profile_id=?1 AND entity_type=?2 AND status='pending'",
+                params![profile, entity_type],
+                |row| row.get(0),
+            ).unwrap();
+            assert!(count > 0, "missing {entity_type} from profile-bind outbox");
+        }
+
+        let child_payload: String = connection.query_row(
+            "SELECT payload_json FROM sync_outbox WHERE entity_type='note.folder' AND entity_id=?1",
+            [&child],
+            |row| row.get(0),
+        ).unwrap();
+        let child_wire: Value = serde_json::from_str(&child_payload).unwrap();
+        assert_eq!(child_wire["parentFolderId"], root);
+    }
+}
