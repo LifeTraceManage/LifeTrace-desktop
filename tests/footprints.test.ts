@@ -163,6 +163,27 @@ test("Footprints discovers unlinked GPS photo clusters before creating entries",
   assert.match(editor, /draft\?\.latitude/);
 });
 
+test("Footprints sync through shared travel and entity-link contracts", () => {
+  const migration = read("src-tauri/src/database/migrations/m0019_footprints_sync.rs");
+  const adapter = read("src-tauri/src/sync/footprints.rs");
+  const store = read("src-tauri/src/sync/store.rs");
+  const outbox = read("src-tauri/src/sync/outbox.rs");
+  const payload = read("src-tauri/src/sync/payload.rs");
+  const contracts = read("vendor/shared/crates/lifetrace-contracts/src/domain/payload.rs");
+
+  assert.match(migration, /"travel\.place"/);
+  assert.match(migration, /"travel\.visit"/);
+  assert.match(migration, /"travel\.photo_link"/);
+  assert.match(migration, /"entity\.link"/);
+  assert.match(adapter, /footprint_sync_pending/);
+  assert.match(adapter, /pub fn existing_entities/);
+  assert.match(adapter, /pub fn apply_entity_link/);
+  assert.match(store, /super::footprints::apply_upsert/);
+  assert.match(outbox, /super::footprints::existing_entities/);
+  assert.match(payload, /"entity\.link" => json!/);
+  assert.match(contracts, /EntityType::TRAVEL_VISIT => registered/);
+});
+
 test("Footprints ships an offline China province dataset and Map of Us attribution", () => {
   const map = JSON.parse(read("src/assets/maps/china-provinces.json")) as {
     features: Array<{ properties: { adcode: number | string; name?: string } }>;
