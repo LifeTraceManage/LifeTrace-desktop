@@ -324,7 +324,7 @@ export default function DesktopWorkbenchShell({
             </div>
           </header>
 
-          <main className="lt-desk-content">
+          <main className={`lt-desk-content${routeIsActive(route, "/app/mail") ? " mail-route" : ""}`}>
             {error ? <div className="lt-desk-error" role="alert">{error}</div> : null}
             <div className="lt-desk-route-content">{children}</div>
           </main>
