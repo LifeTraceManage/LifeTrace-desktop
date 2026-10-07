@@ -2,7 +2,6 @@
 /* eslint-disable @next/next/no-img-element -- local authenticated media URLs are not compatible with the image optimizer */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import {
   AlertTriangle, CheckCircle2, Copy, EyeOff, Film, Image as ImageIcon, LockKeyhole,
@@ -65,7 +64,6 @@ export default function PhotoSyncModule() {
   const [vaultBusy,setVaultBusy]=useState(false);
   const [vaultGateError,setVaultGateError]=useState("");
   const closeRef=useRef<HTMLButtonElement>(null);
-  const navigate=useNavigate();
 
   const load=useCallback(async(targetPage=page)=>{
     setLoading(true);
@@ -142,7 +140,8 @@ export default function PhotoSyncModule() {
       endedAt:dates.at(-1),
     });
     setSelectMode(false);setSelectedIds(new Set());
-    navigate("/app/footprints");
+    window.history.pushState(null,"","/app/footprints");
+    window.dispatchEvent(new PopStateEvent("popstate"));
   };
   const toggleSelect=(id:string)=>{
     setSelectedIds(current=>{
