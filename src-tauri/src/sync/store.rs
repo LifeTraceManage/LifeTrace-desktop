@@ -114,11 +114,14 @@ impl SqliteSyncStore {
             "note.tag_relation" => {
                 let (note_id, tag_id) = entity_id.split_once(':').unwrap_or(("", ""));
                 connection.query_row(
-                    "SELECT n.user_id,r.note_id,r.tag_id,n.created_at,n.updated_at FROM note_tag_relations r JOIN notes n ON n.id=r.note_id WHERE r.note_id=?1 AND r.tag_id=?2 AND n.user_id=?3",
-                    params![note_id,tag_id,profile], |row| Ok(json!({
-                        "id":entity_id,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(1)?,"tagId":row.get::<_,String>(2)?,
-                        "createdAt":row.get::<_,String>(3)?,"updatedAt":row.get::<_,String>(4)?
-                    }))
+                    "SELECT n.user_id,r.note_id,r.tag_id,r.created_at FROM note_tag_relations r JOIN notes n ON n.id=r.note_id WHERE r.note_id=?1 AND r.tag_id=?2 AND n.user_id=?3",
+                    params![note_id,tag_id,profile], |row| {
+                        let created_at = row.get::<_,String>(3)?;
+                        Ok(json!({
+                            "id":entity_id,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(1)?,"tagId":row.get::<_,String>(2)?,
+                            "createdAt":created_at,"updatedAt":created_at
+                        }))
+                    }
                 ).optional().map_err(Self::db_error)?
             }
             "note.relation" => connection.query_row(
