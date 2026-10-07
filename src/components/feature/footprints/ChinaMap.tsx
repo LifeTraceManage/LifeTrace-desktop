@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
@@ -64,6 +65,7 @@ type HoveredRegion = {
 };
 
 type DragState = {
+  pointerId: number;
   startClient: MapPoint;
   startPan: MapPoint;
   moved: boolean;
@@ -316,8 +318,8 @@ export default function ChinaMap({
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (scale <= 1 || event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
+      pointerId: event.pointerId,
       startClient: { x: event.clientX, y: event.clientY },
       startPan: pan,
       moved: false,
@@ -326,13 +328,14 @@ export default function ChinaMap({
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
     const clientPoint = { x: event.clientX, y: event.clientY };
     if (!drag.moved) {
       if (!isDragGesture(drag.startClient, clientPoint)) return;
       drag.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
     }
 
     const deltaX = (event.clientX - drag.startClient.x) / Math.max(rect.width, 1) * width;
@@ -345,13 +348,14 @@ export default function ChinaMap({
 
   const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    if (!drag?.moved) return;
+    if (!drag.moved) return;
     suppressClickRef.current = true;
     if (suppressTimerRef.current) {
       clearTimeout(suppressTimerRef.current);
@@ -366,6 +370,21 @@ export default function ChinaMap({
     if (!suppressClickRef.current) return true;
     suppressClickRef.current = false;
     return false;
+  };
+
+  const doubleClickProvince = (event: ReactMouseEvent<SVGSVGElement>) => {
+    if (level !== "country") return;
+    const target = event.target as Element | null;
+    const region = target?.closest?.("[data-admin-level='province']");
+    if (!region) return;
+
+    const code = region.getAttribute("data-admin-code");
+    const name = region.getAttribute("data-admin-name");
+    if (!code || !name) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onEnterProvince?.(code, name);
   };
 
   const transformX = (1 - scale) * width / 2 + pan.x;
@@ -422,6 +441,7 @@ export default function ChinaMap({
           role="img"
           aria-label={level === "country" ? "中国省级足迹地图" : `${provinceName}市级足迹地图`}
           onWheel={wheel}
+          onDoubleClickCapture={doubleClickProvince}
           onPointerDown={pointerDown}
           onPointerMove={pointerMove}
           onPointerUp={pointerEnd}
@@ -439,6 +459,8 @@ export default function ChinaMap({
                   key={item.code}
                   d={item.d}
                   data-admin-code={item.code}
+                  data-admin-name={item.name}
+                  data-admin-level="province"
                   className={[
                     "footprint-map-region",
                     "footprint-map-province",
@@ -462,16 +484,9 @@ export default function ChinaMap({
                   onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (event.detail >= 2) {
-                      onEnterProvince?.(item.code, item.name);
-                      return;
-                    }
+                    if (event.detail > 1) return;
                     if (!allowRegionClick()) return;
                     onSelectProvince(item.code, item.name);
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    onEnterProvince?.(item.code, item.name);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -493,6 +508,8 @@ export default function ChinaMap({
                   key={item.code}
                   d={item.d}
                   data-admin-code={item.code}
+                  data-admin-name={item.name}
+                  data-admin-level="city"
                   className={[
                     "footprint-map-region",
                     "footprint-map-city",
@@ -543,6 +560,9 @@ export default function ChinaMap({
                       cx={item.x ?? undefined}
                       cy={item.y ?? undefined}
                       r={item.code === "820000" ? 24 : 19}
+                      data-admin-code={item.code}
+                      data-admin-name={item.name}
+                      data-admin-level="province"
                       className="footprint-map-hit-target"
                       aria-hidden="true"
                       onPointerEnter={() => setHovered({
@@ -556,16 +576,9 @@ export default function ChinaMap({
                       onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (event.detail >= 2) {
-                          onEnterProvince?.(item.code, item.name);
-                          return;
-                        }
+                        if (event.detail > 1) return;
                         if (!allowRegionClick()) return;
                         onSelectProvince(item.code, item.name);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        onEnterProvince?.(item.code, item.name);
                       }}
                     />
                   );

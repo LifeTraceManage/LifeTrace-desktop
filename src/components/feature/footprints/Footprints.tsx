@@ -127,12 +127,6 @@ export default function Footprints() {
     }
   };
 
-  const enterProvinceMap = () => {
-    if (!selectedProvince) return;
-    setSelectedCity(null);
-    setMapLevel("province");
-  };
-
   const backToCountryMap = () => {
     provinceRequestRef.current += 1;
     selectedProvinceCodeRef.current = null;
@@ -237,7 +231,6 @@ export default function Footprints() {
             onBackToCountry={backToCountryMap}
           />
           <ProvinceDrawer
-            mapLevel={mapLevel}
             selected={Boolean(selectedProvince)}
             summary={selectedSummary}
             name={selectedProvince?.name ?? "选择一个省份"}
@@ -246,8 +239,6 @@ export default function Footprints() {
             selectedCityCode={selectedCity?.code}
             selectedCityName={selectedCity?.name}
             onSelectCity={(code, name) => setSelectedCity({ code, name })}
-            onEnterProvinceMap={enterProvinceMap}
-            onBackToCountry={backToCountryMap}
             onOpenEntry={(entry) => setDetailId(entry.id)}
           />
         </section>

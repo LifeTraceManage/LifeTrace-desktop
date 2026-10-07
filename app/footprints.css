@@ -335,10 +335,6 @@
 .footprint-drawer-nav button:hover {
   background: color-mix(in srgb, var(--hx-accent, #2a7a5e) 9%, transparent);
 }
-.footprint-drawer-nav button.primary {
-  border-color: color-mix(in srgb, var(--hx-accent, #2a7a5e) 45%, var(--hx-line, #dfe5e1));
-  background: color-mix(in srgb, var(--hx-accent, #2a7a5e) 10%, transparent);
-}
 .footprint-drawer-nav svg { width: 13px; }
 .footprint-city-list,
 .footprint-province-entries { margin-top: 18px; }
