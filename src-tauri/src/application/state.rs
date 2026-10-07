@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 
 use crate::database::repositories::{finance, habits, workouts};
