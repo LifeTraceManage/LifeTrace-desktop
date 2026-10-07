@@ -80,13 +80,38 @@ pub fn parse_wiki_links(input: &str) -> Vec<ParsedWikiLink> {
     result
 }
 
+fn note_aliases(value: &Value) -> Vec<String> {
+    value
+        .get("properties")
+        .and_then(Value::as_object)
+        .and_then(|properties| properties.get("aliases"))
+        .and_then(Value::as_array)
+        .map(|aliases| {
+            aliases
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|alias| !alias.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn aliases_from_raw_json(raw: &str) -> Vec<String> {
+    serde_json::from_str::<Value>(raw)
+        .ok()
+        .map(|value| note_aliases(&value))
+        .unwrap_or_default()
+}
+
 fn resolve_target_id(
     connection: &Connection,
     user_id: &str,
     source_note_id: &str,
     target_title: &str,
 ) -> Result<Option<String>, String> {
-    connection
+    let direct = connection
         .query_row(
             "SELECT id
              FROM notes
@@ -98,7 +123,35 @@ fn resolve_target_id(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if direct.is_some() {
+        return Ok(direct);
+    }
+
+    let needle = target_title.trim().to_lowercase();
+    let mut statement = connection
+        .prepare(
+            "SELECT id, content_json
+             FROM notes
+             WHERE user_id=?1 AND deleted_at IS NULL AND id<>?2
+             ORDER BY updated_at DESC, id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![user_id, source_note_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    for row in rows {
+        let (id, raw) = row.map_err(|error| error.to_string())?;
+        if aliases_from_raw_json(&raw)
+            .iter()
+            .any(|alias| alias.to_lowercase() == needle)
+        {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }
 
 fn target_is_available(
@@ -122,6 +175,7 @@ fn sync_note_fields(
     note_id: &str,
     user_id: &str,
     title: Option<&str>,
+    aliases: &[String],
     markdown: &str,
 ) -> Result<usize, String> {
     if !table_exists(connection, "note_links") {
@@ -199,6 +253,21 @@ fn sync_note_fields(
             )
             .map_err(|error| error.to_string())?;
     }
+    for alias in aliases.iter().map(|value| value.trim()).filter(|value| !value.is_empty()) {
+        connection
+            .execute(
+                "UPDATE note_links
+                 SET target_note_id=?1, updated_at=?2
+                 WHERE target_note_id IS NULL
+                   AND trim(target_title)=?3 COLLATE NOCASE
+                   AND source_note_id<>?1
+                   AND source_note_id IN (
+                     SELECT id FROM notes WHERE user_id=?4 AND deleted_at IS NULL
+                   )",
+                params![note_id, stamp, alias, user_id],
+            )
+            .map_err(|error| error.to_string())?;
+    }
 
     Ok(parsed.len())
 }
@@ -216,7 +285,11 @@ pub fn sync_note_links(connection: &Connection, note: &Value) -> Result<usize, S
         .and_then(Value::as_str)
         .or_else(|| note.get("contentText").and_then(Value::as_str))
         .unwrap_or_default();
-    sync_note_fields(connection, note_id, &user_id, title, markdown)
+    let aliases = note
+        .get("contentJson")
+        .map(note_aliases)
+        .unwrap_or_default();
+    sync_note_fields(connection, note_id, &user_id, title, &aliases, markdown)
 }
 
 /// Rebuild the complete derived index. Used by migrations and backup restore.
@@ -227,7 +300,7 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
     let notes = {
         let mut statement = connection
             .prepare(
-                "SELECT id, user_id, title, content_markdown, content_text
+                "SELECT id, user_id, title, content_json, content_markdown, content_text
                  FROM notes WHERE deleted_at IS NULL",
             )
             .map_err(|error| error.to_string())?;
@@ -239,6 +312,7 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             })
             .map_err(|error| error.to_string())?;
@@ -250,15 +324,94 @@ pub fn rebuild_all(connection: &Connection) -> Result<usize, String> {
         .execute("DELETE FROM note_links", [])
         .map_err(|error| error.to_string())?;
     let mut total = 0usize;
-    for (note_id, user_id, title, markdown, text) in notes {
+    for (note_id, user_id, title, content_json, markdown, text) in notes {
         let source = if markdown.trim().is_empty() {
             &text
         } else {
             &markdown
         };
-        total += sync_note_fields(connection, &note_id, &user_id, title.as_deref(), source)?;
+        let aliases = aliases_from_raw_json(&content_json);
+        total += sync_note_fields(connection, &note_id, &user_id, title.as_deref(), &aliases, source)?;
     }
     Ok(total)
+}
+
+/// Return a compact Wiki Link graph for the active profile.
+///
+/// The note_links table is derived from note Markdown, so graph reads never
+/// need to reinterpret note.relation or duplicate relation semantics.
+pub fn graph(connection: &Connection, limit: usize) -> Result<Value, String> {
+    if !table_exists(connection, "note_links") {
+        return Ok(json!({"nodes":[],"edges":[]}));
+    }
+    let profile_id = crate::database::profile::active_profile_id(connection)?;
+    let limit = limit.clamp(1, 80) as i64;
+    let mut statement = connection
+        .prepare(
+            "SELECT id,title,summary,is_favorite
+             FROM notes
+             WHERE user_id=?1 AND deleted_at IS NULL AND is_archived=0
+             ORDER BY updated_at DESC,id
+             LIMIT ?2",
+        )
+        .map_err(|error| error.to_string())?;
+    let nodes = statement
+        .query_map(params![profile_id, limit], |row| {
+            let id: String = row.get(0)?;
+            let title: Option<String> = row.get(1)?;
+            let summary: String = row.get(2)?;
+            Ok(json!({
+                "id": id,
+                "title": title.filter(|value| !value.trim().is_empty()).unwrap_or_else(|| {
+                    let trimmed = summary.trim();
+                    if trimmed.is_empty() { "无标题笔记".to_owned() } else { trimmed.chars().take(80).collect() }
+                }),
+                "favorite": row.get::<_, bool>(3)?
+            }))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+
+    let ids = nodes
+        .iter()
+        .filter_map(|node| node.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    if ids.is_empty() {
+        return Ok(json!({"nodes":[],"edges":[]}));
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT l.source_note_id,l.target_note_id
+             FROM note_links l
+             JOIN notes s ON s.id=l.source_note_id
+             JOIN notes t ON t.id=l.target_note_id
+             WHERE s.user_id=?1 AND t.user_id=?1
+               AND s.deleted_at IS NULL AND t.deleted_at IS NULL
+               AND l.target_note_id IS NOT NULL
+             ORDER BY l.source_note_id,l.target_note_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([profile_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    let mut edges = Vec::new();
+    let mut seen = HashSet::<(String, String)>::new();
+    for row in rows {
+        let (source_id, target_id) = row.map_err(|error| error.to_string())?;
+        if ids.contains(&source_id)
+            && ids.contains(&target_id)
+            && seen.insert((source_id.clone(), target_id.clone()))
+        {
+            edges.push(json!({"sourceId":source_id,"targetId":target_id}));
+        }
+    }
+    Ok(json!({"nodes":nodes,"edges":edges}))
 }
 
 /// Attach outgoing wiki links and backlinks to a full note DTO.
@@ -372,5 +525,57 @@ mod tests {
                 alias: None,
             }]
         );
+    }
+
+    #[test]
+    fn aliases_resolve_wiki_links_and_backfill_unresolved_edges() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE notes(
+               id TEXT PRIMARY KEY,user_id TEXT NOT NULL,title TEXT,content_json TEXT NOT NULL,
+               content_markdown TEXT NOT NULL,content_text TEXT NOT NULL,updated_at TEXT NOT NULL,
+               deleted_at TEXT
+             );
+             CREATE TABLE note_links(
+               id TEXT PRIMARY KEY,source_note_id TEXT NOT NULL,target_note_id TEXT,
+               target_title TEXT NOT NULL,alias TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+             );
+             INSERT INTO notes VALUES(
+               'source','profile','Source','{}','See [[别名]]','See 别名','2026-10-07T00:00:00Z',NULL
+             );"
+        ).unwrap();
+
+        sync_note_fields(&connection, "source", "profile", Some("Source"), &[], "See [[别名]]").unwrap();
+        let unresolved: Option<String> = connection.query_row(
+            "SELECT target_note_id FROM note_links WHERE source_note_id='source'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(unresolved.is_none());
+
+        connection.execute(
+            "INSERT INTO notes VALUES(
+               'target','profile','Canonical',?1,'','', '2026-10-07T01:00:00Z',NULL
+             )",
+            [json!({"type":"doc","content":[],"properties":{"aliases":["别名","Alias"]}}).to_string()],
+        ).unwrap();
+        sync_note_fields(
+            &connection,
+            "target",
+            "profile",
+            Some("Canonical"),
+            &["别名".to_owned(), "Alias".to_owned()],
+            "",
+        ).unwrap();
+
+        let resolved: Option<String> = connection.query_row(
+            "SELECT target_note_id FROM note_links WHERE source_note_id='source'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(resolved.as_deref(), Some("target"));
+
+        let direct = resolve_target_id(&connection, "profile", "source", "alias").unwrap();
+        assert_eq!(direct.as_deref(), Some("target"));
     }
 }

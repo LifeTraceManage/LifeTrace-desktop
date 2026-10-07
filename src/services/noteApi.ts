@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Note, NoteFolder, NoteRevision, NoteTag, NoteType } from "@/src/types";
 
 type ListOptions = { q?:string;scope?:string;folderId?:string;tagId?:string;noteType?:NoteType;sort?:string;limit?:number };
+export type NoteGraph = {
+  nodes: Array<{id:string;title:string;favorite:boolean}>;
+  edges: Array<{sourceId:string;targetId:string}>;
+};
 type NoteInput = Pick<Note,"title"|"noteType"|"folderId"|"contentJson"|"contentHtml"|"contentText"|"contentMarkdown"|"summary"|"isPinned"|"isFavorite"|"isArchived"> & {
   id?:string; tagIds:string[]; relations: Note["relations"]; createRevision?:boolean;
 };
@@ -39,6 +43,7 @@ export const noteApi={
   },
   get:(id:string)=>query<Note>({action:"get",id},`/api/notes?action=get&id=${encodeURIComponent(id)}`),
   meta:()=>query<{folders:NoteFolder[];tags:(NoteTag&{usageCount?:number})[]}>({action:"meta"},"/api/notes?action=meta"),
+  graph:(limit=80)=>query<NoteGraph>({action:"graph",limit},`/api/notes?action=graph&limit=${limit}`),
   revisions:(id:string)=>query<NoteRevision[]>({action:"revisions",id},`/api/notes?action=revisions&id=${encodeURIComponent(id)}`),
   backup:()=>query<Record<string,unknown>>({action:"backup"},"/api/notes?action=backup"),
   create:(note:NoteInput)=>mutate<Note>({action:"create",note}),
@@ -52,7 +57,7 @@ export const noteApi={
   saveTag:(tag:Partial<NoteTag>&Pick<NoteTag,"name">)=>mutate<{ok:true;id:string}>({action:"tag.save",tag}),
   deleteTag:(id:string)=>mutate<{ok:true}>({action:"tag.delete",id}),
   restoreRevision:(id:string)=>mutate<Note>({action:"revision.restore",id}),
-  recordAttachment:(file:Record<string,unknown>)=>mutate<{ok:true}>({action:"attachment.record",file}),
+  recordAttachment:(file:object)=>mutate<{ok:true}>({action:"attachment.record",file}),
   deleteAttachment:(id:string)=>mutate<{ok:true}>({action:"attachment.delete",id}),
   restoreBackup:(data:Record<string,unknown>)=>mutate<{ok:true}>({action:"backup.restore",data}),
 };

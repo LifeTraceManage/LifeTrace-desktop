@@ -114,13 +114,44 @@ impl SqliteSyncStore {
             "note.tag_relation" => {
                 let (note_id, tag_id) = entity_id.split_once(':').unwrap_or(("", ""));
                 connection.query_row(
-                    "SELECT n.user_id,r.note_id,r.tag_id,n.created_at,n.updated_at FROM note_tag_relations r JOIN notes n ON n.id=r.note_id WHERE r.note_id=?1 AND r.tag_id=?2 AND n.user_id=?3",
-                    params![note_id,tag_id,profile], |row| Ok(json!({
-                        "id":entity_id,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(1)?,"tagId":row.get::<_,String>(2)?,
-                        "createdAt":row.get::<_,String>(3)?,"updatedAt":row.get::<_,String>(4)?
-                    }))
+                    "SELECT n.user_id,r.note_id,r.tag_id,r.created_at FROM note_tag_relations r JOIN notes n ON n.id=r.note_id WHERE r.note_id=?1 AND r.tag_id=?2 AND n.user_id=?3",
+                    params![note_id,tag_id,profile], |row| {
+                        let created_at = row.get::<_,String>(3)?;
+                        Ok(json!({
+                            "id":entity_id,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(1)?,"tagId":row.get::<_,String>(2)?,
+                            "createdAt":created_at,"updatedAt":created_at
+                        }))
+                    }
                 ).optional().map_err(Self::db_error)?
             }
+            "note.relation" => connection.query_row(
+                "SELECT n.user_id,r.id,r.note_id,r.entity_type,r.entity_id,r.relation_type,r.created_at,n.updated_at
+                 FROM note_relations r JOIN notes n ON n.id=r.note_id
+                 WHERE r.id=?1 AND n.user_id=?2",
+                params![entity_id,profile], |row| Ok(json!({
+                    "id":row.get::<_,String>(1)?,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(2)?,
+                    "entityType":row.get::<_,String>(3)?,"entityId":row.get::<_,String>(4)?,
+                    "relationType":row.get::<_,String>(5)?,"createdAt":row.get::<_,String>(6)?,
+                    "updatedAt":row.get::<_,String>(7)?
+                }))
+            ).optional().map_err(Self::db_error)?,
+            "note.revision" => connection.query_row(
+                "SELECT n.user_id,r.id,r.note_id,r.revision_version,r.title,r.content_json,r.content_html,
+                        r.content_markdown,r.created_at,n.updated_at
+                 FROM note_revisions r JOIN notes n ON n.id=r.note_id
+                 WHERE r.id=?1 AND n.user_id=?2",
+                params![entity_id,profile], |row| {
+                    let raw: String = row.get(5)?;
+                    let content_json = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({"type":"doc","content":[]}));
+                    Ok(json!({
+                        "id":row.get::<_,String>(1)?,"userId":row.get::<_,String>(0)?,"noteId":row.get::<_,String>(2)?,
+                        "revisionVersion":row.get::<_,i64>(3)?,"title":row.get::<_,Option<String>>(4)?,
+                        "contentJson":content_json,"contentHtml":row.get::<_,String>(6)?,
+                        "contentMarkdown":row.get::<_,String>(7)?,"createdAt":row.get::<_,String>(8)?,
+                        "updatedAt":row.get::<_,String>(9)?
+                    }))
+                }
+            ).optional().map_err(Self::db_error)?,
             _ => connection.query_row(
                 "SELECT payload_json FROM sync_materialized_entities WHERE profile_id=?1 AND entity_type=?2 AND entity_id=?3 AND deleted_at IS NULL",
                 params![profile,entity_type,entity_id], |row| row.get::<_,String>(0),
@@ -266,9 +297,79 @@ impl SqliteSyncStore {
             "workout.workout" => workouts::save_workout(connection, &legacy),
             "workout.import" => workouts::save_import(connection, &legacy),
             "workout.training_note" => workouts::save_training_note(connection, &legacy),
-            "note.note" => notes::save_note(connection, &legacy, true, false).map(|_| ()),
+            "note.note" => {
+                let mut note_input = legacy.clone();
+                if let Some(object) = note_input.as_object_mut() {
+                    let note_id = object.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
+                    if let Some(existing) = notes::get_note(connection, &note_id).map_err(Self::db_error)? {
+                        let tag_ids = existing
+                            .get("tags")
+                            .and_then(Value::as_array)
+                            .map(|items| items.iter()
+                                .filter_map(|item| item.get("id").and_then(Value::as_str))
+                                .map(|id| Value::String(id.to_owned()))
+                                .collect::<Vec<_>>())
+                            .unwrap_or_default();
+                        let relations = existing
+                            .get("relations")
+                            .and_then(Value::as_array)
+                            .cloned()
+                            .unwrap_or_default();
+                        object.insert("tagIds".to_owned(), Value::Array(tag_ids));
+                        object.insert("relations".to_owned(), Value::Array(relations));
+                    } else {
+                        object.insert("tagIds".to_owned(), Value::Array(Vec::new()));
+                        object.insert("relations".to_owned(), Value::Array(Vec::new()));
+                    }
+                }
+                notes::save_note(connection, &note_input, false, false)
+                    .and_then(|saved| crate::database::note_links::sync_note_links(connection, &saved).map(|_| ()))
+            },
             "note.folder" => notes::save_folder(connection, &legacy).map(|_| ()),
             "note.tag" => notes::save_tag(connection, &legacy).map(|_| ()),
+            "note.tag_relation" => {
+                let note_id = legacy.get("noteId").and_then(Value::as_str).unwrap_or_default();
+                let tag_id = legacy.get("tagId").and_then(Value::as_str).unwrap_or_default();
+                let created_at = legacy.get("createdAt").and_then(Value::as_str).unwrap_or_else(|| legacy.get("updatedAt").and_then(Value::as_str).unwrap_or(""));
+                connection.execute(
+                    "INSERT INTO note_tag_relations(note_id,tag_id,created_at) VALUES(?1,?2,?3)
+                     ON CONFLICT(note_id,tag_id) DO UPDATE SET created_at=excluded.created_at",
+                    params![note_id,tag_id,created_at],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
+            "note.relation" => {
+                let id = legacy.get("id").and_then(Value::as_str).unwrap_or_default();
+                let note_id = legacy.get("noteId").and_then(Value::as_str).unwrap_or_default();
+                let entity_type = legacy.get("entityType").and_then(Value::as_str).unwrap_or_default();
+                let entity_id = legacy.get("entityId").and_then(Value::as_str).unwrap_or_default();
+                let relation_type = legacy.get("relationType").and_then(Value::as_str).unwrap_or("reference");
+                let created_at = legacy.get("createdAt").and_then(Value::as_str).unwrap_or_else(|| legacy.get("updatedAt").and_then(Value::as_str).unwrap_or(""));
+                connection.execute(
+                    "INSERT INTO note_relations(id,note_id,entity_type,entity_id,relation_type,created_at)
+                     VALUES(?1,?2,?3,?4,?5,?6)
+                     ON CONFLICT(id) DO UPDATE SET note_id=excluded.note_id,entity_type=excluded.entity_type,
+                       entity_id=excluded.entity_id,relation_type=excluded.relation_type,created_at=excluded.created_at",
+                    params![id,note_id,entity_type,entity_id,relation_type,created_at],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
+            "note.revision" => {
+                let id = legacy.get("id").and_then(Value::as_str).unwrap_or_default();
+                let note_id = legacy.get("noteId").and_then(Value::as_str).unwrap_or_default();
+                let revision_version = legacy.get("revisionVersion").and_then(Value::as_i64).unwrap_or(1);
+                let title = legacy.get("title").and_then(Value::as_str);
+                let content_json = legacy.get("contentJson").cloned().unwrap_or_else(|| json!({"type":"doc","content":[]}));
+                let content_html = legacy.get("contentHtml").and_then(Value::as_str).unwrap_or("");
+                let content_markdown = legacy.get("contentMarkdown").and_then(Value::as_str).unwrap_or("");
+                let created_at = legacy.get("createdAt").and_then(Value::as_str).unwrap_or_else(|| legacy.get("updatedAt").and_then(Value::as_str).unwrap_or(""));
+                connection.execute(
+                    "INSERT INTO note_revisions(id,note_id,revision_version,title,content_json,content_html,content_markdown,created_at)
+                     VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+                     ON CONFLICT(id) DO UPDATE SET note_id=excluded.note_id,revision_version=excluded.revision_version,
+                       title=excluded.title,content_json=excluded.content_json,content_html=excluded.content_html,
+                       content_markdown=excluded.content_markdown,created_at=excluded.created_at",
+                    params![id,note_id,revision_version,title,content_json.to_string(),content_html,content_markdown,created_at],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
             _ => {
                 let entity_id = payload
                     .get("meta")
@@ -304,6 +405,21 @@ impl SqliteSyncStore {
             "note.note" => notes::set_deleted(connection, entity_id, true),
             "note.folder" => notes::delete_folder(connection, entity_id),
             "note.tag" => notes::delete_tag(connection, entity_id),
+            "note.tag_relation" => {
+                let (note_id, tag_id) = entity_id.split_once(':').unwrap_or(("", ""));
+                connection.execute(
+                    "DELETE FROM note_tag_relations WHERE note_id=?1 AND tag_id=?2",
+                    params![note_id,tag_id],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
+            "note.relation" => connection.execute(
+                "DELETE FROM note_relations WHERE id=?1",
+                [entity_id],
+            ).map(|_| ()).map_err(|error| error.to_string()),
+            "note.revision" => connection.execute(
+                "DELETE FROM note_revisions WHERE id=?1",
+                [entity_id],
+            ).map(|_| ()).map_err(|error| error.to_string()),
             "habit.activity" => connection.execute(
                 "UPDATE activities SET deleted_at=?1,updated_at=?1,version=version+1 WHERE id=?2 AND user_id=?3",
                 params![Utc::now().to_rfc3339(), entity_id, profile]
@@ -1008,5 +1124,205 @@ impl SyncStore for SqliteSyncStore {
             entity_type.as_str(),
             entity_id.as_str(),
         )
+    }
+}
+
+
+#[cfg(test)]
+mod note_sync_tests {
+    use super::*;
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    fn connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE notes(
+               id TEXT PRIMARY KEY,user_id TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+             );
+             CREATE TABLE note_relations(
+               id TEXT PRIMARY KEY,note_id TEXT NOT NULL,entity_type TEXT NOT NULL,
+               entity_id TEXT NOT NULL,relation_type TEXT NOT NULL,created_at TEXT NOT NULL
+             );
+             CREATE TABLE note_revisions(
+               id TEXT PRIMARY KEY,note_id TEXT NOT NULL,revision_version INTEGER NOT NULL,
+               title TEXT,content_json TEXT NOT NULL,content_html TEXT NOT NULL,
+               content_markdown TEXT NOT NULL,created_at TEXT NOT NULL
+             );
+             INSERT INTO notes VALUES(
+               'note-1','profile-1','2026-10-07T00:00:00Z','2026-10-07T01:00:00Z'
+             );"
+        ).unwrap();
+        connection
+    }
+
+    fn meta(id: &str) -> Value {
+        json!({
+            "id": id,
+            "userId": "profile-1",
+            "createdAt": "2026-10-07T00:00:00Z",
+            "updatedAt": "2026-10-07T01:00:00Z",
+            "deletedAt": null,
+            "localVersion": 1,
+            "serverVersion": "1",
+            "modifiedByDevice": "cloud-device"
+        })
+    }
+
+    fn migrated_connection() -> (Connection, String) {
+        use crate::database::migration_runner::{run, MigrationContext};
+        use crate::database::migrations::all;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let data_dir = std::env::temp_dir().join(format!("lifetrace-note-pull-{unique}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let mut connection = Connection::open(data_dir.join("test.db")).unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        run(&mut connection, &MigrationContext::new(data_dir), &all()).unwrap();
+        let profile = crate::database::profile::active_profile_id(&connection).unwrap();
+        (connection, profile)
+    }
+
+    #[test]
+    fn note_relation_roundtrips_through_native_tables() {
+        let connection = connection();
+        let payload = json!({
+            "meta": meta("rel-1"),
+            "noteId": "note-1",
+            "entityType": "note.note",
+            "entityId": "note-2",
+            "relationType": "wiki_link"
+        });
+        SqliteSyncStore::apply_upsert(&connection, "profile-1", "note.relation", &payload).unwrap();
+
+        let loaded = SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.relation", "rel-1"
+        ).unwrap().unwrap();
+        assert_eq!(loaded["noteId"], "note-1");
+        assert_eq!(loaded["entityType"], "note.note");
+        assert_eq!(loaded["entityId"], "note-2");
+
+        SqliteSyncStore::apply_delete(&connection, "profile-1", "note.relation", "rel-1").unwrap();
+        assert!(SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.relation", "rel-1"
+        ).unwrap().is_none());
+    }
+
+    #[test]
+    fn remote_note_create_materializes_and_rebuilds_wiki_links() {
+        let (connection, profile) = migrated_connection();
+        connection.execute("UPDATE sync_context SET origin='remote' WHERE singleton=1", []).unwrap();
+
+        crate::database::repositories::notes::save_note(
+            &connection,
+            &json!({
+                "id":"target-note","title":"Target","noteType":"document","folderId":null,
+                "contentJson":{"type":"doc","content":[]},"contentHtml":"","contentText":"",
+                "contentMarkdown":"","summary":"","isPinned":false,"isFavorite":false,
+                "isArchived":false,"tagIds":[],"relations":[]
+            }),
+            false,
+            false,
+        ).unwrap();
+
+        let payload = json!({
+            "meta": {
+                "id":"remote-note","userId":profile,"createdAt":"2026-10-07T00:00:00Z",
+                "updatedAt":"2026-10-07T01:00:00Z","deletedAt":null,"localVersion":1,
+                "serverVersion":"1","modifiedByDevice":"other-device"
+            },
+            "title":"Remote","noteType":"document","folderId":null,
+            "contentJson":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"See [[Target]]"}]}]},
+            "contentHtml":"<p>See [[Target]]</p>","contentText":"See [[Target]]",
+            "contentMarkdown":"See [[Target]]","summary":"See Target",
+            "isPinned":false,"isFavorite":false,"isArchived":false,
+            "aiSummary":null,"aiTags":null,"embeddingStatus":null,"lastAiProcessedAt":null
+        });
+
+        SqliteSyncStore::apply_upsert(&connection, &profile, "note.note", &payload).unwrap();
+        let enriched = crate::database::note_links::enrich_note(
+            &connection,
+            crate::database::repositories::notes::get_note(&connection, "remote-note")
+                .unwrap().unwrap(),
+        ).unwrap();
+        assert_eq!(enriched["title"], "Remote");
+        assert_eq!(enriched["wikiLinks"][0]["targetNoteId"], "target-note");
+        assert_eq!(enriched["wikiLinks"][0]["resolved"], true);
+    }
+
+    #[test]
+    fn remote_note_update_preserves_separately_synced_tags_and_relations() {
+        let (connection, profile) = migrated_connection();
+        connection.execute("UPDATE sync_context SET origin='remote' WHERE singleton=1", []).unwrap();
+
+        let tag_id = crate::database::repositories::notes::save_tag(
+            &connection,
+            &json!({"id":"tag-1","name":"sync","color":"#64748b"})
+        ).unwrap();
+        crate::database::repositories::notes::save_note(
+            &connection,
+            &json!({
+                "id":"note-keep","title":"Before","noteType":"document","folderId":null,
+                "contentJson":{"type":"doc","content":[]},"contentHtml":"","contentText":"before",
+                "contentMarkdown":"before","summary":"before","isPinned":false,"isFavorite":false,
+                "isArchived":false,"tagIds":[tag_id],"relations":[{
+                    "id":"rel-keep","noteId":"note-keep","entityType":"habit.activity",
+                    "entityId":"habit-1","relationType":"reference","createdAt":"2026-10-07T00:00:00Z"
+                }]
+            }),
+            false,
+            false,
+        ).unwrap();
+
+        let payload = json!({
+            "meta": {
+                "id":"note-keep","userId":profile,"createdAt":"2026-10-07T00:00:00Z",
+                "updatedAt":"2026-10-07T02:00:00Z","deletedAt":null,"localVersion":2,
+                "serverVersion":"2","modifiedByDevice":"other-device"
+            },
+            "title":"After","noteType":"document","folderId":null,
+            "contentJson":{"type":"doc","content":[]},"contentHtml":"","contentText":"after",
+            "contentMarkdown":"after","summary":"after","isPinned":false,"isFavorite":true,
+            "isArchived":false,"aiSummary":null,"aiTags":null,"embeddingStatus":null,
+            "lastAiProcessedAt":null
+        });
+        SqliteSyncStore::apply_upsert(&connection, &profile, "note.note", &payload).unwrap();
+
+        let loaded = crate::database::repositories::notes::get_note(&connection, "note-keep")
+            .unwrap().unwrap();
+        assert_eq!(loaded["title"], "After");
+        assert_eq!(loaded["contentText"], "after");
+        assert_eq!(loaded["tags"].as_array().unwrap().len(), 1);
+        assert_eq!(loaded["tags"][0]["id"], "tag-1");
+        assert_eq!(loaded["relations"].as_array().unwrap().len(), 1);
+        assert_eq!(loaded["relations"][0]["id"], "rel-keep");
+    }
+
+    #[test]
+    fn note_revision_roundtrips_through_native_tables() {
+        let connection = connection();
+        let payload = json!({
+            "meta": meta("rev-1"),
+            "noteId": "note-1",
+            "revisionVersion": 3,
+            "title": "Snapshot",
+            "contentJson": {"type":"doc","content":[]},
+            "contentHtml": "<p>snapshot</p>",
+            "contentMarkdown": "snapshot"
+        });
+        SqliteSyncStore::apply_upsert(&connection, "profile-1", "note.revision", &payload).unwrap();
+
+        let loaded = SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.revision", "rev-1"
+        ).unwrap().unwrap();
+        assert_eq!(loaded["revisionVersion"], 3);
+        assert_eq!(loaded["contentMarkdown"], "snapshot");
+        assert_eq!(loaded["contentJson"]["type"], "doc");
+
+        SqliteSyncStore::apply_delete(&connection, "profile-1", "note.revision", "rev-1").unwrap();
+        assert!(SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.revision", "rev-1"
+        ).unwrap().is_none());
     }
 }

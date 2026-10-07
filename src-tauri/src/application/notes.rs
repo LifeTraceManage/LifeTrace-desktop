@@ -35,6 +35,10 @@ pub fn query(connection: &Connection, request: &Value) -> Result<Value, String> 
             }
         }
         "meta" => notes_repo::meta(connection),
+        "graph" => crate::database::note_links::graph(
+            connection,
+            usize_value(object, "limit").unwrap_or(80),
+        ),
         "revisions" => {
             let note_id = text(object, "id").unwrap_or_default();
             Ok(Value::Array(notes_repo::list_revisions(connection, note_id)?))
@@ -86,6 +90,11 @@ pub fn mutate(
         "trash" | "restore" => {
             let note_id = text(object, "id").ok_or_else(|| "缺少笔记 id".to_owned())?;
             notes_repo::set_deleted(connection, note_id, action == "trash")?;
+            if action == "restore" {
+                if let Some(note) = notes_repo::get_note(connection, note_id)? {
+                    crate::database::note_links::sync_note_links(connection, &note)?;
+                }
+            }
             Ok(json!({ "ok": true }))
         }
         "delete" => {

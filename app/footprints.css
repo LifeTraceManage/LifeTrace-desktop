@@ -5,34 +5,6 @@
   color: var(--hx-ink, var(--lt-color-text, #17211d));
 }
 
-.footprint-hero {
-  position: relative;
-  min-height: 150px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 26px 30px;
-  overflow: hidden;
-  border-radius: 22px;
-  background: linear-gradient(125deg, #173f32, #276650);
-  color: #fff;
-}
-.footprint-hero::after {
-  content: "";
-  position: absolute;
-  right: 12%;
-  top: -150px;
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-  background: rgba(201, 235, 179, .11);
-}
-.footprint-hero > * { position: relative; z-index: 1; }
-.footprint-hero h1 { margin: 13px 0 7px; font-size: 27px; letter-spacing: -.035em; }
-.footprint-hero p { max-width: 660px; margin: 0; color: #b9cec4; font-size: 11px; line-height: 1.7; }
-.footprint-hero .hx-btn { min-height: 44px; background: #d8ecac; color: #173f32; }
-
 .footprint-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -111,6 +83,13 @@
   border: 1px solid var(--hx-line, var(--lt-color-border, #dfe5e1));
   background: var(--lt-color-surface, #fff);
 }
+.footprint-add {
+  min-height: 36px;
+  padding: 0 13px;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.footprint-add svg { width: 14px; }
 .footprint-error {
   padding: 10px 12px;
   border: 1px solid #e6bbb7;
@@ -124,7 +103,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
   gap: 14px;
-  min-height: 610px;
+  height: clamp(460px, calc(100vh - 250px), 650px);
+  min-height: 0;
 }
 .footprint-map-card,
 .footprint-province-drawer {
@@ -139,7 +119,12 @@
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
 }
-.footprint-map-canvas { position: relative; min-height: 540px; padding: 18px; }
+.footprint-map-canvas {
+  position: relative;
+  min-height: 0;
+  padding: 18px;
+  overscroll-behavior: contain;
+}
 .footprint-map-canvas svg {
   width: 100%;
   height: 100%;
@@ -187,6 +172,58 @@
   stroke: var(--hx-muted, #738079);
   stroke-width: .7;
   opacity: .58;
+}
+.footprint-map-label-layer {
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+.footprint-map-admin-label {
+  opacity: .86;
+}
+.footprint-map-admin-label.city { opacity: .82; }
+.footprint-map-admin-name {
+  fill: color-mix(in srgb, var(--hx-ink, #223129) 88%, transparent);
+  font-size: 11px;
+  font-weight: 650;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--lt-color-surface, #fff) 92%, transparent);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.footprint-map-admin-label.city .footprint-map-admin-name {
+  font-size: 10px;
+  font-weight: 600;
+}
+.footprint-map-admin-label.visited .footprint-map-admin-name {
+  fill: var(--hx-accent2, #176b54);
+  font-weight: 780;
+}
+.footprint-map-admin-label.selected .footprint-map-admin-name {
+  fill: #a36512;
+}
+.footprint-map-visit-marker {
+  fill: var(--hx-accent, #2a7a5e);
+  stroke: var(--lt-color-surface, #fff);
+  stroke-width: 2px;
+  filter: drop-shadow(0 2px 3px rgba(20, 61, 42, .22));
+}
+.footprint-map-admin-label.selected .footprint-map-visit-marker {
+  fill: #d79932;
+}
+.footprint-map-visit-count {
+  fill: var(--hx-accent2, #176b54);
+  font-size: 8px;
+  font-weight: 750;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--lt-color-surface, #fff) 94%, transparent);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+.footprint-map-admin-label.selected .footprint-map-visit-count {
+  fill: #a36512;
 }
 .footprint-map-toolbar {
   position: absolute;
@@ -772,6 +809,13 @@
 .footprint-suggestions figcaption span { display: flex; align-items: center; gap: 1px; margin-left: auto; }
 
 [data-theme="dark"] .footprint-map-region { fill: #26332e; stroke: #65736d; }
+[data-theme="dark"] .footprint-map-admin-name,
+[data-theme="dark"] .footprint-map-visit-count {
+  stroke: color-mix(in srgb, var(--lt-color-surface, #18221e) 94%, transparent);
+}
+[data-theme="dark"] .footprint-map-visit-marker {
+  stroke: var(--lt-color-surface, #18221e);
+}
 [data-theme="dark"] .footprint-map-region.visited {
   fill: color-mix(in srgb, #55a887 calc(32% + var(--footprint-intensity) * 45%), #26332e);
   stroke: #6cc09d;
@@ -784,7 +828,6 @@
   .footprint-photo-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  .footprint-hero { align-items: flex-start; flex-direction: column; }
   .footprint-summary { grid-template-columns: repeat(2, 1fr); }
   .footprint-controls { flex-wrap: wrap; }
   .footprint-search { order: 3; max-width: none; flex-basis: 100%; }

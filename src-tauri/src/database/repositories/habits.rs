@@ -14,7 +14,7 @@ const ACTIVITY_TYPES: [&str; 5] = ["duration", "count", "completion", "weekly", 
 const TARGET_PERIODS: [&str; 2] = ["daily", "weekly"];
 const SCHEDULE_TYPES: [&str; 3] = ["daily", "weekly", "custom"];
 const CHECKIN_METHODS: [&str; 2] = ["manual", "automatic"];
-const SYNC_SOURCES: [&str; 1] = ["fitness"];
+const LOCAL_SYNC_SOURCES: [&str; 2] = ["fitness", "english"];
 const LOG_STATUSES: [&str; 3] = ["completed", "partial", "skipped"];
 
 fn now() -> String {
@@ -136,12 +136,12 @@ pub fn activity_from_legacy_json(value: &Value) -> Result<ActivityRow, String> {
             return Err(format!("习惯 {id} 打卡方式不合法: {value}"));
         }
     }
-    let sync_source = optional_text(object, "syncSource");
-    if let Some(value) = &sync_source {
-        if !SYNC_SOURCES.contains(&value.as_str()) {
-            return Err(format!("习惯 {id} 同步来源不合法: {value}"));
-        }
-    }
+    // The wire contract deliberately preserves unknown sync-source strings for
+    // forward compatibility. The legacy Desktop table still has a narrow CHECK
+    // constraint, so cloud provenance values such as "web" must not block a
+    // pull. Keep only local integration sources in the constrained column.
+    let sync_source = optional_text(object, "syncSource")
+        .filter(|value| LOCAL_SYNC_SOURCES.contains(&value.as_str()));
     let target_days_json = object
         .get("targetDays")
         .filter(|value| value.is_array())
@@ -687,6 +687,28 @@ mod tests {
     fn invalid_activity_type_is_rejected() {
         let value = json!({"id": "x", "name": "x", "type": "bogus", "targetPeriod": "daily"});
         assert!(activity_from_legacy_json(&value).is_err());
+    }
+
+    #[test]
+    fn cloud_web_sync_source_does_not_block_desktop_pull() {
+        let value = json!({
+            "id": "28e30765-cfe4-49f3-8d18-1e1f17facf9e", "userId": "cloud-user",
+            "name": "云端习惯", "type": "completion", "unit": "次",
+            "targetPeriod": "daily", "syncSource": "web", "isArchived": false,
+            "createdAt": "2026-10-07T00:00:00Z", "updatedAt": "2026-10-07T00:00:00Z"
+        });
+        let row = activity_from_legacy_json(&value).unwrap();
+        assert_eq!(row.sync_source, None, "web is provenance, not a local integration source");
+    }
+
+    #[test]
+    fn local_fitness_sync_source_is_preserved() {
+        let value = json!({
+            "id": "fitness", "name": "运动", "type": "duration", "unit": "分钟",
+            "targetPeriod": "daily", "syncSource": "fitness"
+        });
+        let row = activity_from_legacy_json(&value).unwrap();
+        assert_eq!(row.sync_source.as_deref(), Some("fitness"));
     }
 
     #[test]

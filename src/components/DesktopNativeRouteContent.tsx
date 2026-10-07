@@ -175,7 +175,7 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
       }}
     />;
   } else if (route.startsWith("/app/execution")) {
-    content = <ExecutionModule />;
+    content = <ExecutionModule onNavigate={navigate} />;
   } else if (route === "/app/calendar") {
     content = <CalendarView />;
   } else if (route === "/app/habits") {

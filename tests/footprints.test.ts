@@ -101,11 +101,16 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.match(photo, /photos_geo_idx/);
 });
 
-test("Footprints ships an offline China province dataset and Map of Us attribution", () => {
+test("Footprints ships offline province and prefecture datasets with hierarchical wheel drilldown", () => {
   const map = JSON.parse(read("src/assets/maps/china-provinces.json")) as {
     features: Array<{ properties: { adcode: number | string; name?: string } }>;
   };
+  const prefectures = JSON.parse(read("src/assets/maps/china-prefectures.json")) as {
+    features: Array<{ properties: { adcode: number | string; name?: string } }>;
+  };
+  const mapComponent = read("src/components/feature/footprints/ChinaMap.tsx");
   const codes = new Set(map.features.map((feature) => String(feature.properties.adcode)));
+  const prefectureCodes = new Set(prefectures.features.map((feature) => String(feature.properties.adcode)));
   const packageJson = JSON.parse(read("package.json")) as {
     dependencies: Record<string, string>;
   };
@@ -117,10 +122,38 @@ test("Footprints ships an offline China province dataset and Map of Us attributi
   assert.ok(codes.has("810000"));
   assert.ok(codes.has("820000"));
   assert.ok(codes.has("100000_JD"));
+  assert.ok(prefectureCodes.has("510100"), "成都 should have an offline city boundary");
+  assert.ok(prefectureCodes.has("440100"), "广州 should have an offline city boundary");
+  assert.match(mapComponent, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.match(mapComponent, /event\.preventDefault\(\)/);
+  assert.match(mapComponent, /event\.stopPropagation\(\)/);
+  assert.match(mapComponent, /countryDrillScale/);
+  assert.match(mapComponent, /enterProvince\(/);
+  assert.match(mapComponent, /onSelectCity/);
+  assert.match(mapComponent, /shortAdminName/);
+  assert.match(mapComponent, /labelPoint/);
+  assert.match(mapComponent, /footprint-map-admin-label/);
+  assert.match(mapComponent, /footprint-map-visit-marker/);
+  assert.match(mapComponent, /省级名称常驻显示/);
+  assert.match(mapComponent, /市 \/ 地区名称常驻显示/);
   assert.equal(packageJson.dependencies["d3-geo"], "^3.1.1");
   assert.match(attribution, /Map of Us/);
   assert.match(attribution, /MIT License/);
   assert.match(entrypoint, /app\/footprints\.css/);
+  const mapStyles = read("app/footprints.css");
+  assert.match(mapStyles, /\.footprint-map-admin-name/);
+  assert.match(mapStyles, /\.footprint-map-visit-count/);
+});
+
+test("Footprints keeps creation compact instead of rendering the oversized hero panel", () => {
+  const component = read("src/components/feature/footprints/Footprints.tsx");
+  const styles = read("app/footprints.css");
+
+  assert.doesNotMatch(component, /footprint-hero/);
+  assert.match(component, /footprint-add hx-btn primary/);
+  assert.doesNotMatch(styles, /\.footprint-hero/);
+  assert.match(styles, /height: clamp\(460px, calc\(100vh - 250px\), 650px\)/);
+  assert.match(styles, /overscroll-behavior: contain/);
 });
 
 test("legacy Travel PMTiles implementation is not part of the new Footprints path", () => {

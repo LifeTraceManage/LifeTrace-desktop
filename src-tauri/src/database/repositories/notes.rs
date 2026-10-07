@@ -312,6 +312,7 @@ pub fn list_notes(
         conditions.push("t.is_archived = 1".to_owned());
     }
     match scope {
+        "inbox" => conditions.push("t.folder_id IS NULL".to_owned()),
         "favorite" => conditions.push("t.is_favorite = 1".to_owned()),
         "pinned" => conditions.push("t.is_pinned = 1".to_owned()),
         "quick" => conditions.push("t.note_type = 'quick'".to_owned()),
@@ -897,7 +898,8 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
                user_id=excluded.user_id,
                name=excluded.name, icon=excluded.icon, color=excluded.color,
                parent_folder_id=excluded.parent_folder_id,
-               sort_order=excluded.sort_order, updated_at=excluded.updated_at",
+               sort_order=excluded.sort_order, updated_at=excluded.updated_at,
+               version=note_folders.version+1",
             params![
                 folder_id,
                 name,
@@ -914,26 +916,40 @@ pub fn save_folder(connection: &Connection, input: &Value) -> Result<String, Str
     Ok(folder_id)
 }
 
-/// 删除文件夹：软删除并清空笔记引用。
+/// 删除文件夹：软删除，并将直属子文件夹/笔记提升到被删文件夹的父级。
+///
+/// This mirrors Web Notes semantics. On local writes the normal sync triggers
+/// emit the child folder/note updates before the folder tombstone is pushed.
 pub fn delete_folder(connection: &Connection, folder_id: &str) -> Result<(), String> {
     let stamp = now();
     let profile_id = crate::database::profile::active_profile_id(connection)?;
+    let parent_folder_id: Option<String> = connection
+        .query_row(
+            "SELECT parent_folder_id FROM note_folders
+             WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+            params![folder_id, profile_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .flatten();
     connection
         .execute(
-            "UPDATE note_folders SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
-            params![stamp, folder_id, profile_id],
+            "UPDATE notes SET folder_id=?1, updated_at=?2, version=version+1
+             WHERE folder_id=?3 AND user_id=?4",
+            params![parent_folder_id, stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
         .execute(
-            "UPDATE notes SET folder_id=NULL, updated_at=?1 WHERE folder_id=?2 AND user_id=?3",
-            params![stamp, folder_id, profile_id],
+            "UPDATE note_folders SET parent_folder_id=?1, updated_at=?2, version=version+1
+             WHERE parent_folder_id=?3 AND user_id=?4 AND deleted_at IS NULL",
+            params![parent_folder_id, stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
     connection
         .execute(
-            "UPDATE note_folders SET parent_folder_id=NULL, updated_at=?1
-             WHERE parent_folder_id=?2 AND user_id=?3",
+            "UPDATE note_folders SET deleted_at=?1, updated_at=?1, version=version+1 WHERE id=?2 AND user_id=?3",
             params![stamp, folder_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
@@ -957,7 +973,8 @@ pub fn save_tag(connection: &Connection, input: &Value) -> Result<String, String
              ) VALUES(?1,?6,?2,?3,?4,?5,NULL,1,NULL)
              ON CONFLICT(id) DO UPDATE SET
                user_id=excluded.user_id,
-               name=excluded.name, color=excluded.color, updated_at=excluded.updated_at",
+               name=excluded.name, color=excluded.color, updated_at=excluded.updated_at,
+               version=note_tags.version+1",
             params![
                 tag_id,
                 name,
@@ -977,7 +994,7 @@ pub fn delete_tag(connection: &Connection, tag_id: &str) -> Result<(), String> {
     let profile_id = crate::database::profile::active_profile_id(connection)?;
     connection
         .execute(
-            "UPDATE note_tags SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND user_id=?3",
+            "UPDATE note_tags SET deleted_at=?1, updated_at=?1, version=version+1 WHERE id=?2 AND user_id=?3",
             params![stamp, tag_id, profile_id],
         )
         .map_err(|error| error.to_string())?;
@@ -1280,6 +1297,35 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(detail.get("contentJson").is_some());
+    }
+
+    #[test]
+    fn deleting_folder_promotes_children_and_notes_to_parent() {
+        let connection = Connection::open_in_memory().unwrap();
+        schema(&connection);
+        let root = save_folder(&connection, &json!({"name":"Root","sortOrder":0})).unwrap();
+        let child = save_folder(&connection, &json!({"name":"Child","parentFolderId":root,"sortOrder":1})).unwrap();
+        let grandchild = save_folder(&connection, &json!({"name":"Grandchild","parentFolderId":child,"sortOrder":2})).unwrap();
+        let note = save_note(
+            &connection,
+            &json!({
+                "title":"Nested","noteType":"document","folderId":child,
+                "contentJson":{"type":"doc"},"contentHtml":"","contentText":"",
+                "contentMarkdown":"","summary":"","tagIds":[],"relations":[]
+            }),
+            false,
+            false,
+        ).unwrap();
+
+        delete_folder(&connection, &child).unwrap();
+
+        let note = get_note(&connection, note["id"].as_str().unwrap()).unwrap().unwrap();
+        assert_eq!(note["folderId"], root);
+        let meta = meta(&connection).unwrap();
+        assert!(meta["folders"].as_array().unwrap().iter().all(|folder| folder["id"] != child));
+        let grandchild_row = meta["folders"].as_array().unwrap().iter()
+            .find(|folder| folder["id"] == grandchild).unwrap();
+        assert_eq!(grandchild_row["parentFolderId"], root);
     }
 
     #[test]

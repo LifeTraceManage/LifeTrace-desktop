@@ -8,6 +8,16 @@ import { useLifeStore } from "@/src/stores/useLifeStore";
 import { desktopSync } from "@/src/desktop/syncAdapter";
 import type { SyncStatusView } from "@/src/services/cloudSync";
 
+function syncErrorMessage(cause: unknown): string {
+  if (cause instanceof Error && cause.message.trim()) return cause.message.trim();
+  if (typeof cause === "string" && cause.trim()) return cause.trim();
+  if (cause && typeof cause === "object" && "message" in cause) {
+    const message = String((cause as { message?: unknown }).message || "").trim();
+    if (message) return message;
+  }
+  return "云端同步失败";
+}
+
 function hardSyncError(status: SyncStatusView | null): string {
   if (!status) return "";
   if (status.phase !== "error" && status.phase !== "auth_required") return "";
@@ -95,7 +105,7 @@ export default function DesktopCloudWorkspace() {
       if (hardError) {
         setManualSyncError(hardError);
       } else if (!status) {
-        setManualSyncError(cause instanceof Error ? cause.message : "云端同步失败");
+        setManualSyncError(syncErrorMessage(cause));
       }
       // Offline/backoff are retryable scheduler states, not permanent UI errors.
     } finally {

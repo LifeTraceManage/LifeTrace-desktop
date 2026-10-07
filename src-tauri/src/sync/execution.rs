@@ -587,7 +587,6 @@ mod tests {
             ("execution.goal", "g1"),
             ("execution.project", "p1"),
             ("execution.task", "t1"),
-            ("execution.memo", "m1"),
         ] {
             let local = load_local_entity(&source, &source_profile, entity_type, entity_id)
                 .unwrap()
@@ -623,14 +622,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(title, "Ship EPIC20");
-        let memo: String = target
+        let source_memo: String = source
             .query_row(
                 "SELECT plain_text FROM execution_memos WHERE id='m1' AND user_id=?1",
-                [&target_profile],
+                [&source_profile],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(memo, "Remember sync");
+        assert_eq!(source_memo, "Remember sync");
+        assert!(!crate::sync::payload::is_syncable("execution.memo"));
     }
 
     #[test]
@@ -687,8 +687,8 @@ mod tests {
 
         let queued: i64 = source.query_row("SELECT COUNT(*) FROM sync_outbox WHERE profile_id=?1 AND entity_type LIKE 'execution.%' AND status='pending'", [&source_profile], |row| row.get(0)).unwrap();
         assert_eq!(
-            queued, 5,
-            "offline writes must be captured before reconnect"
+            queued, 4,
+            "only cloud-supported offline writes must be captured before reconnect"
         );
 
         target
@@ -701,7 +701,6 @@ mod tests {
             ("execution.task", "task-sync"),
             ("execution.calendar_event", "event-sync"),
             ("execution.waiting_item", "waiting-sync"),
-            ("execution.memo", "memo-sync"),
             ("execution.reminder", "reminder-sync"),
         ] {
             let local = load_local_entity(&source, &source_profile, entity_type, entity_id)
@@ -743,14 +742,14 @@ mod tests {
         assert_eq!(event_title, "Focus");
         let waiting_for: String = target.query_row("SELECT waiting_for FROM execution_waiting_items WHERE id='waiting-sync' AND user_id=?1", [&target_profile], |row| row.get(0)).unwrap();
         assert_eq!(waiting_for, "Alice");
-        let memo: String = target
+        let target_memo_count: i64 = target
             .query_row(
-                "SELECT content FROM execution_memos WHERE id='memo-sync' AND user_id=?1",
+                "SELECT COUNT(*) FROM execution_memos WHERE id='memo-sync' AND user_id=?1",
                 [&target_profile],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(memo, "Remember");
+        assert_eq!(target_memo_count, 0, "Memo must remain local to the source Desktop");
         let reminder_status: String = target
             .query_row(
                 "SELECT status FROM execution_reminders WHERE id='reminder-sync' AND user_id=?1",
@@ -783,17 +782,12 @@ mod tests {
         assert_eq!(task_status, "done");
 
         source.execute("UPDATE execution_memos SET deleted_at='2026-08-09T02:00:00Z',updated_at='2026-08-09T02:00:00Z',version=version+1 WHERE id='memo-sync'", []).unwrap();
-        let memo_operation: String = source.query_row("SELECT operation FROM sync_outbox WHERE profile_id=?1 AND entity_type='execution.memo' AND entity_id='memo-sync' AND status='pending'", [&source_profile], |row| row.get(0)).unwrap();
-        assert_eq!(memo_operation, "delete");
-        apply_delete(&target, &target_profile, "execution.memo", "memo-sync").unwrap();
-        let deleted: Option<String> = target
-            .query_row(
-                "SELECT deleted_at FROM execution_memos WHERE id='memo-sync'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(deleted.is_some());
+        let memo_outbox: i64 = source.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE profile_id=?1 AND entity_type='execution.memo' AND entity_id='memo-sync'",
+            [&source_profile],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(memo_outbox, 0, "Memo updates and deletes must not enter cloud sync");
         target
             .execute(
                 "UPDATE sync_context SET origin='local' WHERE singleton=1",

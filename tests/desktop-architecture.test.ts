@@ -174,3 +174,52 @@ test("offline authenticated identity keeps the same native desktop workspace", (
   assert.match(app, /<DesktopCloudWorkspace \/>/);
   assert.doesNotMatch(app, /HengXuShell|cloudAvailable/);
 });
+
+
+test("desktop mail is a native route backed by the cloud API service", () => {
+  const routes = read("src/components/DesktopNativeRouteContent.tsx");
+  const shell = read("src/components/DesktopWorkbenchShell.tsx");
+  const mail = read("src/components/feature/mail/MailActionCenter.tsx");
+  const api = read("src/services/mailApi.ts");
+
+  assert.match(shell, /path: "\/app\/mail", label: "邮件"/);
+  assert.match(routes, /import MailActionCenter from "@\/src\/components\/feature\/mail\/MailActionCenter"/);
+  assert.match(routes, /route === "\/app\/mail"/);
+  assert.match(routes, /<MailActionCenter \/>/);
+  assert.match(api, /cloudAuthClient\.request/);
+  assert.match(api, /\/api\/v1\/mail\/accounts/);
+  assert.doesNotMatch(routes, /vendor\/web/);
+  assert.doesNotMatch(mail, /vendor\/web|MailPage/);
+});
+
+test("desktop sync retires entity types no longer accepted by cloud", () => {
+  const migration = read("src-tauri/src/database/migrations/m0021_sync_registry_alignment.rs");
+  const registry = read("vendor/shared/crates/lifetrace-contracts/src/registry.rs");
+  const migrationRegistry = read("src-tauri/src/database/migrations/mod.rs");
+
+  assert.match(migration, /DROP TRIGGER IF EXISTS/);
+  assert.match(migration, /execution\.memo/);
+  assert.match(migration, /travel\.trip/);
+  assert.match(migration, /DELETE FROM \{table\} WHERE entity_type/);
+  assert.match(registry, /const fn device_local/);
+  assert.match(registry, /device_local\(EntityType::EXECUTION_MEMO\)/);
+  assert.match(registry, /device_local\(EntityType::TRAVEL_TRIP\)/);
+  assert.match(migrationRegistry, /M0021SyncRegistryAlignment/);
+});
+
+test("desktop execution center keeps native extras and restores web execution workflow views", () => {
+  const module = read("src/components/feature/execution/ExecutionModule.tsx");
+  const routes = read("src/components/DesktopNativeRouteContent.tsx");
+  const api = read("src/services/executionApi.ts");
+
+  for (const view of ["planner", "inbox", "habits", "focus", "review"]) {
+    assert.match(module, new RegExp(`["']${view}["']`), `missing execution view: ${view}`);
+  }
+  assert.match(module, /executionApi\.focusSessions\.create/);
+  assert.match(module, /useLifeStore/);
+  assert.match(module, /renderMemos/);
+  assert.match(module, /CalendarWorkspace/);
+  assert.match(routes, /<ExecutionModule onNavigate=\{navigate\} \/>/);
+  assert.match(api, /execution_api_request/);
+  assert.doesNotMatch(module, /vendor\/web/);
+});
