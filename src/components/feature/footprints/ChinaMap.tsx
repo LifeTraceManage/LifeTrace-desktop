@@ -246,7 +246,8 @@ export default function ChinaMap({
 
     const rect = event.currentTarget.getBoundingClientRect();
     const clientPoint = { x: event.clientX, y: event.clientY };
-    if (!drag.moved && isDragGesture(drag.startClient, clientPoint)) {
+    if (!drag.moved) {
+      if (!isDragGesture(drag.startClient, clientPoint)) return;
       drag.moved = true;
     }
 
