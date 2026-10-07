@@ -208,7 +208,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
       await executionApi.relations.create({
         sourceType:"note.note",
         sourceId:draft.id,
-        relationType:"created_from",
+        relationType:"converted_to",
         targetType:"execution.task",
         targetId:task.id,
       });
