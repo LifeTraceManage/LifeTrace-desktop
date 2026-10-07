@@ -19,7 +19,7 @@ mod m0014_execution_goals;
 mod m0015_execution_weekly_reviews;
 mod m0016_note_folder_hierarchy;
 mod m0017_execution_cloud_extensions;
-mod m0018_footprints;
+mod m0020_footprints;
 
 pub use m0001_framework::M0001Framework;
 pub use m0002_finance::M0002Finance;
@@ -37,11 +37,14 @@ pub use m0014_execution_goals::M0014ExecutionGoals;
 pub use m0015_execution_weekly_reviews::M0015ExecutionWeeklyReviews;
 pub use m0016_note_folder_hierarchy::M0016NoteFolderHierarchy;
 pub use m0017_execution_cloud_extensions::M0017ExecutionCloudExtensions;
-pub use m0018_footprints::M0018Footprints;
+pub use m0020_footprints::M0020Footprints;
 
 use crate::database::migration_runner::Migration;
 
 /// 全部已注册 Migration（按 version 升序执行）。
+///
+/// 18/19 intentionally remain unregistered: those version numbers belonged to
+/// the removed Travel migrations and may already exist in user databases.
 pub fn all() -> Vec<Box<dyn Migration>> {
     vec![
         Box::new(M0001Framework),
@@ -60,6 +63,6 @@ pub fn all() -> Vec<Box<dyn Migration>> {
         Box::new(M0015ExecutionWeeklyReviews),
         Box::new(M0016NoteFolderHierarchy),
         Box::new(M0017ExecutionCloudExtensions),
-        Box::new(M0018Footprints),
+        Box::new(M0020Footprints),
     ]
 }
