@@ -117,9 +117,13 @@ fn api_url(origin: &str, path: &str) -> Result<Url, String> {
 }
 
 fn transfer_url(origin: &str, value: &str) -> Result<Url, String> {
-    let url = Url::parse(value)
-        .or_else(|_| api_url(origin, "/").and_then(|base| base.join(value).map_err(|_| "文件传输地址无效".to_owned())).map_err(|_| url::ParseError::RelativeUrlWithoutBase))
-        .map_err(|_| "文件传输地址无效".to_owned())?;
+    let url = match Url::parse(value) {
+        Ok(url) => url,
+        Err(url::ParseError::RelativeUrlWithoutBase) => api_url(origin, "/")?
+            .join(value)
+            .map_err(|_| "文件传输地址无效".to_owned())?,
+        Err(_) => return Err("文件传输地址无效".to_owned()),
+    };
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
         return Err("文件传输地址协议不受支持".to_owned());
     }
@@ -253,11 +257,14 @@ pub async fn note_cloud_upload_attachment(
         .ok_or_else(|| "附件名称无效".to_owned())?;
     // Local copies are prefixed with a UUID. Keep the display name from the
     // copy metadata when possible by stripping only our generated prefix.
-    let original_name = original_name
-        .split_once('-')
-        .filter(|(prefix, _)| Uuid::parse_str(prefix).is_ok())
-        .map(|(_, name)| name.to_owned())
-        .unwrap_or(original_name);
+    let original_name = if original_name.len() > 37
+        && original_name.as_bytes().get(36) == Some(&b'-')
+        && Uuid::parse_str(&original_name[..36]).is_ok()
+    {
+        original_name[37..].to_owned()
+    } else {
+        original_name
+    };
     let mime_type = mime_guess::from_path(&path)
         .first_or_octet_stream()
         .essence_str()
