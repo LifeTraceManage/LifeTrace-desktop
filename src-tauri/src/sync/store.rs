@@ -294,8 +294,34 @@ impl SqliteSyncStore {
             "workout.workout" => workouts::save_workout(connection, &legacy),
             "workout.import" => workouts::save_import(connection, &legacy),
             "workout.training_note" => workouts::save_training_note(connection, &legacy),
-            "note.note" => notes::save_note(connection, &legacy, false, false)
-                .and_then(|saved| crate::database::note_links::sync_note_links(connection, &saved).map(|_| ())),
+            "note.note" => {
+                let mut note_input = legacy.clone();
+                if let Some(object) = note_input.as_object_mut() {
+                    let note_id = object.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
+                    if let Some(existing) = notes::get_note(connection, &note_id)? {
+                        let tag_ids = existing
+                            .get("tags")
+                            .and_then(Value::as_array)
+                            .map(|items| items.iter()
+                                .filter_map(|item| item.get("id").and_then(Value::as_str))
+                                .map(|id| Value::String(id.to_owned()))
+                                .collect::<Vec<_>>())
+                            .unwrap_or_default();
+                        let relations = existing
+                            .get("relations")
+                            .and_then(Value::as_array)
+                            .cloned()
+                            .unwrap_or_default();
+                        object.insert("tagIds".to_owned(), Value::Array(tag_ids));
+                        object.insert("relations".to_owned(), Value::Array(relations));
+                    } else {
+                        object.insert("tagIds".to_owned(), Value::Array(Vec::new()));
+                        object.insert("relations".to_owned(), Value::Array(Vec::new()));
+                    }
+                }
+                notes::save_note(connection, &note_input, false, false)
+                    .and_then(|saved| crate::database::note_links::sync_note_links(connection, &saved).map(|_| ()))
+            },
             "note.folder" => notes::save_folder(connection, &legacy).map(|_| ()),
             "note.tag" => notes::save_tag(connection, &legacy).map(|_| ()),
             "note.tag_relation" => {
