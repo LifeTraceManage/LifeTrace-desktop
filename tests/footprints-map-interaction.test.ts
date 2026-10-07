@@ -74,9 +74,10 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
   const drawer = read("src/components/feature/footprints/ProvinceDrawer.tsx");
 
   assert.doesNotMatch(map, /countryDrillScale/);
-  assert.match(map, /event\.detail >= 2/);
+  assert.match(map, /event\.detail > 1/);
   assert.match(map, /onDoubleClick/);
   assert.match(map, /onEnterProvince/);
+  assert.doesNotMatch(map, /event\.detail >= 2/);
   assert.doesNotMatch(map, /isDoubleRegionActivation/);
   assert.doesNotMatch(map, /provinceActivationRef/);
   assert.doesNotMatch(map, /setLevel\(/);
@@ -86,13 +87,33 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
   assert.match(footprints, /const \[mapLevel, setMapLevel\]/);
   assert.match(footprints, /selected=\{Boolean\(selectedProvince\)\}/);
   assert.match(footprints, /selectedProvinceCodeRef/);
+  assert.doesNotMatch(footprints, /onEnterProvinceMap/);
+  assert.doesNotMatch(footprints, /enterProvinceMap/);
   assert.match(footprints, /setSelectedProvince\(null\)/);
   assert.match(footprints, /setProvinceDetail\(null\)/);
   assert.match(footprints, /setMapLevel\("country"\)/);
   assert.match(drawer, /selected: boolean/);
-  assert.match(drawer, /查看省内地图/);
-  assert.match(drawer, /先选择省份/);
-  assert.match(drawer, /disabled=\{!selected\}/);
-  assert.match(drawer, /返回全国/);
-  assert.match(drawer, /选中后可进入省内地图/);
+  assert.doesNotMatch(drawer, /查看省内地图/);
+  assert.doesNotMatch(drawer, /先选择省份/);
+  assert.doesNotMatch(drawer, /onEnterProvinceMap/);
+  assert.doesNotMatch(drawer, /onBackToCountry/);
+  assert.match(drawer, /双击地图上的省份/);
+});
+
+
+test("footprint map delays pointer capture until a real drag starts", () => {
+  const map = read("src/components/feature/footprints/ChinaMap.tsx");
+  const pointerDown = map.slice(
+    map.indexOf("const pointerDown"),
+    map.indexOf("const pointerMove"),
+  );
+  const pointerMove = map.slice(
+    map.indexOf("const pointerMove"),
+    map.indexOf("const pointerEnd"),
+  );
+
+  assert.doesNotMatch(pointerDown, /setPointerCapture/);
+  assert.match(pointerMove, /isDragGesture/);
+  assert.match(pointerMove, /drag\.moved = true/);
+  assert.match(pointerMove, /setPointerCapture\(event\.pointerId\)/);
 });
