@@ -274,12 +274,15 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
   if(trashMode)return <section className="nt-editor nt-trash-preview"><div><Trash2/><h2>{titleOf(draft)}</h2><p>{draft.summary||"这篇笔记没有摘要。"}</p><small>删除于 {draft.deletedAt?formatTime(draft.deletedAt):"未知时间"}</small><footer><button className="hx-btn primary" onClick={()=>void action("restore")}><ArchiveRestore/>恢复笔记</button><button className="hx-btn secondary danger" onClick={()=>void action("delete")}><Trash2/>永久删除</button></footer></div></section>;
 
-  const headings=noteHeadings(draft.contentMarkdown);
-  const wordCount=draft.contentText.replace(/\s+/g,"").length;
-  const focusHeading=(text:string)=>{
-    const root=document.querySelector(".nt-prose .tiptap");
-    const target=[...root?.querySelectorAll("h1,h2,h3")??[]].find(node=>node.textContent?.trim()===text) as HTMLElement|undefined;
-    target?.scrollIntoView({behavior:"smooth",block:"center"});
+  const headings=noteHeadings(markdown);
+  const wordCount=plainTextFromMarkdown(markdown).replace(/\s+/g,"").length;
+  const focusHeading=(lineIndex:number)=>{
+    const textarea=editorRef.current;if(!textarea)return;
+    const lines=markdown.split(/\r?\n/);
+    const start=lines.slice(0,lineIndex).reduce((sum,line)=>sum+line.length+1,0);
+    const end=start+(lines[lineIndex]?.length??0);
+    textarea.focus();textarea.setSelectionRange(start,end);
+    textarea.scrollTop=Math.max(0,lineIndex*27-textarea.clientHeight/3);
   };
 
   return <section className="nt-editor">
@@ -302,30 +305,34 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         <div className="nt-editor-scroll">
           <input className="nt-title" value={draft.title??""} onChange={e=>patch({title:e.target.value||null})} placeholder={draft.noteType==="quick"?"快速记录无需标题":"无标题笔记"}/>
           <div className="nt-formatbar">
-            <EditorButton title="撤销" onClick={()=>editor?.chain().focus().undo().run()}><Undo2/></EditorButton><EditorButton title="重做" onClick={()=>editor?.chain().focus().redo().run()}><Redo2/></EditorButton>
-            <i/>
-            <EditorButton title="一级标题" active={editor?.isActive("heading",{level:1})} onClick={()=>editor?.chain().focus().toggleHeading({level:1}).run()}><Heading1/></EditorButton>
-            <EditorButton title="二级标题" active={editor?.isActive("heading",{level:2})} onClick={()=>editor?.chain().focus().toggleHeading({level:2}).run()}><Heading2/></EditorButton>
-            <EditorButton title="加粗" active={editor?.isActive("bold")} onClick={()=>editor?.chain().focus().toggleBold().run()}><Bold/></EditorButton>
-            <EditorButton title="斜体" active={editor?.isActive("italic")} onClick={()=>editor?.chain().focus().toggleItalic().run()}><Italic/></EditorButton>
-            <EditorButton title="删除线" active={editor?.isActive("strike")} onClick={()=>editor?.chain().focus().toggleStrike().run()}><Strikethrough/></EditorButton>
-            <EditorButton title="代码块" active={editor?.isActive("codeBlock")} onClick={()=>editor?.chain().focus().toggleCodeBlock().run()}><Braces/></EditorButton>
-            <EditorButton title="引用" active={editor?.isActive("blockquote")} onClick={()=>editor?.chain().focus().toggleBlockquote().run()}><Quote/></EditorButton>
-            <EditorButton title="无序列表" active={editor?.isActive("bulletList")} onClick={()=>editor?.chain().focus().toggleBulletList().run()}><List/></EditorButton>
-            <EditorButton title="有序列表" active={editor?.isActive("orderedList")} onClick={()=>editor?.chain().focus().toggleOrderedList().run()}><ListOrdered/></EditorButton>
-            <EditorButton title="待办列表" active={editor?.isActive("taskList")} onClick={()=>editor?.chain().focus().toggleTaskList().run()}><ListChecks/></EditorButton>
-            <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editor?.chain().focus().extendMarkRange("link").setLink({href}).run()}}><LinkIcon/></EditorButton>
-            <EditorButton title="移除链接" onClick={()=>editor?.chain().focus().unsetLink().run()}><Unlink/></EditorButton>
-            <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址");if(src?.startsWith("https://"))editor?.chain().focus().setImage({src}).run()}}><ImagePlus/></EditorButton>
-            <EditorButton title="清除格式" onClick={()=>editor?.chain().focus().unsetAllMarks().clearNodes().run()}><RotateCcw/></EditorButton>
+            <EditorButton title="一级标题" onClick={()=>prefixSelectionLines("# ")}><Heading1/></EditorButton>
+            <EditorButton title="二级标题" onClick={()=>prefixSelectionLines("## ")}><Heading2/></EditorButton>
+            <EditorButton title="加粗" onClick={()=>editSelection("**","**","粗体文本")}><Bold/></EditorButton>
+            <EditorButton title="斜体" onClick={()=>editSelection("_","_","斜体文本")}><Italic/></EditorButton>
+            <EditorButton title="删除线" onClick={()=>editSelection("~~","~~","删除线文本")}><Strikethrough/></EditorButton>
+            <EditorButton title="行内代码" onClick={()=>editSelection("`","`","code")}><Braces/></EditorButton>
+            <EditorButton title="引用" onClick={()=>prefixSelectionLines("> ")}><Quote/></EditorButton>
+            <EditorButton title="无序列表" onClick={()=>prefixSelectionLines("- ")}><List/></EditorButton>
+            <EditorButton title="有序列表" onClick={()=>prefixSelectionLines("1. ")}><ListOrdered/></EditorButton>
+            <EditorButton title="待办列表" onClick={()=>prefixSelectionLines("- [ ] ")}><ListChecks/></EditorButton>
+            <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editSelection("[",`](${href})`,"链接文字")}}><LinkIcon/></EditorButton>
+            <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址","https://");if(src?.startsWith("https://"))insertSnippet(`![图片](${src})`)}}><ImagePlus/></EditorButton>
           </div>
-          <EditorContent editor={editor} className="nt-prose"/>
+          <textarea
+            ref={editorRef}
+            className="nt-markdown-editor"
+            data-testid="markdown-editor"
+            value={markdown}
+            onChange={event=>updateMarkdown(event.target.value)}
+            placeholder="开始写下你的想法…支持 Markdown 与 [[Wiki Link]]"
+            spellCheck
+          />
         </div>
       </main>
       <aside className="nt-inspector" data-testid="notes-inspector">
         <section className="nt-inspector-section">
           <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
-          <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.text)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
+          <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.index)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
         </section>
         <section className="nt-inspector-section">
           <header><Braces/><strong>属性</strong></header>
