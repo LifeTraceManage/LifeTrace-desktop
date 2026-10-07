@@ -297,6 +297,49 @@ impl SqliteSyncStore {
             "note.note" => notes::save_note(connection, &legacy, true, false).map(|_| ()),
             "note.folder" => notes::save_folder(connection, &legacy).map(|_| ()),
             "note.tag" => notes::save_tag(connection, &legacy).map(|_| ()),
+            "note.tag_relation" => {
+                let note_id = legacy.get("noteId").and_then(Value::as_str).unwrap_or_default();
+                let tag_id = legacy.get("tagId").and_then(Value::as_str).unwrap_or_default();
+                let created_at = legacy.get("createdAt").and_then(Value::as_str).unwrap_or_else(|| legacy.get("updatedAt").and_then(Value::as_str).unwrap_or(""));
+                connection.execute(
+                    "INSERT INTO note_tag_relations(note_id,tag_id,created_at) VALUES(?1,?2,?3)
+                     ON CONFLICT(note_id,tag_id) DO UPDATE SET created_at=excluded.created_at",
+                    params![note_id,tag_id,created_at],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
+            "note.relation" => {
+                let id = legacy.get("id").and_then(Value::as_str).unwrap_or_default();
+                let note_id = legacy.get("noteId").and_then(Value::as_str).unwrap_or_default();
+                let entity_type = legacy.get("entityType").and_then(Value::as_str).unwrap_or_default();
+                let entity_id = legacy.get("entityId").and_then(Value::as_str).unwrap_or_default();
+                let relation_type = legacy.get("relationType").and_then(Value::as_str).unwrap_or("reference");
+                let created_at = legacy.get("createdAt").and_then(Value::as_str).unwrap_or_else(|| legacy.get("updatedAt").and_then(Value::as_str).unwrap_or(""));
+                connection.execute(
+                    "INSERT INTO note_relations(id,note_id,entity_type,entity_id,relation_type,created_at)
+                     VALUES(?1,?2,?3,?4,?5,?6)
+                     ON CONFLICT(id) DO UPDATE SET note_id=excluded.note_id,entity_type=excluded.entity_type,
+                       entity_id=excluded.entity_id,relation_type=excluded.relation_type,created_at=excluded.created_at",
+                    params![id,note_id,entity_type,entity_id,relation_type,created_at],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
+            "note.revision" => {
+                let id = legacy.get("id").and_then(Value::as_str).unwrap_or_default();
+                let note_id = legacy.get("noteId").and_then(Value::as_str).unwrap_or_default();
+                let revision_version = legacy.get("revisionVersion").and_then(Value::as_i64).unwrap_or(1);
+                let title = legacy.get("title").and_then(Value::as_str);
+                let content_json = legacy.get("contentJson").cloned().unwrap_or_else(|| json!({"type":"doc","content":[]}));
+                let content_html = legacy.get("contentHtml").and_then(Value::as_str).unwrap_or("");
+                let content_markdown = legacy.get("contentMarkdown").and_then(Value::as_str).unwrap_or("");
+                let created_at = legacy.get("createdAt").and_then(Value::as_str).unwrap_or_else(|| legacy.get("updatedAt").and_then(Value::as_str).unwrap_or(""));
+                connection.execute(
+                    "INSERT INTO note_revisions(id,note_id,revision_version,title,content_json,content_html,content_markdown,created_at)
+                     VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+                     ON CONFLICT(id) DO UPDATE SET note_id=excluded.note_id,revision_version=excluded.revision_version,
+                       title=excluded.title,content_json=excluded.content_json,content_html=excluded.content_html,
+                       content_markdown=excluded.content_markdown,created_at=excluded.created_at",
+                    params![id,note_id,revision_version,title,content_json.to_string(),content_html,content_markdown,created_at],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
             _ => {
                 let entity_id = payload
                     .get("meta")
@@ -332,6 +375,21 @@ impl SqliteSyncStore {
             "note.note" => notes::set_deleted(connection, entity_id, true),
             "note.folder" => notes::delete_folder(connection, entity_id),
             "note.tag" => notes::delete_tag(connection, entity_id),
+            "note.tag_relation" => {
+                let (note_id, tag_id) = entity_id.split_once(':').unwrap_or(("", ""));
+                connection.execute(
+                    "DELETE FROM note_tag_relations WHERE note_id=?1 AND tag_id=?2",
+                    params![note_id,tag_id],
+                ).map(|_| ()).map_err(|error| error.to_string())
+            }
+            "note.relation" => connection.execute(
+                "DELETE FROM note_relations WHERE id=?1",
+                [entity_id],
+            ).map(|_| ()).map_err(|error| error.to_string()),
+            "note.revision" => connection.execute(
+                "DELETE FROM note_revisions WHERE id=?1",
+                [entity_id],
+            ).map(|_| ()).map_err(|error| error.to_string()),
             "habit.activity" => connection.execute(
                 "UPDATE activities SET deleted_at=?1,updated_at=?1,version=version+1 WHERE id=?2 AND user_id=?3",
                 params![Utc::now().to_rfc3339(), entity_id, profile]
