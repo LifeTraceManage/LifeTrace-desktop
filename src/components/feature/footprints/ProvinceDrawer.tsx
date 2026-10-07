@@ -55,34 +55,34 @@ export default function ProvinceDrawer({
               : "还没有在这里记录足迹"}
         </p>
 
-        {selected ? (
-          <div className="footprint-drawer-nav">
-            {mapLevel === "country" ? (
-              <button
-                type="button"
-                className="primary"
-                onClick={onEnterProvinceMap}
-              >
-                <Map />查看省内地图
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onBackToCountry}
-              >
-                <ArrowLeft />返回全国
-              </button>
-            )}
-            {selectedCityName ? (
-              <button
-                type="button"
-                onClick={() => onSelectCity?.(null, "")}
-              >
-                查看全省
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="footprint-drawer-nav">
+          {mapLevel === "country" ? (
+            <button
+              type="button"
+              className="primary"
+              onClick={onEnterProvinceMap}
+              disabled={!selected}
+              title={selected ? "进入市 / 地区级地图" : "请先在地图上选择一个省份"}
+            >
+              <Map />{selected ? "查看省内地图" : "先选择省份"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onBackToCountry}
+            >
+              <ArrowLeft />返回全国
+            </button>
+          )}
+          {selectedCityName ? (
+            <button
+              type="button"
+              onClick={() => onSelectCity?.(null, "")}
+            >
+              查看全省
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {loading
