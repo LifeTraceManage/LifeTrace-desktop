@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DesktopLocalToolsCenter from "@/src/components/DesktopLocalToolsCenter";
 import DesktopNativeRouteContent from "@/src/components/DesktopNativeRouteContent";
 import DesktopWorkbenchShell from "@/src/components/DesktopWorkbenchShell";
@@ -6,6 +6,30 @@ import { useDesktopNavigation } from "@/src/hooks/useDesktopNavigation";
 import { useCloudAuthStore } from "@/src/stores/useCloudAuthStore";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import { desktopSync } from "@/src/desktop/syncAdapter";
+import type { SyncStatusView } from "@/src/services/cloudSync";
+
+function hardSyncError(status: SyncStatusView | null): string {
+  if (!status) return "";
+  if (status.phase !== "error" && status.phase !== "auth_required") return "";
+  return status.lastErrorMessage || status.lastErrorCode || "云端同步需要处理";
+}
+
+function syncStatusLabel(status: SyncStatusView | null): string {
+  if (!status) return "已连接";
+  switch (status.phase) {
+    case "up_to_date": return status.pendingCount ? `待同步 ${status.pendingCount}` : "已同步";
+    case "pushing": return "正在上传";
+    case "pulling": return "正在下载";
+    case "initializing_snapshot": return "初始化同步";
+    case "backoff": return "自动重试中";
+    case "offline": return "云端暂离线";
+    case "conflict": return status.conflictCount ? `${status.conflictCount} 个冲突` : "有冲突";
+    case "auth_required": return "需重新登录";
+    case "error": return "同步异常";
+    case "local_only": return "仅本机";
+    default: return "已连接";
+  }
+}
 
 export default function DesktopCloudWorkspace() {
   const user = useCloudAuthStore((value) => value.user);
@@ -21,7 +45,8 @@ export default function DesktopCloudWorkspace() {
 
   const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
   const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState("");
+  const [syncStatus, setSyncStatus] = useState<SyncStatusView | null>(null);
+  const [manualSyncError, setManualSyncError] = useState("");
   const [privacy, setPrivacy] = useState(false);
   const [localToolsOpen, setLocalToolsOpen] = useState(false);
 
@@ -29,31 +54,54 @@ export default function DesktopCloudWorkspace() {
     await initialize();
   }, [initialize]);
 
+  const refreshSyncStatus = useCallback(async () => {
+    if (!desktopSync.available() || !cloudReady) {
+      setSyncStatus(null);
+      return null;
+    }
+    try {
+      const status = await desktopSync.status();
+      setSyncStatus(status);
+      if (!hardSyncError(status)) setManualSyncError("");
+      return status;
+    } catch {
+      return null;
+    }
+  }, [cloudReady]);
+
   const refresh = useCallback(async () => {
     if (!desktopSync.available()) {
-      setError("桌面同步服务尚未就绪");
+      setManualSyncError("桌面同步服务尚未就绪");
       return;
     }
     if (!navigator.onLine || !cloudReady) {
       setNetworkOnline(navigator.onLine);
-      setError(
+      setManualSyncError(
         navigator.onLine
           ? "云端会话暂不可用；本地数据仍可使用，恢复后会自动同步。"
-          : "当前离线；本地数据仍可使用，联网后再同步。",
+          : "",
       );
       return;
     }
     setSyncing(true);
-    setError("");
+    setManualSyncError("");
     try {
       await desktopSync.now(false);
       await reloadLocal();
+      await refreshSyncStatus();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "云端同步失败");
+      const status = await refreshSyncStatus();
+      const hardError = hardSyncError(status);
+      if (hardError) {
+        setManualSyncError(hardError);
+      } else if (!status) {
+        setManualSyncError(cause instanceof Error ? cause.message : "云端同步失败");
+      }
+      // Offline/backoff are retryable scheduler states, not permanent UI errors.
     } finally {
       setSyncing(false);
     }
-  }, [cloudReady, reloadLocal]);
+  }, [cloudReady, reloadLocal, refreshSyncStatus]);
 
   useEffect(() => {
     void reloadLocal();
@@ -64,7 +112,10 @@ export default function DesktopCloudWorkspace() {
       setNetworkOnline(true);
       void refresh();
     };
-    const offline = () => setNetworkOnline(false);
+    const offline = () => {
+      setNetworkOnline(false);
+      setManualSyncError("");
+    };
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
     return () => {
@@ -74,9 +125,20 @@ export default function DesktopCloudWorkspace() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!ready || !networkOnline || !cloudReady) return;
-    void refresh();
-  }, [cloudReady, ready, networkOnline, refresh]);
+    if (!ready || !cloudReady) {
+      setSyncStatus(null);
+      return;
+    }
+    void refreshSyncStatus();
+    const timer = window.setInterval(() => {
+      void refreshSyncStatus();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [cloudReady, ready, refreshSyncStatus]);
+
+  const statusError = hardSyncError(syncStatus);
+  const visibleError = storageError || authError || statusError || manualSyncError || "";
+  const statusLabel = useMemo(() => syncStatusLabel(syncStatus), [syncStatus]);
 
   if (!user) {
     return <div className="hx-loading"><span>LT</span><p>正在恢复桌面账号状态…</p></div>;
@@ -94,8 +156,9 @@ export default function DesktopCloudWorkspace() {
       userLabel={user.displayName || user.email}
       online={networkOnline && cloudReady}
       loading={syncing}
+      syncLabel={statusLabel}
       privacy={privacy}
-      error={storageError || error || authError || ""}
+      error={visibleError}
       onNavigate={(next) => {
         setLocalToolsOpen(false);
         navigation.navigate(next);
