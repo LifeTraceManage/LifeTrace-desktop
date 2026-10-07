@@ -82,13 +82,19 @@ test("desktop navigation exposes Footprints in both local and signed-in shells",
 });
 
 test("Footprints uses the shared photo catalog and local API instead of duplicating photos", () => {
-  const migration = read("src-tauri/src/database/migrations/m0018_footprints.rs");
+  const migration = read("src-tauri/src/database/migrations/m0020_footprints.rs");
+  const migrationRegistry = read("src-tauri/src/database/migrations/mod.rs");
   const repository = read("src-tauri/src/database/repositories/footprints.rs");
   const server = read("src-tauri/src/server.rs");
   const photo = read("src-tauri/src/server/photo.rs");
 
-  assert.match(migration, /CREATE TABLE footprint_entry_photos/);
-  assert.doesNotMatch(migration, /CREATE TABLE footprint_photos/);
+  assert.match(migration, /fn version\(&self\) -> i64 \{\s*20\s*\}/);
+  assert.match(migration, /m0020-footprints-v1/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS footprint_entry_photos/);
+  assert.doesNotMatch(migration, /CREATE TABLE(?: IF NOT EXISTS)? footprint_photos/);
+  assert.match(migrationRegistry, /18\/19 intentionally remain unregistered/);
+  assert.match(migrationRegistry, /M0020Footprints/);
+  assert.repository;
   assert.match(repository, /JOIN photos p ON p\.id=ep\.photo_id/);
   assert.match(repository, /deleting an entry must never delete the photo/);
   assert.match(server, /"\/api\/footprints\/photo-suggestions"/);
