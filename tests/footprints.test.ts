@@ -124,7 +124,9 @@ test("Footprints ships offline province and prefecture datasets with hierarchica
   assert.ok(codes.has("100000_JD"));
   assert.ok(prefectureCodes.has("510100"), "成都 should have an offline city boundary");
   assert.ok(prefectureCodes.has("440100"), "广州 should have an offline city boundary");
-  assert.match(mapComponent, /onWheel=\{wheel\}/);
+  assert.match(mapComponent, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.match(mapComponent, /event\.preventDefault\(\)/);
+  assert.match(mapComponent, /event\.stopPropagation\(\)/);
   assert.match(mapComponent, /countryDrillScale/);
   assert.match(mapComponent, /enterProvince\(/);
   assert.match(mapComponent, /onSelectCity/);
@@ -133,6 +135,17 @@ test("Footprints ships offline province and prefecture datasets with hierarchica
   assert.match(attribution, /Map of Us/);
   assert.match(attribution, /MIT License/);
   assert.match(entrypoint, /app\/footprints\.css/);
+});
+
+test("Footprints keeps creation compact instead of rendering the oversized hero panel", () => {
+  const component = read("src/components/feature/footprints/Footprints.tsx");
+  const styles = read("app/footprints.css");
+
+  assert.doesNotMatch(component, /footprint-hero/);
+  assert.match(component, /footprint-add hx-btn primary/);
+  assert.doesNotMatch(styles, /\.footprint-hero/);
+  assert.match(styles, /height: clamp\(460px, calc\(100vh - 250px\), 650px\)/);
+  assert.match(styles, /overscroll-behavior: contain/);
 });
 
 test("legacy Travel PMTiles implementation is not part of the new Footprints path", () => {
