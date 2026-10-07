@@ -176,7 +176,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const attach=async()=>{
     if(!desktopNotes.available()){notify("附件仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.selectAttachment(note.id);if(!result.ok||!result.file){if(result.error)notify(result.error);return}
-    await noteApi.recordAttachment(result.file);notify("附件已添加");onSaved(await noteApi.get(note.id));
+    await noteApi.recordAttachment(result.file);notify("附件已添加");const latest=await noteApi.get(note.id);setDraft(latest);setProperties(readNoteProperties(latest.contentJson));onSaved(latest);
   };
   const insertWikiLink=(value:string)=>{
     const target=linkCandidates.find(item=>item.id===value);if(!target||!editor)return;
@@ -303,11 +303,11 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         </section>
         <section className="nt-inspector-section nt-attachments">
           <header><span><Paperclip/><strong>附件</strong></span><button onClick={()=>void attach()}><Plus/>添加</button></header>
-          {draft.attachments?.length?draft.attachments.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await desktopNotes.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);onSaved(await noteApi.get(note.id))}}><Trash2/></button></article>):<small>暂无附件</small>}
+          {draft.attachments?.length?draft.attachments.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await desktopNotes.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);{const latest=await noteApi.get(note.id);setDraft(latest);setProperties(readNoteProperties(latest.contentJson));onSaved(latest)}}}><Trash2/></button></article>):<small>暂无附件</small>}
         </section>
       </aside>
     </div>
-    {historyOpen&&<aside className="nt-history"><header><div><History/><strong>版本历史</strong></div><button onClick={()=>setHistoryOpen(false)}><X/></button></header>{revisions.length===0?<p>手动保存后会在这里保留快照。</p>:revisions.map(revision=><article key={revision.id}><div><strong>版本 {revision.version}</strong><small>{formatTime(revision.createdAt)}</small></div><p>{revision.contentMarkdown.slice(0,120)||"空白版本"}</p><button onClick={async()=>{if(!confirm("恢复此版本？当前内容会先保存为快照。"))return;const restored=await noteApi.restoreRevision(revision.id);onSaved(restored);setDraft(restored);editor?.commands.setContent(restored.contentJson,{emitUpdate:false});setHistoryOpen(false);notify("历史版本已恢复")}}>恢复</button></article>)}</aside>}
+    {historyOpen&&<aside className="nt-history"><header><div><History/><strong>版本历史</strong></div><button onClick={()=>setHistoryOpen(false)}><X/></button></header>{revisions.length===0?<p>手动保存后会在这里保留快照。</p>:revisions.map(revision=><article key={revision.id}><div><strong>版本 {revision.version}</strong><small>{formatTime(revision.createdAt)}</small></div><p>{revision.contentMarkdown.slice(0,120)||"空白版本"}</p><button onClick={async()=>{if(!confirm("恢复此版本？当前内容会先保存为快照。"))return;const restored=await noteApi.restoreRevision(revision.id);onSaved(restored);setDraft(restored);setProperties(readNoteProperties(restored.contentJson));editor?.commands.setContent(restored.contentJson,{emitUpdate:false});setHistoryOpen(false);notify("历史版本已恢复")}}>恢复</button></article>)}</aside>}
   </section>;
 }
 
