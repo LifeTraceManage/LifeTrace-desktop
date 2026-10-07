@@ -9,7 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
-import { geoArea, geoMercator, geoPath, type GeoPath, type GeoProjection } from "d3-geo";
+import { geoArea, geoMercator, geoPath } from "d3-geo";
 import rawChina from "@/src/assets/maps/china-provinces.json";
 import rawPrefectures from "@/src/assets/maps/china-prefectures.json";
 import type { CityFootprintSummary, ProvinceFootprintSummary } from "./types";
@@ -72,21 +72,39 @@ function shortAdminName(name: string, level: "province" | "city"): string {
   return result.length > limit ? `${result.slice(0, limit)}…` : result;
 }
 
+function pathCenter(d: string): [number, number] {
+  const values = d.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi)?.map(Number) ?? [];
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index + 1 < values.length; index += 2) {
+    const x = values[index];
+    const y = values[index + 1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return [width / 2, height / 2];
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
+}
+
 function labelPoint(
   feature: AdminFeature,
-  projection: GeoProjection,
-  path: GeoPath<unknown, AdminFeature>,
+  projection: unknown,
+  d: string,
 ): [number, number] {
   const anchor = feature.properties.centroid ?? feature.properties.center;
-  const projected = anchor ? projection(anchor) : null;
-  if (projected && Number.isFinite(projected[0]) && Number.isFinite(projected[1])) {
-    return projected;
+  if (anchor) {
+    const project = projection as (point: Position) => Position | null;
+    const projected = project(anchor);
+    if (projected && Number.isFinite(projected[0]) && Number.isFinite(projected[1])) {
+      return projected;
+    }
   }
-  const centroid = path.centroid(feature);
-  return [
-    Number.isFinite(centroid[0]) ? centroid[0] : width / 2,
-    Number.isFinite(centroid[1]) ? centroid[1] : height / 2,
-  ];
+  return pathCenter(d);
 }
 
 function fixWinding(feature: AdminFeature): AdminFeature {
@@ -165,13 +183,14 @@ export default function ChinaMap({
     const path = geoPath(projection);
     return {
       paths: provinceFeatures.map((feature) => {
-        const [labelX, labelY] = labelPoint(feature, projection, path);
+        const d = path(feature) ?? "";
+        const [labelX, labelY] = labelPoint(feature, projection, d);
         return {
           code: String(feature.properties.adcode),
           name: feature.properties.name,
           labelX,
           labelY,
-          d: path(feature) ?? "",
+          d,
         };
       }),
       dashPath: dash ? path(fixWinding(dash)) ?? "" : "",
@@ -198,13 +217,14 @@ export default function ChinaMap({
     );
     const path = geoPath(projection);
     return features.map((feature) => {
-      const [labelX, labelY] = labelPoint(feature, projection, path);
+      const d = path(feature) ?? "";
+      const [labelX, labelY] = labelPoint(feature, projection, d);
       return {
         code: String(feature.properties.adcode),
         name: feature.properties.name,
         labelX,
         labelY,
-        d: path(feature) ?? "",
+        d,
       };
     });
   }, [selectedProvinceCode]);
