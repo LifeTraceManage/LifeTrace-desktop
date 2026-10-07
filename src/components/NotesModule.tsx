@@ -20,7 +20,7 @@ import {
   Network, NotebookPen, Paperclip, Pin, Plus, Quote, Redo2, RotateCcw, Save, Search,
   Star, Strikethrough, Tag, Trash2, Undo2, Unlink, X,
 } from "lucide-react";
-import { noteApi, type NoteInputValue } from "@/src/services/noteApi";
+import { noteApi, type NoteGraph, type NoteInputValue } from "@/src/services/noteApi";
 import { executionApi } from "@/src/services/executionApi";
 import { desktopNotes } from "@/src/desktop/noteAdapter";
 import { useLifeStore } from "@/src/stores/useLifeStore";
@@ -326,6 +326,8 @@ export default function NotesModule(){
   const [loading,setLoading]=useState(true);
   const [commandOpen,setCommandOpen]=useState(false);
   const [graphOpen,setGraphOpen]=useState(false);
+  const [graphLoading,setGraphLoading]=useState(false);
+  const [graph,setGraph]=useState<NoteGraph>({nodes:[],edges:[]});
   const saveBeforeSwitch=useRef<((revision?:boolean)=>Promise<Note|null>)|null>(null);
   const selectedIdRef=useRef<string|null>(null);
   const debouncedQuery=useDebounced(query,300);
@@ -396,6 +398,12 @@ export default function NotesModule(){
     await create("document",{title:result.title||null,contentJson,contentHtml:escaped,contentText:content,contentMarkdown:content,summary:cleanSummary(content)});
   },[create]);
   const refresh=useCallback(()=>void loadList(selectedIdRef.current??undefined),[loadList]);
+  const showGraph=async()=>{
+    setGraphOpen(true);setGraphLoading(true);
+    try{setGraph(await noteApi.graph(80))}
+    catch(error){notify(error instanceof Error?error.message:"知识图谱加载失败")}
+    finally{setGraphLoading(false)}
+  };
 
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
@@ -442,17 +450,16 @@ export default function NotesModule(){
   ] as const;
   const activeLabel=folderId?folders.find(item=>item.id===folderId)?.name:tagId?`#${tags.find(item=>item.id===tagId)?.name??""}`:builtin.find(item=>item[0]===scope)?.[1]??"全部笔记";
 
-  const graphNotes=libraryNotes.slice(0,80);
-  const graphPoints=graphNotes.map((note,index)=>{const angle=graphNotes.length<=1?0:Math.PI*2*index/graphNotes.length-Math.PI/2;const radius=Math.min(180,90+graphNotes.length*2);return{id:note.id,title:titleOf(note),x:380+Math.cos(angle)*radius,y:220+Math.sin(angle)*radius,favorite:note.isFavorite}});
+  const graphPoints=graph.nodes.map((node,index)=>{const angle=graph.nodes.length<=1?0:Math.PI*2*index/graph.nodes.length-Math.PI/2;const radius=Math.min(180,90+graph.nodes.length*2);return{id:node.id,title:node.title,x:380+Math.cos(angle)*radius,y:220+Math.sin(angle)*radius,favorite:node.favorite}});
   const graphById=new Map(graphPoints.map(point=>[point.id,point]));
-  const graphEdges=libraryNotes.flatMap(note=>note.relations.map(relation=>({source:graphById.get(note.id),target:(relation.entityType as string)==="note.note"?graphById.get(relation.entityId):undefined}))).filter((edge):edge is {source:(typeof graphPoints)[number];target:(typeof graphPoints)[number]}=>Boolean(edge.source&&edge.target));
+  const graphEdges=graph.edges.map(edge=>({source:graphById.get(edge.sourceId),target:graphById.get(edge.targetId)})).filter((edge):edge is {source:(typeof graphPoints)[number];target:(typeof graphPoints)[number]}=>Boolean(edge.source&&edge.target));
 
   return <><div className="nt-workspace" data-testid="notes-workspace">
     <aside className="nt-library" data-testid="notes-sidebar">
       <div className="nt-library-actions">
         <button className="primary" onClick={()=>void create("document")}><Plus/>新建笔记</button>
         <button title="Daily" onClick={()=>void openDailyNote()}><CalendarDays/></button>
-        <button title="Graph" onClick={()=>setGraphOpen(true)}><Network/></button>
+        <button title="Graph" onClick={()=>void showGraph()}><Network/></button>
         <button title="命令" onClick={()=>setCommandOpen(true)}><Command/></button>
       </div>
       <div className="nt-search"><Search/><input ref={searchRef} value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、正文、文件夹或标签"/>{query&&<button onClick={()=>setQuery("")}><X/></button>}</div>
@@ -470,13 +477,13 @@ export default function NotesModule(){
       {selected?<NoteEditor key={selected.id} note={selected} folders={folders} tags={tags} trashMode={scope==="trash"} onOpenNote={open} registerSave={save=>{saveBeforeSwitch.current=save;return()=>{if(saveBeforeSwitch.current===save)saveBeforeSwitch.current=null}}} onSaved={saved=>{setSelected(saved);selectedIdRef.current=saved.id;setNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item));setLibraryNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item))}} onListChanged={refresh}/>:<section className="nt-editor nt-empty-editor"><div><NotebookPen/><h2>选择一篇笔记</h2><p>内容会自动保存到本机 SQLite，并通过原生同步引擎同步。</p><button className="hx-btn primary" onClick={()=>void create("document")}><Plus/>新建笔记</button></div></section>}
     </main>
   </div>
-  {graphOpen&&<div className="nt-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setGraphOpen(false)}}><section className="nt-graph"><header><div><Network/><strong>Notes Graph</strong><small>Wiki Link 关系图 · 最多 80 篇</small></div><button onClick={()=>setGraphOpen(false)}><X/></button></header>{graphPoints.length?<svg viewBox="0 0 760 440" role="img" aria-label="笔记知识图谱"><g className="edges">{graphEdges.map((edge,index)=><line key={index} x1={edge.source.x} y1={edge.source.y} x2={edge.target.x} y2={edge.target.y}/>)}</g>{graphPoints.map(point=><g key={point.id} className="node" onClick={()=>{setGraphOpen(false);void open(point.id)}}><circle cx={point.x} cy={point.y} r={point.favorite?8:6}/><text x={point.x} y={point.y+18} textAnchor="middle">{point.title.length>18?`${point.title.slice(0,17)}…`:point.title}</text></g>)}</svg>:<div className="nt-list-empty"><Network/><strong>知识图谱为空</strong></div>}</section></div>}
+  {graphOpen&&<div className="nt-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setGraphOpen(false)}}><section className="nt-graph"><header><div><Network/><strong>Notes Graph</strong><small>Wiki Link 关系图 · 最多 80 篇</small></div><button onClick={()=>setGraphOpen(false)}><X/></button></header>{graphLoading?<div className="nt-list-empty"><Network/><strong>正在读取双链索引…</strong></div>:graphPoints.length?<svg viewBox="0 0 760 440" role="img" aria-label="笔记知识图谱"><g className="edges">{graphEdges.map((edge,index)=><line key={index} x1={edge.source.x} y1={edge.source.y} x2={edge.target.x} y2={edge.target.y}/>)}</g>{graphPoints.map(point=><g key={point.id} className="node" onClick={()=>{setGraphOpen(false);void open(point.id)}}><circle cx={point.x} cy={point.y} r={point.favorite?8:6}/><text x={point.x} y={point.y+18} textAnchor="middle">{point.title.length>18?`${point.title.slice(0,17)}…`:point.title}</text></g>)}</svg>:<div className="nt-list-empty"><Network/><strong>知识图谱为空</strong><p>在正文中使用 [[Wiki Link]] 后会形成关系图。</p></div>}</section></div>}
   {commandOpen&&<div className="nt-command-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setCommandOpen(false)}}><section className="nt-command"><header><Search/><strong>快速命令</strong><kbd>Esc</kbd><button onClick={()=>setCommandOpen(false)}><X/></button></header><div>
     <button onClick={()=>{setCommandOpen(false);void create("document")}}><Plus/><span><strong>新建笔记</strong><small>Ctrl + N</small></span></button>
     <button onClick={()=>{setCommandOpen(false);void openDailyNote()}}><CalendarDays/><span><strong>打开今日日记</strong><small>Daily</small></span></button>
     <button onClick={()=>{setCommandOpen(false);void create("quick")}}><FileText/><span><strong>新建快速记录</strong><small>Ctrl + Shift + N</small></span></button>
     <button onClick={()=>{setCommandOpen(false);searchRef.current?.focus()}}><Search/><span><strong>搜索笔记</strong><small>Ctrl + Shift + F</small></span></button>
-    <button onClick={()=>{setCommandOpen(false);setGraphOpen(true)}}><Network/><span><strong>打开知识图谱</strong><small>Graph</small></span></button>
+    <button onClick={()=>{setCommandOpen(false);void showGraph()}}><Network/><span><strong>打开知识图谱</strong><small>Graph</small></span></button>
     <button onClick={()=>{setCommandOpen(false);void importMarkdown()}}><FileUp/><span><strong>导入 Markdown</strong><small>桌面文件</small></span></button>
     {selected&&<><button onClick={()=>void toggleSelected("isFavorite")}><Star/><span><strong>{selected.isFavorite?"取消收藏":"收藏当前笔记"}</strong></span></button><button onClick={()=>void toggleSelected("isPinned")}><Pin/><span><strong>{selected.isPinned?"取消置顶":"置顶当前笔记"}</strong></span></button><button onClick={()=>void exportSelected()}><Download/><span><strong>导出当前笔记</strong><small>Markdown</small></span></button></>}
     {notes.slice(0,8).map(note=><button key={note.id} onClick={()=>{setCommandOpen(false);void open(note.id)}}><File/><span><strong>打开 · {titleOf(note)}</strong><small>{formatTime(note.updatedAt)}</small></span></button>)}
