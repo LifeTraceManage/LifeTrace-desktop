@@ -458,9 +458,9 @@ export default function NotesModule(){
   const importMarkdown=useCallback(async()=>{
     if(!desktopNotes.available()){notify("Markdown 导入仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.importMarkdown();if(!result.ok||result.canceled)return;if(result.error){notify(result.error);return}
-    const content=result.content??"";const lines=content.split(/\r?\n/);const contentJson={type:"doc",content:lines.map(line=>({type:"paragraph",content:line?[{type:"text",text:line}]:undefined}))};
-    const escaped=lines.map(line=>`<p>${line.replace(/[&<>"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char]!) )||"<br>"}</p>`).join("");
-    await create("document",{title:result.title||null,contentJson,contentHtml:escaped,contentText:content,contentMarkdown:content,summary:cleanSummary(content)});
+    const content=result.content??"";const plain=plainTextFromMarkdown(content);
+    const contentJson=markdownContentJson(content,emptyJson,{status:"",source:"import",aliases:[]});
+    await create("document",{title:result.title||null,contentJson,contentHtml:"",contentText:plain,contentMarkdown:content,summary:cleanSummary(plain)});
   },[create]);
   const refresh=useCallback(()=>void loadList(selectedIdRef.current??undefined),[loadList]);
   const showGraph=async()=>{
@@ -559,6 +559,6 @@ export function DashboardNotes({openNotes}:{openNotes:(id?:string)=>void}){
   const [text,setText]=useState("");const [recent,setRecent]=useState<Note[]>([]);const [saving,setSaving]=useState(false);
   const reload=useCallback(()=>noteApi.list({scope:"all",sort:"updated_desc",limit:5}).then(setRecent).catch(()=>undefined),[]);
   useEffect(()=>{void reload()},[reload]);
-  const submit=async()=>{const value=text.trim();if(!value||saving)return;setSaving(true);try{await noteApi.create({title:null,noteType:"quick",folderId:null,contentJson:{type:"doc",content:[{type:"paragraph",content:[{type:"text",text:value}]}]},contentHtml:`<p>${value.replace(/[&<>"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char]!) )}</p>`,contentText:value,contentMarkdown:value,summary:cleanSummary(value),isPinned:false,isFavorite:false,isArchived:false,tagIds:[],relations:[]});setText("");await reload();notify("快速记录已保存")}finally{setSaving(false)}};
+  const submit=async()=>{const value=text.trim();if(!value||saving)return;setSaving(true);try{await noteApi.create({title:null,noteType:"quick",folderId:null,contentJson:markdownContentJson(value,emptyJson,{status:"",source:"lifetrace",aliases:[]}),contentHtml:"",contentText:plainTextFromMarkdown(value),contentMarkdown:value,summary:cleanSummary(plainTextFromMarkdown(value)),isPinned:false,isFavorite:false,isArchived:false,tagIds:[],relations:[]});setText("");await reload();notify("快速记录已保存")}finally{setSaving(false)}};
   return <article className="hx-panel nt-dashboard-widget"><header><div><span>快速记录</span><h2>记录此刻的想法</h2></div><button onClick={()=>openNotes()}>打开笔记 <ChevronRight/></button></header><div className="nt-quick"><textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.ctrlKey&&e.key==="Enter"){e.preventDefault();void submit()}}} placeholder="记录此刻的想法……"/><footer><small>Ctrl + Enter 提交</small><button disabled={!text.trim()||saving} onClick={()=>void submit()}>{saving?"保存中":"保存记录"}</button></footer></div>{recent.length>0&&<div className="nt-recent"><strong>最近笔记</strong>{recent.map(note=><button key={note.id} onClick={()=>openNotes(note.id)}><span>{titleOf(note)}</span><small>{formatTime(note.updatedAt)}</small></button>)}</div>}</article>;
 }
