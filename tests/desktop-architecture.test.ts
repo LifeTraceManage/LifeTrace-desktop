@@ -130,6 +130,24 @@ test("footprints and photo dashboard use the restricted local JSON IPC transport
   assert.match(lib, /commands::local_api::local_json_api_request/);
 });
 
+test("xunji desktop import uses raw tauri IPC for image bytes and JSON IPC for confirmation", () => {
+  const api = read("src/services/xunjiImportApi.ts");
+  const commands = read("src-tauri/src/commands/xunji.rs");
+  const localApi = read("src-tauri/src/commands/local_api.rs");
+  const server = read("src-tauri/src/server/xunji.rs");
+  const lib = read("src-tauri/src/lib.rs");
+
+  assert.match(api, /xunji_parse_image/);
+  assert.match(api, /Uint8Array/);
+  assert.match(api, /localJsonRequest/);
+  assert.match(commands, /InvokeBody::Raw/);
+  assert.match(commands, /server::xunji::parse_image_bytes/);
+  assert.match(commands, /signal_local_change/);
+  assert.match(localApi, /\/api\/xunji\/imports/);
+  assert.match(server, /pub\(crate\) async fn parse_image_bytes/);
+  assert.match(lib, /commands::xunji::xunji_parse_image/);
+});
+
 test("desktop startup renders before probing the localhost compatibility server", () => {
   const main = read("tauri-ui/main.tsx");
   assert.match(main, /createRoot\(root!\)\.render/);
