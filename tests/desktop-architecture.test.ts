@@ -108,6 +108,28 @@ test("execution desktop requests use tauri ipc while browser compatibility stays
   assert.match(lib, /commands::execution::execution_api_request/);
 });
 
+test("footprints and photo dashboard use the restricted local JSON IPC transport", () => {
+  const footprints = read("src/services/footprintApi.ts");
+  const photos = read("src/services/photoSyncApi.ts");
+  const transport = read("src/services/localJsonTransport.ts");
+  const commands = read("src-tauri/src/commands/local_api.rs");
+  const server = read("src-tauri/src/server.rs");
+  const lib = read("src-tauri/src/lib.rs");
+
+  assert.match(footprints, /localJsonRequest/);
+  assert.match(photos, /localJsonRequest/);
+  assert.match(transport, /local_json_api_request/);
+  assert.match(transport, /isTauriRuntime/);
+  assert.match(commands, /\/api\/footprints\//);
+  assert.match(commands, /\/api\/photo-sync\/dashboard/);
+  assert.doesNotMatch(commands, /starts_with\("\/api\/"\)/);
+  assert.match(commands, /server::local_json_ipc_router/);
+  assert.match(commands, /signal_local_change/);
+  assert.match(server, /fn local_json_routes\(\) -> Router<AppState>/);
+  assert.match(server, /pub\(crate\) fn local_json_ipc_router/);
+  assert.match(lib, /commands::local_api::local_json_api_request/);
+});
+
 test("desktop startup renders before probing the localhost compatibility server", () => {
   const main = read("tauri-ui/main.tsx");
   assert.match(main, /createRoot\(root!\)\.render/);
