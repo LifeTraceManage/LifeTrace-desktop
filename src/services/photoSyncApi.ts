@@ -1,4 +1,4 @@
-import { instrumentedFetch } from "@/src/services/clientObservability";
+import { localJsonRequest } from "@/src/services/localJsonTransport";
 
 export type PhotoSyncPhoto = {
   id: string;
@@ -65,12 +65,5 @@ export async function loadPhotoSyncDashboard(
   pageSize = 30,
 ): Promise<PhotoSyncDashboard> {
   const path = `/api/photo-sync/dashboard?page=${encodeURIComponent(String(page))}&pageSize=${encodeURIComponent(String(pageSize))}`;
-  const response = await instrumentedFetch(globalThis.fetch, path, { cache: "no-store" }, {
-    module: "photo-sync",
-    action: "dashboard.load",
-    userMessage: "照片数据读取失败",
-  });
-  const payload = await response.json() as PhotoSyncDashboard & { error?: string };
-  if (!response.ok) throw new Error(payload.error || "照片数据读取失败");
-  return payload;
+  return localJsonRequest<PhotoSyncDashboard>(path, undefined, "照片数据读取失败");
 }

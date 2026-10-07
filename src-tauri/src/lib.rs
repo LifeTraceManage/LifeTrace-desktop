@@ -37,6 +37,7 @@ pub fn run() {
             cloud_api::cloud_api_http_request,
             commands::analytics::analytics_query,
             commands::execution::execution_api_request,
+            commands::local_api::local_json_api_request,
             commands::notes::notes_query,
             commands::notes::notes_mutate,
             commands::state::state_get,
