@@ -438,8 +438,30 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            WHERE exif_scanned_at IS NULL
              AND deleted_at IS NULL
              AND media_type='image'
-             AND processing_status='completed';"
+             AND processing_status='completed';
+         CREATE INDEX IF NOT EXISTS photos_geo_idx ON photos(latitude,longitude,captured_at)
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;"
     )?;
+    let footprint_links_exist: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='footprint_entry_photos'",
+        [],
+        |row| row.get(0),
+    )?;
+    if footprint_links_exist > 0 {
+        connection.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS trg_footprint_photo_soft_delete
+             AFTER UPDATE OF deleted_at ON photos
+             WHEN NEW.deleted_at IS NOT NULL
+             BEGIN
+               DELETE FROM footprint_entry_photos WHERE photo_id=NEW.id;
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_footprint_photo_delete
+             AFTER DELETE ON photos
+             BEGIN
+               DELETE FROM footprint_entry_photos WHERE photo_id=OLD.id;
+             END;"
+        )?;
+    }
     // 上次隐藏任务被中断（例如加密完成前应用退出）时，把卡在“隐藏中”的照片
     // 恢复为可见：文件仍在磁盘，不丢数据，等待用户再次隐藏。
     connection.execute(
@@ -1484,4 +1506,53 @@ mod exif_tests {
         assert!(scanned_at.is_some());
         assert!(pending_exif_candidates(&connection, 20).unwrap().is_empty());
     }
+#[cfg(test)]
+mod footprint_cleanup_tests {
+    use super::*;
+        #[test]
+        fn footprint_photo_links_are_removed_when_photo_is_soft_deleted() {
+            let connection = Connection::open_in_memory().unwrap();
+            connection.execute_batch(
+                "CREATE TABLE footprint_entry_photos(
+                   entry_id TEXT NOT NULL,
+                   photo_id TEXT NOT NULL,
+                   sort_order INTEGER NOT NULL DEFAULT 0,
+                   is_cover INTEGER NOT NULL DEFAULT 0,
+                   created_at TEXT NOT NULL,
+                   PRIMARY KEY(entry_id,photo_id)
+                 );"
+            ).unwrap();
+            ensure_schema(&connection).unwrap();
+            connection.execute(
+                "INSERT INTO photos(
+                   id,content_hash,original_file_name,stored_file_name,original_path,
+                   media_type,file_size,imported_at,processing_status
+                 ) VALUES(
+                   'photo-1','hash-1','photo.jpg','photo.jpg','photo.jpg',
+                   'image',1,'2026-01-01T00:00:00Z','completed'
+                 )",
+                [],
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO footprint_entry_photos(entry_id,photo_id,created_at)
+                 VALUES('entry-1','photo-1','2026-01-01T00:00:00Z')",
+                [],
+            ).unwrap();
+    
+            connection.execute(
+                "UPDATE photos SET deleted_at='2026-01-02T00:00:00Z' WHERE id='photo-1'",
+                [],
+            ).unwrap();
+    
+            let count: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM footprint_entry_photos WHERE photo_id='photo-1'",
+                [],
+                |row| row.get(0),
+            ).unwrap();
+            assert_eq!(count, 0);
+        }
+    
+    
+}
+
 }

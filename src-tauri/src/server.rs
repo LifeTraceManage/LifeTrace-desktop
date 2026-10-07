@@ -7,6 +7,7 @@ mod execution_relation;
 mod execution_reminder;
 mod execution_structure;
 mod execution_waiting;
+mod footprints;
 mod imports;
 pub(crate) mod migration;
 mod notes;
@@ -412,6 +413,36 @@ pub async fn serve(
                 .delete(imports::remove),
         )
         .route("/api/notes", get(notes::get).post(notes::mutate))
+        .route("/api/footprints/summary", get(footprints::summary))
+        .route(
+            "/api/footprints/locations",
+            get(footprints::list_locations).post(footprints::create_location),
+        )
+        .route(
+            "/api/footprints/entries",
+            get(footprints::list_entries).post(footprints::create_entry),
+        )
+        .route(
+            "/api/footprints/entries/{id}",
+            get(footprints::get_entry)
+                .put(footprints::update_entry)
+                .delete(footprints::delete_entry),
+        )
+        .route(
+            "/api/footprints/entries/{id}/photos",
+            axum::routing::post(footprints::attach_photos),
+        )
+        .route(
+            "/api/footprints/entries/{id}/photos/{photo_id}",
+            axum::routing::delete(footprints::detach_photo),
+        )
+        .route("/api/footprints/provinces", get(footprints::provinces))
+        .route("/api/footprints/provinces/{code}", get(footprints::province))
+        .route("/api/footprints/photos", get(footprints::photos))
+        .route(
+            "/api/footprints/photo-suggestions",
+            get(footprints::photo_suggestions),
+        )
         .route("/api/xunji/parse", axum::routing::post(xunji::parse))
         .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
         .route(

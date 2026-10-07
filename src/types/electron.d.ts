@@ -24,10 +24,6 @@ declare global {
       chooseAndMigrate():Promise<{canceled:boolean;status?:StorageMigrationStatus;error?:string}>;
       restart():Promise<void>;
     };
-    travelOfflineMapApi?: {
-      chooseAndInstall():Promise<{ok:boolean;canceled?:boolean;error?:string;fileName?:string;sizeBytes?:number}>;
-      remove():Promise<{ok:boolean;error?:string}>;
-    };
     noteApi?: {
       selectAttachment(noteId:string):Promise<{ok:boolean;canceled?:boolean;error?:string;file?:Record<string,unknown>}>;
       openAttachment(noteId:string,fileName:string):Promise<{ok:boolean;error?:string}>;

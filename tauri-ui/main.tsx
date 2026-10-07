@@ -21,6 +21,7 @@ import "@/app/xunji-import.css";
 import "@/app/notes.css";
 import "@/app/persist-project.css";
 import "@/app/photo-sync.css";
+import "@/app/footprints.css";
 import "@/app/local-vault.css";
 import "@/app/settings.css";
 import "@/app/account-settings-redesign.css";

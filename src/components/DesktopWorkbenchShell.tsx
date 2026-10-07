@@ -17,6 +17,7 @@ import {
   Images,
   LoaderCircle,
   LogOut,
+  MapPinned,
   NotebookPen,
   RefreshCw,
   Search,
@@ -63,6 +64,7 @@ const NAV_GROUPS: DesktopNavGroup[] = [
     items: [
       { path: "/app/notes", label: "笔记", icon: NotebookPen },
       { path: "/app/photos", label: "相册", icon: Images },
+      { path: "/app/footprints", label: "足迹", icon: MapPinned },
       { path: "/app/finance", label: "财务", icon: WalletCards },
     ],
   },
@@ -84,6 +86,7 @@ const PAGE_COPY: Record<string, [string, string]> = {
   "/app/review": ["复盘", "回顾阶段表现、完成情况与变化趋势。"],
   "/app/notes": ["笔记", "记录与整理个人知识。"],
   "/app/photos": ["相册", "管理同步相册与本机私密相册。"],
+  "/app/footprints": ["足迹", "用地图、时间与照片整理去过的地方。"],
   "/app/finance": ["财务", "管理本机账单、账户与资产数据。"],
   "/app/finance/transactions": ["账单", "查看和编辑本机账单记录。"],
   "/app/finance/accounts": ["账户", "管理本机财务账户。"],

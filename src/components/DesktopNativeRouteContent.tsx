@@ -14,6 +14,7 @@ import SettingsView from "@/src/components/feature/settings/SettingsView";
 import EditorModal, { type EditorModalState } from "@/src/components/feature/forms/EditorModal";
 import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
+import Footprints from "@/src/components/feature/footprints/Footprints";
 import CloudAgentModule from "@/src/components/CloudAgentModule";
 import DesktopSearchModule from "@/src/components/DesktopSearchModule";
 import DesktopHealthModule from "@/src/components/DesktopHealthModule";
@@ -191,6 +192,8 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
     content = <NotesModule />;
   } else if (route === "/app/photos") {
     content = <PhotoSyncModule />;
+  } else if (route === "/app/footprints") {
+    content = <Footprints />;
   } else if (route === "/app/finance/transactions") {
     content = <Transactions edit={(value) => setModal({ kind: "transaction", value })} note={transactionNote} />;
   } else if (route === "/app/finance/accounts") {
