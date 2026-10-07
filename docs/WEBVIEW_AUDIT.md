@@ -2,35 +2,38 @@
 
 ## Summary
 
-LifeTrace Desktop is a Tauri application, so its React UI is rendered in the operating system WebView provided by Tauri. That runtime WebView is expected and is not the problem addressed here.
+LifeTrace Desktop is a Tauri application, so React is naturally rendered by the operating-system WebView used by Tauri. That WebView is expected and is not the dependency this refactor removes.
 
-The audit found **no non-Travel architecture where Desktop loads the public LifeTrace Web application through an iframe, remote WebView URL, or remote LifeTrace page shell**.
+The audit found **no Desktop architecture that embeds the public LifeTrace Web application through an iframe, remote WebView URL, or remote LifeTrace page shell**.
 
-The problematic dependency was instead compile-time/source-level reuse of the checked-in Web frontend implementation under `vendor/web`.
+The actual historical coupling was source/build reuse of `vendor/web`, plus reuse of localhost HTTP as a packaged Desktop JSON transport. Both have now been removed from the primary Desktop path.
 
 ## Audit Classification
 
-| Current dependency | Reason it existed | Target implementation | Migration status |
+| Dependency / boundary | Historical reason | Final Desktop implementation | Status |
 | --- | --- | --- | --- |
-| `DesktopCloudWorkspace -> vendor/web AppContext` | Reuse Web application state container | Desktop local-first state + native services | Removed |
-| `DesktopCloudWorkspace -> DesktopFeatureRouter` | Reuse Web routes/pages after login | Desktop-owned route state and native page composition | Removed |
-| `DesktopCloudWorkspace -> CloudDataStore` | Make cloud state the authenticated UI source of truth | SQLite is UI source of truth; Sync coordinates cloud | Removed |
-| Tauri entry -> Web global styles | Reuse Web visual contract | Desktop CSS/tokens only | Removed |
-| Desktop TypeScript -> `vendor/web/src/**/*.tsx` | Compile reused Web pages | Compile Desktop sources only | Removed |
-| Local DeepSeek Agent runtime | Historical Desktop AI implementation | Cloud Agent client | Removed |
-| Notes -> localhost `/api/notes` | Browser-compatible transport reused on Desktop | Tauri Notes command -> application service -> repository | Migrated |
-| Core local state -> localhost `/api/state` | Browser-compatible local server | Tauri state command -> application service -> repository | Migrated |
-| Analytics/Search -> localhost API | Existing local projection service | Tauri analytics application boundary | Migrated; HTTP kept for browser/dev |
-| Execution -> localhost API | Existing local execution service | Tauri execution application boundary | Pending cleanup |
-| Vite/PostCSS/shared dependency references to `vendor/web` | Shared build/dependency setup | Desktop-owned build tooling where safe | Partial; preserve Travel compatibility |
+| `DesktopCloudWorkspace -> vendor/web AppContext` | Reuse Web state container | Desktop stores/native workspace | Removed |
+| `DesktopCloudWorkspace -> DesktopFeatureRouter` | Reuse Web routes/pages | `DesktopNativeRouteContent` + native navigation | Removed |
+| `DesktopCloudWorkspace -> CloudDataStore` | Cloud state drove authenticated UI | SQLite/local-first UI + Sync | Removed |
+| Tauri entry -> Web global styles | Reuse Web visual contract | Desktop CSS/tokens | Removed |
+| Desktop TypeScript -> `vendor/web/src` | Compile reused Web pages | Desktop sources only | Removed |
+| Vite/PostCSS -> `vendor/web` | Reuse Tailwind/build dependencies | Desktop-owned Vite build | Removed |
+| `prepare:web-shared` | Install `vendor/web/node_modules` | Root `npm ci` only | Removed |
+| Local DeepSeek Agent | Historical Desktop AI | Cloud Agent client | Removed |
+| Notes -> localhost `/api/notes` | Browser-compatible local transport | Tauri Notes command/application service | Migrated |
+| Core state -> localhost `/api/state` | Browser-compatible local transport | Tauri state command/application service | Migrated |
+| Analytics -> localhost | Existing projection service | Tauri analytics boundary | Migrated |
+| Execution -> localhost | Large existing Axum route set | Tauri IPC + shared in-memory execution router | Migrated |
+| Footprints -> localhost JSON | Main feature landed with HTTP API | Restricted local JSON IPC | Migrated |
+| Photo Dashboard -> localhost JSON | Existing photo dashboard route | Restricted local JSON IPC | Migrated |
+| Xunji multipart/JSON -> localhost | Browser-style image import | Raw Tauri IPC + restricted JSON IPC | Migrated |
+| Photo media/LAN services | Binary streaming / device protocol | Purpose-built local services | Intentionally retained |
 
 ## WebView Search Results
 
 ### Remote LifeTrace Web URL
 
-No authenticated Desktop core route requires navigating to a remote LifeTrace Web frontend.
-
-Target: remain absent.
+No authenticated Desktop core route navigates to a remote LifeTrace Web frontend.
 
 Status: **pass**.
 
@@ -38,37 +41,23 @@ Status: **pass**.
 
 No Desktop core feature is implemented by embedding a LifeTrace iframe.
 
-Target: remain absent.
-
 Status: **pass**.
 
-### Web Router
+### Web Router / Web AppContext
 
-Before refactor, authenticated Desktop used `vendor/web/src/app/DesktopFeatureRouter.tsx`.
+The authenticated Desktop workspace is now Desktop-owned. `DesktopCloudWorkspace` uses native navigation, local state and `DesktopNativeRouteContent`; it no longer mounts Web AppContext, Web FeatureRouter or CloudDataStore.
 
-Target: Desktop route state owned by the Desktop application.
+Status: **removed**.
 
-Status: **removed from the authenticated runtime**.
+### Browser history / location
 
-### window.location / browser history
+Browser primitives may still exist for ordinary WebView mechanics or browser/dev compatibility, but they are not the primary Desktop application router. Native Desktop navigation owns route history and last-route behavior.
 
-Browser navigation is not used as the primary Desktop application router. Native Desktop navigation now keeps its own atomic history and last route. Online and offline authenticated states use this same workspace.
-
-Normal page reload/error recovery code may still use browser primitives because Tauri's React renderer is a WebView; this is not a dependency on the LifeTrace Web frontend.
-
-Status: **core routing migrated**. Login/logout no longer require a full page reload to switch workspaces.
-
-### Web-only runtime
-
-Before refactor, authenticated pages required Web AppContext/CloudDataStore and Web feature modules.
-
-Target: Desktop pages use Desktop stores/services/repositories.
-
-Status: **runtime dependency removed for the primary non-Travel workspace**.
+Status: **migrated**.
 
 ## Current Desktop Route Ownership
 
-The authenticated workspace is composed by `DesktopNativeRouteContent` and Desktop-owned modules for:
+`DesktopNativeRouteContent` owns the authenticated product pages, including:
 
 - Today
 - Execution
@@ -79,61 +68,96 @@ The authenticated workspace is composed by `DesktopNativeRouteContent` and Deskt
 - Review
 - Notes
 - Photos
+- Footprints
 - Finance
 - Search
 - Settings
 - Cloud Agent
 
-Travel is intentionally omitted from this audit's migration work and is not changed.
+The current `main` Footprints feature was reconciled into the branch and connected to this native route. The legacy Travel PMTiles bridge was not restored.
 
-## Desktop Adapter Boundary
+## Desktop Platform Boundary
 
-Non-Travel React components are now guarded from direct platform access. Native capabilities are exposed through `src/desktop` adapters for sync, secure credentials, Notes files, storage, photo sync, Vault, external URLs and app metadata.
+Platform capabilities are exposed through Desktop/Tauri services/adapters rather than directly from business UI.
 
-Component tests fail if non-Travel React UI imports Tauri APIs, calls `invoke()` or `fetch()`, or accesses a `window.*Api` bridge directly.
+Architecture guards reject regressions such as:
 
-The Tauri UI also renders before the localhost compatibility server health check completes; that server is no longer a prerequisite for core Desktop startup.
+- feature UI importing low-level Tauri transport directly;
+- Cloud Workspace invoking cloud commands directly;
+- restoring the local Agent;
+- routing Notes/Core state/Analytics/Execution back through packaged localhost JSON;
+- widening the restricted local JSON command into an arbitrary `/api/*` proxy;
+- reintroducing Desktop build dependencies on `vendor/web`.
+
+Desktop startup also renders before the localhost compatibility health probe completes.
 
 ## Local Compatibility Server
 
-The Axum service on localhost is not a LifeTrace Web frontend. It is a native Rust compatibility/API process running inside the Desktop application.
+The Axum localhost service is not a LifeTrace Web frontend. It is a native Rust compatibility surface.
 
-Current status:
+Packaged Desktop JSON/data paths now use IPC:
 
-- Notes: Desktop no longer depends on its HTTP route.
-- Core local state: Desktop no longer depends on its HTTP route.
-- Analytics/search: Desktop uses Tauri IPC; HTTP route is browser/dev compatibility only.
-- Execution and selected import/photo features still use compatibility routes where their existing local service behavior remains useful.
+- Notes: Tauri command.
+- Core local state: Tauri command.
+- Analytics/Search: Tauri command.
+- Execution: `execution_api_request` + shared in-memory router.
+- Footprints: restricted local JSON IPC.
+- Photo Dashboard: restricted local JSON IPC.
+- Xunji confirm/cancel: restricted local JSON IPC.
+- Xunji image parse: raw Tauri IPC.
 
-Therefore, removing the Web frontend and removing localhost compatibility transport are separate concerns. The former is addressed; the latter is an incremental native-IPC cleanup.
+Browser/dev may continue using the HTTP adapters.
+
+The intentionally retained local network services are different in kind:
+
+- photo media on `127.0.0.1:3444` provides addressable image/video bytes to renderer media elements;
+- LAN photo pairing/upload provides a device protocol.
+
+These are not Web frontend dependencies and are not JSON business-data fallback paths.
 
 ## Build-time Web Snapshot Dependencies
 
-The Desktop runtime no longer mounts Web pages, but some build configuration still uses files/dependencies located under `vendor/web`.
+Desktop build-time dependency on `vendor/web` is removed.
 
-These references should not be deleted blindly because the repository contains shared and Travel-related dependencies. This workstream must not modify Travel dependencies without a reference-safe migration.
+The Desktop no longer:
 
-Target:
+1. loads Web global CSS;
+2. compiles `vendor/web/src`;
+3. points Vite PostCSS at `vendor/web`;
+4. aliases MapLibre/PMTiles to `vendor/web/node_modules`;
+5. installs `vendor/web` dependencies with `prepare:web-shared`;
+6. runs `ensure-shared-web-deps.mjs` in dev/lint/build/CI/release.
 
-1. Move non-Travel build config needed by Desktop into Desktop-owned locations.
-2. Keep shared packages where truly shared.
-3. Remove `vendor/web` build references only after confirming Travel/shared consumers.
+The checked-in `vendor/web` tree can remain as repository history/reference without being a Desktop runtime/build dependency. Genuine shared protocol code under `vendor/shared` remains.
 
-Status: **partial**.
+Status: **pass**.
 
 ## Acceptance Test
 
-To validate removal of the actual Web frontend dependency:
+Repository CI validates:
+
+```text
+npm ci
+npm run lint
+npm run test:unit
+npm run web:build
+npm run test:rust
+```
+
+Desktop CI #278 passed both Linux frontend-static and Windows frontend-and-rust jobs on implementation commit `8453fab`.
+
+For manual product validation:
 
 1. Do not run the LifeTrace Web frontend.
-2. Keep LifeTrace Backend/Cloud available.
-3. Start the Tauri Desktop app.
-4. Validate startup and native login.
-5. Validate local SQLite Dashboard/Habits/Finance/Review/Fitness.
-6. Validate Notes create/edit/save/restart path.
-7. Validate Photos/attachments/local tools.
-8. Validate local Search/Settings.
-9. Validate Sync against Backend.
-10. Validate Cloud Agent separately; Agent failure must not break other pages.
+2. Keep LifeTrace Cloud/Backend available for cloud-only features.
+3. Start Tauri Desktop.
+4. Validate native login/session restore and offline authenticated workspace.
+5. Validate SQLite-backed Dashboard/Habits/Finance/Review/Fitness.
+6. Validate Notes create/edit/save/restart.
+7. Validate Execution, Footprints and Search.
+8. Validate Photo Dashboard/media/Vault/attachments.
+9. Validate Xunji import.
+10. Validate Sync.
+11. Validate Cloud Agent failure isolation.
 
-Expected: the Desktop core remains usable without the LifeTrace Web frontend.
+Expected result: Desktop core product remains usable without the LifeTrace Web frontend.

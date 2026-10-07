@@ -1,170 +1,189 @@
 # LifeTrace Desktop 架构重构审计与实现说明
 
-> 范围：桌面端架构、数据访问、同步、Notes、Agent、Web 兼容边界。  
-> 明确排除：Travel / 旅行足迹相关文件、路由、组件、服务、数据结构与配置。
+> 分支：`refactor/desktop-native-cloud-agent`  
+> 范围：桌面端架构、数据访问、同步、Notes、Execution、照片/导入、Agent、Web 前端边界。  
+> 说明：旧 Travel / 旅行足迹实现不在本轮恢复范围；同步 `main` 时接入了当前 Footprints 功能，并保持 native Desktop 路由。
 
-## 1. 重构前审计结论
+## 1. 重构前的问题
 
-当前桌面端已经是 Tauri + React + Rust + SQLite 应用，并不存在把线上站点通过 iframe 或远程 WebView URL 整体嵌入桌面的实现；真正的问题是**源码级 Web 应用耦合**：
+LifeTrace Desktop 本来就是 Tauri + React + Rust + SQLite，并没有通过 iframe 或远程 WebView URL 把线上 LifeTrace Web 整站嵌进桌面端。
 
-- Tauri UI 入口直接加载 `vendor/web/src/styles/globals.css`。
-- `DesktopCloudWorkspace` 直接引用 `vendor/web` 的 AppContext、FeatureRouter、AgentSidebarContext 与 CloudDataStore。
-- Vite 构建继续依赖 `vendor/web` 的 PostCSS/Tailwind 与部分前端依赖。
-- 登录后的工作台状态由 Web CloudDataStore 驱动，本机同步副本更多作为后台副本使用；离线时则切换到另一套 HengXuShell，本质上形成两套工作台。
-- Notes 桌面 UI 通过 `fetch("/api/notes")` -> localhost:3103 -> Axum handler -> Repository -> SQLite，存在不必要的本机 HTTP 跳转。
-- 本地还存在完整 DeepSeek AI 管家：本机 API Key、会话表、Axum assistant 路由、DeepSeek HTTP 调用与独立 UI；这与“云端 Agent 为唯一 Agent”的目标冲突。
-- React 页面中存在直接 Tauri `invoke` 网络桥接逻辑，UI、传输与应用层边界不清晰。
+真正的问题是源码、构建和本机传输边界混在一起：
 
-## 2. 本轮目标架构
+- 登录后的工作台直接复用 `vendor/web` 的 AppContext、FeatureRouter 和 CloudDataStore。
+- Tauri 入口/Vite 构建依赖 `vendor/web` 的样式、PostCSS/Tailwind 和 node_modules。
+- 在线与离线身份状态会进入不同工作台。
+- Notes、Execution、照片 Dashboard、导入等本地能力复用了 localhost JSON API。
+- React 页面中存在直接 Tauri/网络桥接。
+- Desktop 内还运行完整的本地 DeepSeek Agent，并保存本地模型配置。
+
+## 2. 最终架构
 
 ```text
 React Desktop UI
         |
         v
-Desktop Service / Application Boundary
+Desktop services / stores
         |
-        +--------------------------+
-        |                          |
-        v                          v
-Tauri Commands                 Cloud Transport
-        |                          |
-        v                          v
-Rust Application Service       Rust cloud_api command
-        |                          |
-        v                          v
-Repository / SQLite            LifeTrace Cloud API
-        |                          |
-        +-----------> Sync <-------+
+        +---------------------------+
+        |                           |
+        v                           v
+Tauri IPC                       Cloud transport
+        |                           |
+        v                           v
+Rust application/shared router  Rust cloud_api/native auth
+        |                           |
+        v                           v
+Repository / SQLite             LifeTrace Cloud
+        |                           |
+        +------------ Sync ---------+
 ```
 
-规则：
+约束：
 
-1. React 组件不直接操作 SQLite。
-2. React 组件不直接拼接任意云地址。
-3. Tauri command 只负责 transport 参数和状态转发。
-4. Rust application service 负责用例编排。
-5. Repository 负责 SQLite 持久化。
-6. 云 API 由 Rust 原生 HTTP transport 发起，并限制在配置的 origin 与 `/api/v1/`。
-7. Agent 只使用云端 Agent API；桌面端不运行本地模型、不保存本地模型 API Key。
-8. `vendor/web` 仅允许通过 `src/compat` 过渡性访问，避免业务组件继续产生新的直接依赖。
+1. React 业务组件不直接操作 SQLite。
+2. React 业务组件不直接拼接任意云地址或直接调用底层 Tauri transport。
+3. 本地 SQLite 业务数据在 packaged Desktop 中优先走 Tauri IPC。
+4. 浏览器/dev HTTP route 仅作为兼容 adapter，不是 packaged Desktop 主路径。
+5. Cloud API 通过 Rust 原生 HTTP transport，并限制到配置 origin 与受控 API namespace。
+6. Agent 只使用云端 Agent；Desktop 不运行本地模型、不保存本地模型 API Key。
+7. 照片媒体流/LAN 设备协议是有意保留的本地网络能力，不与 JSON 业务 API 混为一类。
+8. Desktop runtime、typecheck、Vite、CI 不再消费 `vendor/web`。
 
-## 3. 已实现的重构
+## 3. 已完成的重构
 
-### 3.1 Web 兼容边界
+### 3.1 原生 Desktop 工作台
 
-新增：
+`DesktopCloudWorkspace` 不再挂载 Web AppContext/FeatureRouter/CloudDataStore，而是使用：
 
-- `src/compat/webWorkspace.tsx`
-- `src/compat/webWorkspaceStyles.ts`
+- `DesktopWorkbenchShell`
+- `DesktopNativeRouteContent`
+- `useDesktopNavigation`
+- `useLifeStore`
+- `src/desktop/*Adapter.ts`
 
-`DesktopCloudWorkspace` 和 Tauri UI 入口不再直接导入 `vendor/web`。剩余共享 Web 页面仍可工作，但依赖集中到一个可替换边界。
+在线与离线已认证状态使用同一个 native Desktop workspace。Desktop UI 会先渲染，再异步探测兼容服务，因此 localhost 兼容服务失败不会阻塞核心启动。
 
-这一步的目的不是复制旧 Web 页面，而是先建立“只允许通过 compat 使用”的约束，为后续逐模块原生化提供稳定边界。
+### 3.2 Cloud transport
 
-### 3.2 云 API transport 下沉
+`src/services/cloudTransport.ts` 统一云请求边界：
 
-新增 `src/services/cloudTransport.ts`：
+- 仅允许受控 LifeTrace Cloud API 路径；
+- 统一路径兼容映射；
+- 限制 JSON 请求体；
+- 401 refresh + retry；
+- 最终通过 Rust `cloud_api_http_request` 发起原生 HTTP。
 
-- React 页面不再直接调用 `invoke("cloud_api_http_request")`。
-- transport 统一负责：
-  - 仅允许 `/api/v1/`；
-  - API 路径兼容映射；
-  - JSON 请求限制；
-  - 401 后 refresh + retry；
-  - Tauri invoke 到 Rust 原生 HTTP client。
+Cloud Agent、Mail 等 `/api/v1/*` 是云 API，不经过本机 localhost JSON 服务。
 
-### 3.3 本地 Agent 删除
+### 3.3 本地 Agent 删除，云 Agent 接管
 
 删除：
 
 - `src/components/AIAssistantModule.tsx`
 - `src/components/AISettingsPanel.tsx`
 - `src-tauri/src/server/assistant.rs`
+- 本地 AI 设置/API Key 运行时
+- 本地 assistant route 和 DeepSeek 调用
 
-同时删除：
+`/app/assistant` 现在由 `CloudAgentModule` 接管，支持云端会话、消息、删除、pending approval、approve/reject 与 provider 展示。
 
-- HengXu 本地工作台的 AI 管家入口；
-- 本地 AI 设置入口；
-- `/api/assistant/*` 本地路由；
-- `/api/settings/ai`；
-- 本机 DeepSeek API Key 运行时；
-- 本地 AI 会话运行时。
+### 3.4 Notes / Core state / Analytics
 
-历史 SQLite 中若已有旧 AI 表，本轮不做破坏性 DROP；它们不再被创建、读取或写入，避免升级时无必要的数据破坏。
-
-### 3.4 云端 Agent 成为桌面主 Agent
-
-新增：
-
-- `src/services/cloudAgentApi.ts`
-- `src/components/CloudAgentModule.tsx`
-- `app/cloud-agent.css`
-
-桌面侧 `/app/assistant` 现在由原生桌面页面接管，不再依赖本地 Agent。支持：
-
-- 云端 Agent 发问；
-- 云端会话列表；
-- 会话消息加载；
-- 删除会话；
-- pending approval 展示；
-- approve / reject；
-- 云端 provider 展示。
-
-所有请求经 `cloudTransport` -> Rust -> LifeTrace Cloud。
-
-### 3.5 Notes 改为 Tauri Command 主路径
-
-新增：
-
-- `src-tauri/src/application/notes.rs`
-- `src-tauri/src/commands/notes.rs`
-
-重构：
-
-- `src/services/noteApi.ts`
-- `src-tauri/src/server/notes.rs`
-
-桌面运行时 Notes 主路径：
+Notes packaged Desktop：
 
 ```text
 NotesModule
-  -> noteApi
-  -> invoke(notes_query / notes_mutate)
-  -> commands::notes
-  -> application::notes
-  -> database::repositories::notes
-  -> SQLite
+ -> noteApi
+ -> notes_query / notes_mutate
+ -> application::notes
+ -> notes repository
+ -> SQLite
 ```
 
-浏览器/dev 模式仍保留 `/api/notes`，但 Axum handler 已变成薄兼容 adapter，同样委托 `application::notes`，不再复制业务逻辑。
-
-写操作成功后会调用 `SyncDesktopState::signal_local_change()`，保证绕过 localhost HTTP 后仍能及时唤醒同步调度器。
-
-### 3.6 核心本地状态改为 Tauri Command 主路径
-
-新增：
-
-- `src-tauri/src/application/state.rs`
-- `src-tauri/src/commands/state.rs`
-
-重构：
-
-- `src/db/sqliteClient.ts`
-- `src-tauri/src/server/state.rs`
-
-桌面运行时的坚持、活动日志、财务账户/账单、复盘、训练历史和本机 settings 现在走：
+Core local state：
 
 ```text
 useLifeStore
-  -> sqliteClient
-  -> invoke(state_get / state_mutate)
-  -> commands::state
-  -> application::state
-  -> domain repositories
-  -> SQLite
+ -> sqliteClient
+ -> state_get / state_mutate
+ -> application::state
+ -> domain repositories
+ -> SQLite
 ```
 
-数据库工作通过 `spawn_blocking` 执行，避免阻塞 Tauri async runtime。写操作成功后同样唤醒同步 scheduler。浏览器/dev 下的 `/api/state` 继续保留为兼容 adapter，但不再承载业务分支。
+Search/Analytics：
+
+```text
+DesktopSearchModule
+ -> analyticsApi
+ -> analytics_query
+ -> application::analytics
+ -> analytics repository
+ -> SQLite
+```
+
+写操作会唤醒 sync scheduler；browser/dev HTTP handlers 仅保留兼容 adapter。
+
+### 3.5 Execution
+
+Execution endpoint 面很大，直接把几十个 handler 复制成 command 会形成第二套业务路由。因此本轮采用共享 router：
+
+```text
+Execution UI
+ -> executionApi
+ -> execution_api_request
+ -> execution_routes() in-memory Axum Router
+ -> existing execution handlers/domain
+ -> SQLite
+```
+
+HTTP compatibility server 同样 `.merge(execution_routes())`，所以业务路由定义只有一份。IPC 只允许 `/api/execution/*` 和受控 HTTP method，成功 mutation 会唤醒 sync。
+
+### 3.6 Footprints、Photo Dashboard 与受限 local JSON IPC
+
+新增 `src/services/localJsonTransport.ts` 与 `commands::local_api::local_json_api_request`。
+
+allowlist 仅覆盖：
+
+- `/api/footprints/*`
+- `/api/photo-sync/dashboard`
+- `/api/xunji/imports`
+
+它不是任意 `/api/*` 代理。
+
+Footprints 已接入 `DesktopNativeRouteContent` 的 `/app/footprints`，与当前 `main` 的数据模型、迁移、地图数据和 UI 保持一致，同时不恢复旧 Travel PMTiles bridge。
+
+### 3.7 Xunji 导入
+
+Packaged Desktop：
+
+- 图片通过 `Uint8Array` raw Tauri IPC 调用 `xunji_parse_image`；
+- Rust 复用 `decode_qr -> fetch_page -> parse_page -> save import`；
+- confirm/cancel 通过 restricted JSON IPC；
+- browser/dev 仍可使用 multipart HTTP adapter。
+
+这避免了大图片经 localhost multipart 绕行，也没有复制解析业务逻辑。
+
+### 3.8 Photos / Vault / 文件
+
+- Photo Dashboard JSON 已改为 IPC。
+- Notes 附件、Storage、Vault、Photo sync 控制面通过 Desktop/Tauri adapters。
+- `127.0.0.1:3444` media URL 与 LAN photo service 保留，用于 `<img>/<video>` 可寻址二进制流和设备同步协议。
+- 这部分不是 Web 前端依赖，也不是待迁的 JSON CRUD transport。
+
+### 3.9 `vendor/web` 构建依赖移除
+
+Desktop 已不再：
+
+- import `vendor/web` runtime/page source；
+- typecheck `vendor/web/src`；
+- 从 `vendor/web/postcss.config.cjs` 获取 PostCSS/Tailwind；
+- 从 `vendor/web/node_modules` alias MapLibre/PMTiles；
+- 运行 `prepare:web-shared`；
+- 使用 `scripts/ensure-shared-web-deps.mjs`。
+
+`vendor/shared/contracts` 仍保留，因为它是共享协议代码，而不是 Web 页面/runtime。
 
 ## 4. 数据归属
 
@@ -172,80 +191,78 @@ useLifeStore
 
 - SQLite 数据库与本地缓存
 - 本地附件实际文件
-- 私密相册 / Vault
+- Vault / 私密相册
 - 本地导入文件
 - 本机存储位置
-- 本机 UI 偏好中明确不要求跨设备同步的部分
+- 明确不跨设备同步的 UI 偏好
 
 ### Cloud / Sync
 
 - 账号、认证与设备会话
 - 同步协议实体
-- Notes / habits / finance / workout / execution 等可同步实体
-- 云端 Agent 会话、消息、审批和 Agent 执行
+- Notes / habits / finance / workout / execution 等同步实体
+- 云端 Agent 会话、消息、审批与执行
 
 ### Secret local only
 
 - refresh token：Windows Credential Manager
 - Vault 密钥/口令派生材料
-- 不允许业务 JSON / sync payload 携带 secret
 
-本地 DeepSeek API Key 已从运行时架构中移除。
+本地 DeepSeek API Key 已从运行时架构移除。
 
-## 5. Notes 同步链路
+## 5. 同步原则
 
-本地编辑：
+所有绕过 localhost HTTP 的本地 mutation 都必须保持同步唤醒语义：
 
-1. 编辑器调用 `noteApi.update`。
-2. Desktop 使用 Tauri `notes_mutate`。
-3. Application Service 调用 Notes Repository。
-4. Repository 更新 SQLite。
-5. 数据库 sync trigger/outbox 记录本地变化。
-6. command 唤醒同步 scheduler。
-7. sync client push 到云端。
-8. server version / cursor 更新到本地 sync metadata。
-
-云端变化：
-
-1. sync client pull / snapshot。
-2. Sync Store 设置 remote mutation context。
-3. 远端 payload 通过 contract adapter 转成本地 DTO。
-4. Repository 写入 SQLite。
-5. 同设备已确认变更从 outbox 转为 confirmed。
-6. 冲突进入 `sync_conflicts`，由现有冲突解析机制处理。
+1. UI/service 发起 Tauri IPC。
+2. Rust command/application/shared router 更新 SQLite。
+3. repository/trigger 记录 sync outbox。
+4. command 在成功 mutation 后调用 `SyncDesktopState::signal_local_change()`。
+5. sync scheduler push/pull 并更新 cursor/version/conflict state。
 
 ## 6. 架构守卫
 
-新增/更新测试会约束：
+测试会约束：
 
-- 本地 Agent 文件和路由不得恢复。
-- Notes Desktop 必须优先使用 Tauri command。
-- Notes HTTP handler 不得重新直接写 Repository 业务分支。
-- React Cloud Workspace 不得直接 `invoke`。
-- `vendor/web` 应用依赖必须经过 `src/compat`。
-- 桌面 `/app/assistant` 必须指向 CloudAgentModule。
+- 本地 Agent 文件/route 不得恢复。
+- Notes/Core state/Analytics 使用 native command/application boundary。
+- Execution 使用受限 IPC + shared router。
+- Footprints/Photo Dashboard/Xunji confirmation 使用受限 local JSON IPC。
+- Xunji 图片在 Tauri 走 raw IPC。
+- React Cloud Workspace 不得直接调用底层 invoke/network transport。
+- Desktop native route 必须持有核心页面与 CloudAgentModule/Footprints。
+- Desktop build/workflow 不得恢复 `prepare:web-shared` 或 `vendor/web` Vite dependency。
+- `local_json_api_request` 不得退化为任意 `/api/*` 代理。
 
-## 7. 当前过渡边界
+## 7. 保留的兼容边界
 
-仍保留的 `vendor/web` 内容是**编译期共享 feature snapshot**，不是远程网页容器。它目前用于尚未逐模块迁出的页面和 Tailwind 视觉契约。
+以下内容是有意保留，而不是半成品：
 
-新的桌面业务代码不得直接依赖这些路径；继续原生化时应逐模块替换 `src/compat` 暴露面，而不是复制 Web 页面到桌面目录。
+- browser/dev HTTP compatibility routes；
+- 照片媒体 `127.0.0.1:3444` 流式服务；
+- LAN photo pairing/upload protocol；
+- 仓库中的 `vendor/web` snapshot/reference（Desktop 不再依赖它）；
+- 历史 AI SQLite 表（未批准破坏性迁移前不主动 DROP）。
 
 ## 8. 验收
 
-需要通过仓库现有 CI：
+当前仓库 CI 的真实命令：
 
 ```text
 npm ci
-npm run prepare:web-shared
 npm run lint
 npm run test:unit
 npm run web:build
 npm run test:rust
 ```
 
-Windows CI 同时覆盖 Tauri/Rust 编译链和 Web build。所有失败必须在本分支修复后再合并。
+Desktop CI #278 在实现提交 `8453fab` 上已通过：
 
-## 9. Travel 隔离确认
+- Linux frontend-static：npm ci / lint / unit 全绿；
+- Windows frontend-and-rust：npm ci / lint / unit / web build / Rust tests 全绿。
 
-本轮重构不修改 Travel 模块的业务文件、数据表、服务、地图、路由和文档。若仓库中存在历史 Travel 残留，它们不属于本次架构重构的修改范围。
+文档收口后的最终 HEAD 仍必须通过同一套 CI 后才可视为可合并。
+
+## 9. Main / Footprints 同步确认
+
+本分支已把 `main` 的 Footprints 提交以真实 merge commit 合入，解决了 PR merge conflict；接入方式保持 native Desktop 路由，并没有恢复旧 Web workspace 或 legacy Travel PMTiles bridge。
