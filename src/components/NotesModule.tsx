@@ -14,13 +14,14 @@ import { common, createLowlight } from "lowlight";
 import DOMPurify from "dompurify";
 import TurndownService from "turndown";
 import {
-  Archive, ArchiveRestore, Bold, Braces, CalendarDays, ChevronRight, Command, Copy, Download,
+  Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
   History, ImagePlus, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, ListTree,
   Network, NotebookPen, Paperclip, Pin, Plus, Quote, Redo2, RotateCcw, Save, Search,
   Star, Strikethrough, Tag, Trash2, Undo2, Unlink, X,
 } from "lucide-react";
 import { noteApi, type NoteInputValue } from "@/src/services/noteApi";
+import { executionApi } from "@/src/services/executionApi";
 import { desktopNotes } from "@/src/desktop/noteAdapter";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Note, NoteFolder, NoteRelation, NoteRevision, NoteTag, NoteType } from "@/src/types";
@@ -36,6 +37,22 @@ const titleOf=(note:Pick<Note,"title"|"summary">)=>note.title?.trim()||note.summ
 const formatTime=(value:string)=>new Intl.DateTimeFormat("zh-CN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(value));
 const dayTitle=(date=new Date())=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")} 日记`;
 const noteHeadings=(markdown:string)=>markdown.split(/\r?\n/).map((line,index)=>{const match=/^(#{1,3})\s+(.+)$/.exec(line.trim());return match?{level:match[1].length,text:match[2].trim(),index}:null}).filter((item):item is {level:number;text:string;index:number}=>Boolean(item));
+type DesktopNoteProperties={status:string;source:string;aliases:string[]};
+const readNoteProperties=(value:unknown):DesktopNoteProperties=>{
+  if(!value||typeof value!=="object"||Array.isArray(value))return{status:"",source:"",aliases:[]};
+  const raw=(value as Record<string,unknown>).properties;
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return{status:"",source:"",aliases:[]};
+  const record=raw as Record<string,unknown>;
+  return{
+    status:typeof record.status==="string"?record.status:"",
+    source:typeof record.source==="string"?record.source:"",
+    aliases:Array.isArray(record.aliases)?[...new Set(record.aliases.filter((item):item is string=>typeof item==="string").map(item=>item.trim()).filter(Boolean))]:[],
+  };
+};
+const withNoteProperties=(contentJson:Record<string,unknown>,properties:DesktopNoteProperties)=>({
+  ...contentJson,
+  properties:{status:properties.status.trim(),source:properties.source.trim(),aliases:properties.aliases},
+});
 const flattenFolders=(folders:NoteFolder[])=>{
   const children=new Map<string|null,NoteFolder[]>();
   for(const folder of folders){const key=folder.parentFolderId??null;children.set(key,[...(children.get(key)??[]),folder])}
@@ -71,6 +88,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [historyOpen,setHistoryOpen]=useState(false);
   const [menuOpen,setMenuOpen]=useState(false);
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
+  const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const saveLock=useRef(false);
   const editor=useEditor({
     immediatelyRender:false,
@@ -86,7 +104,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     onUpdate:({editor:instance})=>{
       const html=DOMPurify.sanitize(instance.getHTML(),{USE_PROFILES:{html:true}});
       const text=instance.getText({blockSeparator:"\n"});
-      setDraft(current=>({...current,contentJson:instance.getJSON() as Record<string,unknown>,contentHtml:html,contentText:text,contentMarkdown:turndown.turndown(html),summary:cleanSummary(text)}));
+      setDraft(current=>({...current,contentJson:withNoteProperties(instance.getJSON() as Record<string,unknown>,properties),contentHtml:html,contentText:text,contentMarkdown:turndown.turndown(html),summary:cleanSummary(text)}));
       setDirty(true);setStatus("dirty");
     },
   });
@@ -125,6 +143,14 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   },[note.id]);
 
   const patch=(value:Partial<Note>)=>{setDraft(current=>({...current,...value}));setDirty(true);setStatus("dirty")};
+  const patchProperties=(value:Partial<DesktopNoteProperties>)=>{
+    setProperties(current=>{
+      const next={...current,...value};
+      setDraft(noteValue=>({...noteValue,contentJson:withNoteProperties(noteValue.contentJson,next)}));
+      return next;
+    });
+    setDirty(true);setStatus("dirty");
+  };
   const toggleTag=(tag:NoteTag)=>patch({tags:draft.tags.some(x=>x.id===tag.id)?draft.tags.filter(x=>x.id!==tag.id):[...draft.tags,tag]});
   const loadHistory=async()=>{setRevisions(await noteApi.revisions(note.id));setHistoryOpen(true)};
   const action=async(kind:"trash"|"restore"|"delete"|"duplicate")=>{
@@ -168,6 +194,29 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const knowledge=draft as KnowledgeNote;
   const wikiLinks=knowledge.wikiLinks??[];
   const backlinks=knowledge.backlinks??[];
+  const createTaskFromNote=async()=>{
+    const sourceText=draft.contentMarkdown.trim()||draft.contentText.trim();
+    const selection=editor?editor.state.doc.textBetween(editor.state.selection.from,editor.state.selection.to,"\n").trim():"";
+    const selectedText=selection||sourceText;
+    const title=(selection?cleanSummary(selection).split("\n")[0]:titleOf(draft)).slice(0,160)||"处理笔记";
+    const saved=dirty?await save(false):draft;
+    if(!saved)return;
+    try{
+      const task=await executionApi.tasks.create({
+        title,
+        description:`${selectedText.slice(0,4000)}\n\nSource: notes://note/${draft.id}`,
+        context:"inbox",
+      });
+      await executionApi.relations.create({
+        sourceType:"note.note",
+        sourceId:draft.id,
+        relationType:"created_from",
+        targetType:"execution.task",
+        targetId:task.id,
+      });
+      notify(selection?"已从选中文本创建 Task":"已从当前笔记创建 Task");
+    }catch(error){notify(error instanceof Error?error.message:"创建 Task 失败")}
+  };
   const editorActions:AppAction<Note>[]=[
     {id:"duplicate",label:"复制笔记",icon:Copy,group:"primary",execute:()=>action("duplicate")},
     {id:"export-md",label:"导出 Markdown",icon:FileText,group:"related",execute:()=>exportNote("md")},
@@ -195,6 +244,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
       <div>
         <button className={draft.isFavorite?"active":""} title="收藏" onClick={()=>patch({isFavorite:!draft.isFavorite})}><Star/></button>
         <button className={draft.isPinned?"active":""} title="置顶" onClick={()=>patch({isPinned:!draft.isPinned})}><Pin/></button>
+        <button title="从笔记创建 Task" onClick={()=>void createTaskFromNote()}><CheckSquare2/></button>
         <button title="版本历史" onClick={()=>void loadHistory()}><History/></button>
         <button title="立即保存" onClick={()=>void save(true)}><Save/></button>
         <MoreMenu actions={editorActions} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
@@ -236,6 +286,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <label><Folder/><span>文件夹</span><select value={draft.folderId??""} onChange={e=>patch({folderId:e.target.value||null})}><option value="">Inbox</option>{flattenFolders(folders).map(({folder,depth})=><option key={folder.id} value={folder.id}>{`${"— ".repeat(depth)}${folder.name}`}</option>)}</select></label>
             <label><FileText/><span>类型</span><select value={draft.noteType} onChange={e=>patch({noteType:e.target.value as NoteType})}>{Object.entries(labels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
             <div className="nt-tag-field"><span><Tag/>标签</span><div>{tags.length?tags.map(tag=><button key={tag.id} className={draft.tags.some(x=>x.id===tag.id)?"active":""} style={{"--tag-color":tag.color} as React.CSSProperties} onClick={()=>toggleTag(tag)}>#{tag.name}</button>):<small>暂无标签</small>}</div></div>
+            <label><Braces/><span>Status</span><input value={properties.status} onChange={e=>patchProperties({status:e.target.value})} placeholder="例如 draft"/></label>
+            <label><LinkIcon/><span>Source</span><input value={properties.source} onChange={e=>patchProperties({source:e.target.value})} placeholder="例如 lifetrace"/></label>
+            <label><Tag/><span>Aliases</span><input value={properties.aliases.join(", ")} onChange={e=>patchProperties({aliases:e.target.value.split(",").map(item=>item.trim()).filter(Boolean)})} placeholder="别名，用逗号分隔"/></label>
             <footer>创建 {formatTime(draft.createdAt)}<br/>更新 {formatTime(draft.updatedAt)} · v{draft.version}</footer>
           </div>
         </section>
