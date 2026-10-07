@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
 import { geoArea, geoMercator, geoPath } from "d3-geo";
@@ -14,6 +15,13 @@ import rawChina from "@/src/assets/maps/china-provinces.json";
 import rawPrefectures from "@/src/assets/maps/china-prefectures.json";
 import type { CityFootprintSummary, ProvinceFootprintSummary } from "./types";
 import { footprintVisitIntensity } from "./footprintViewModel";
+import {
+  clampPan,
+  clientPointToViewBox,
+  isDragGesture,
+  zoomAtPoint,
+  type MapPoint,
+} from "./mapInteraction";
 
 type Position = [number, number];
 type Ring = Position[];
@@ -31,7 +39,10 @@ type AdminFeature = {
     | { type: string; coordinates: unknown };
 };
 
+export type FootprintMapLevel = "country" | "province";
+
 type ChinaMapProps = {
+  level: FootprintMapLevel;
   provinces: ProvinceFootprintSummary[];
   cities?: CityFootprintSummary[];
   selectedProvinceCode?: string | null;
@@ -39,6 +50,7 @@ type ChinaMapProps = {
   selectedCityName?: string | null;
   onSelectProvince: (code: string, name: string) => void;
   onSelectCity?: (code: string, name: string) => void;
+  onBackToCountry?: () => void;
 };
 
 type HoveredRegion = {
@@ -46,13 +58,28 @@ type HoveredRegion = {
   code: string;
   name: string;
   visits: number;
+  photoCount: number;
+  cityCount?: number;
+};
+
+type DragState = {
+  startClient: MapPoint;
+  startPan: MapPoint;
+  moved: boolean;
 };
 
 const width = 1000;
 const height = 760;
-const countryDrillScale = 2.15;
-const countryMaxScale = 2.35;
+const countryMaxScale = 2.5;
 const provinceMaxScale = 4.2;
+const easyTapProvinceCodes = new Set([
+  "110000",
+  "120000",
+  "310000",
+  "500000",
+  "810000",
+  "820000",
+]);
 
 function shortAdminName(name: string, level: "province" | "city"): string {
   const replacements = level === "province"
@@ -93,13 +120,12 @@ function pathCenter(d: string): [number, number] {
 
 function labelPoint(
   feature: AdminFeature,
-  projection: unknown,
+  projection: (point: Position) => Position | null,
   d: string,
 ): [number, number] {
   const anchor = feature.properties.centroid ?? feature.properties.center;
   if (anchor) {
-    const project = projection as (point: Position) => Position | null;
-    const projected = project(anchor);
+    const projected = projection(anchor);
     if (projected && Number.isFinite(projected[0]) && Number.isFinite(projected[1])) {
       return projected;
     }
@@ -136,6 +162,7 @@ function featureCollection(features: AdminFeature[]) {
 }
 
 export default function ChinaMap({
+  level,
   provinces,
   cities = [],
   selectedProvinceCode,
@@ -143,13 +170,14 @@ export default function ChinaMap({
   selectedCityName,
   onSelectProvince,
   onSelectCity,
+  onBackToCountry,
 }: ChinaMapProps) {
-  const [level, setLevel] = useState<"country" | "province">("country");
   const [hovered, setHovered] = useState<HoveredRegion | null>(null);
   const [scale, setScale] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
-  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [pan, setPan] = useState<MapPoint>({ x: 0, y: 0 });
+  const dragRef = useRef<DragState | null>(null);
+  const suppressClickRef = useRef(false);
+  const suppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const summaryByCode = useMemo(
     () => new Map(provinces.map((province) => [province.provinceCode, province])),
@@ -184,13 +212,17 @@ export default function ChinaMap({
     return {
       paths: provinceFeatures.map((feature) => {
         const d = path(feature) ?? "";
+        const center = feature.properties.centroid ?? feature.properties.center;
+        const projected = center ? projection(center) : null;
         const [labelX, labelY] = labelPoint(feature, projection, d);
         return {
           code: String(feature.properties.adcode),
           name: feature.properties.name,
+          d,
+          x: projected?.[0] ?? null,
+          y: projected?.[1] ?? null,
           labelX,
           labelY,
-          d,
         };
       }),
       dashPath: dash ? path(fixWinding(dash)) ?? "" : "",
@@ -222,9 +254,9 @@ export default function ChinaMap({
       return {
         code: String(feature.properties.adcode),
         name: feature.properties.name,
+        d,
         labelX,
         labelY,
-        d,
       };
     });
   }, [selectedProvinceCode]);
@@ -234,110 +266,98 @@ export default function ChinaMap({
     setPan({ x: 0, y: 0 });
   };
 
-  const enterProvince = (code: string, name: string) => {
-    onSelectProvince(code, name);
-    setLevel("province");
+  useEffect(() => {
     setHovered(null);
     resetTransform();
-  };
+  }, [level, selectedProvinceCode]);
 
-  const leaveProvince = () => {
-    setLevel("country");
-    setHovered(null);
-    resetTransform();
-  };
+  useEffect(() => () => {
+    if (suppressTimerRef.current) {
+      clearTimeout(suppressTimerRef.current);
+    }
+  }, []);
 
   const scaleAround = (
     nextValue: number,
-    pointer?: { x: number; y: number },
+    pointer?: MapPoint,
   ) => {
-    const maxScale = level === "country" ? countryMaxScale : provinceMaxScale;
-    const next = Math.max(1, Math.min(maxScale, nextValue));
-    if (next === 1) {
-      setScale(1);
-      setPan({ x: 0, y: 0 });
-      return;
-    }
-    if (!pointer) {
-      setScale(next);
-      return;
-    }
-    const currentTx = (1 - scale) * width / 2 + pan.x;
-    const currentTy = (1 - scale) * height / 2 + pan.y;
-    const worldX = (pointer.x - currentTx) / scale;
-    const worldY = (pointer.y - currentTy) / scale;
-    const nextTx = pointer.x - worldX * next;
-    const nextTy = pointer.y - worldY * next;
-    setScale(next);
-    setPan({
-      x: nextTx - (1 - next) * width / 2,
-      y: nextTy - (1 - next) * height / 2,
-    });
+    const next = zoomAtPoint(
+      { scale, pan },
+      nextValue,
+      pointer ?? null,
+      width,
+      height,
+      level === "country" ? countryMaxScale : provinceMaxScale,
+    );
+    setScale(next.scale);
+    setPan(next.pan);
   };
 
-  const wheel = (event: WheelEvent) => {
+  const wheel = (event: ReactWheelEvent<SVGSVGElement>) => {
     event.preventDefault();
-    event.stopPropagation();
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const pointer = {
-      x: (event.clientX - rect.left) / Math.max(rect.width, 1) * width,
-      y: (event.clientY - rect.top) / Math.max(rect.height, 1) * height,
-    };
-    const zoomingIn = event.deltaY < 0;
-    const factor = zoomingIn ? 1.16 : 0.86;
-    const next = scale * factor;
-
-    if (level === "country" && zoomingIn && next >= countryDrillScale) {
-      const target = hovered?.level === "province"
-        ? hovered
-        : selectedProvinceCode
-          ? countryGeometry.paths.find((item) => item.code === selectedProvinceCode)
-          : null;
-      if (target) {
-        enterProvince(target.code, target.name);
-        return;
-      }
-    }
-
-    if (level === "province" && !zoomingIn && next < 0.96) {
-      leaveProvince();
-      return;
-    }
-
-    scaleAround(next, pointer);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointer = clientPointToViewBox(
+      event.clientX,
+      event.clientY,
+      rect,
+      width,
+      height,
+    );
+    scaleAround(scale * (event.deltaY < 0 ? 1.16 : 0.86), pointer);
   };
-
-  useEffect(() => {
-    const node = svgRef.current;
-    if (!node) return;
-    const handleWheel = (event: WheelEvent) => wheel(event);
-    node.addEventListener("wheel", handleWheel, { passive: false });
-    return () => node.removeEventListener("wheel", handleWheel);
-  });
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (scale <= 1) return;
+    if (scale <= 1 || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      panX: pan.x,
-      panY: pan.y,
+      startClient: { x: event.clientX, y: event.clientY },
+      startPan: pan,
+      moved: false,
     };
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
-    setPan({
-      x: drag.panX + (event.clientX - drag.x) / scale,
-      y: drag.panY + (event.clientY - drag.y) / scale,
-    });
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clientPoint = { x: event.clientX, y: event.clientY };
+    if (!drag.moved) {
+      if (!isDragGesture(drag.startClient, clientPoint)) return;
+      drag.moved = true;
+    }
+
+    const deltaX = (event.clientX - drag.startClient.x) / Math.max(rect.width, 1) * width;
+    const deltaY = (event.clientY - drag.startClient.y) / Math.max(rect.height, 1) * height;
+    setPan(clampPan({
+      x: drag.startPan.x + deltaX,
+      y: drag.startPan.y + deltaY,
+    }, scale, width, height));
   };
 
-  const pointerEnd = () => {
+  const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
     dragRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (!drag?.moved) return;
+    suppressClickRef.current = true;
+    if (suppressTimerRef.current) {
+      clearTimeout(suppressTimerRef.current);
+    }
+    suppressTimerRef.current = setTimeout(() => {
+      suppressClickRef.current = false;
+      suppressTimerRef.current = null;
+    }, 0);
+  };
+
+  const allowRegionClick = () => {
+    if (!suppressClickRef.current) return true;
+    suppressClickRef.current = false;
+    return false;
   };
 
   const transformX = (1 - scale) * width / 2 + pan.x;
@@ -357,26 +377,13 @@ export default function ChinaMap({
     <section className="footprint-map-card" aria-label="中国足迹地图">
       <div className="footprint-map-toolbar" aria-label="地图缩放">
         {level === "province" ? (
-          <button type="button" onClick={leaveProvince} title="返回全国">
+          <button type="button" onClick={onBackToCountry} title="返回全国" aria-label="返回全国地图">
             <ChevronLeft />
           </button>
         ) : null}
         <button
           type="button"
-          onClick={() => {
-            if (level === "country" && scale >= countryDrillScale - 0.18) {
-              const target = hovered?.level === "province"
-                ? hovered
-                : selectedProvinceCode
-                  ? countryGeometry.paths.find((item) => item.code === selectedProvinceCode)
-                  : null;
-              if (target) {
-                enterProvince(target.code, target.name);
-                return;
-              }
-            }
-            scaleAround(scale * 1.2);
-          }}
+          onClick={() => scaleAround(scale * 1.2)}
           disabled={scale >= (level === "country" ? countryMaxScale : provinceMaxScale)}
           title="放大"
         >
@@ -385,14 +392,9 @@ export default function ChinaMap({
         <span>{level === "country" ? "全国" : provinceName} · {Math.round(scale * 100)}%</span>
         <button
           type="button"
-          onClick={() => {
-            if (level === "province" && scale <= 1.05) {
-              leaveProvince();
-              return;
-            }
-            scaleAround(scale / 1.2);
-          }}
-          title={level === "province" && scale <= 1.05 ? "返回全国" : "缩小"}
+          onClick={() => scaleAround(scale / 1.2)}
+          disabled={scale <= 1}
+          title="缩小"
         >
           <Minus />
         </button>
@@ -400,7 +402,7 @@ export default function ChinaMap({
           type="button"
           onClick={resetTransform}
           disabled={scale === 1 && pan.x === 0 && pan.y === 0}
-          title="重置当前层级"
+          title="重置当前地图视角"
         >
           <RotateCcw />
         </button>
@@ -408,10 +410,10 @@ export default function ChinaMap({
 
       <div className="footprint-map-canvas">
         <svg
-          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label={level === "country" ? "中国省级足迹地图" : `${provinceName}市级足迹地图`}
+          onWheel={wheel}
           onPointerDown={pointerDown}
           onPointerMove={pointerMove}
           onPointerUp={pointerEnd}
@@ -446,21 +448,17 @@ export default function ChinaMap({
                     code: item.code,
                     name: item.name,
                     visits: summary?.visitCount ?? 0,
+                    photoCount: summary?.photoCount ?? 0,
+                    cityCount: summary?.cityCount ?? 0,
                   })}
                   onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    enterProvince(item.code, item.name);
-                  }}
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (!allowRegionClick()) return;
                     onSelectProvince(item.code, item.name);
                   }}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      enterProvince(item.code, item.name);
-                    } else if (event.key === " ") {
+                    if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       onSelectProvince(item.code, item.name);
                     }
@@ -496,10 +494,12 @@ export default function ChinaMap({
                     code: item.code,
                     name: item.name,
                     visits: summary?.visitCount ?? 0,
+                    photoCount: summary?.photoCount ?? 0,
                   })}
                   onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (!allowRegionClick()) return;
                     onSelectCity?.(item.code, item.name);
                   }}
                   onKeyDown={(event) => {
@@ -513,6 +513,40 @@ export default function ChinaMap({
                 </path>
               );
             })}
+            {level === "country"
+              ? countryGeometry.paths
+                .filter((item) =>
+                  easyTapProvinceCodes.has(item.code)
+                  && item.x !== null
+                  && item.y !== null)
+                .map((item) => {
+                  const summary = summaryByCode.get(item.code);
+                  return (
+                    <circle
+                      key={`${item.code}-hit-target`}
+                      cx={item.x ?? undefined}
+                      cy={item.y ?? undefined}
+                      r={item.code === "820000" ? 24 : 19}
+                      className="footprint-map-hit-target"
+                      aria-hidden="true"
+                      onPointerEnter={() => setHovered({
+                        level: "province",
+                        code: item.code,
+                        name: item.name,
+                        visits: summary?.visitCount ?? 0,
+                        photoCount: summary?.photoCount ?? 0,
+                        cityCount: summary?.cityCount ?? 0,
+                      })}
+                      onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!allowRegionClick()) return;
+                        onSelectProvince(item.code, item.name);
+                      }}
+                    />
+                  );
+                })
+              : null}
             {level === "country" && countryGeometry.dashPath
               ? <path d={countryGeometry.dashPath} className="footprint-map-dashline" pointerEvents="none" />
               : null}
@@ -555,7 +589,13 @@ export default function ChinaMap({
         {hovered ? (
           <div className="footprint-map-tooltip">
             <strong>{hovered.name}</strong>
-            <span>{hovered.visits ? `${hovered.visits} 次足迹` : "尚未记录"}</span>
+            <span>
+              {hovered.visits
+                ? hovered.level === "province"
+                  ? `${hovered.cityCount ?? 0} 城 · ${hovered.visits} 次 · ${hovered.photoCount} 张照片`
+                  : `${hovered.visits} 次 · ${hovered.photoCount} 张照片`
+                : "尚未记录"}
+            </span>
           </div>
         ) : null}
       </div>
@@ -565,8 +605,8 @@ export default function ChinaMap({
         <span><i className="visited" />已去过</span>
         <small>
           {level === "country"
-            ? "省级名称常驻显示 · 去过的省份显示次数标记 · 滚轮放大后自动下钻"
-            : "市 / 地区名称常驻显示 · 去过的城市显示次数标记 · 滚轮缩小到底返回全国"}
+            ? "省级名称常驻显示 · 滚轮 / +/- 仅缩放 · 点击省份查看详情"
+            : "市 / 地区名称常驻显示 · 滚轮 / +/- 仅缩放 · 点击城市筛选足迹"}
         </small>
       </footer>
     </section>
