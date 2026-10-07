@@ -294,7 +294,8 @@ impl SqliteSyncStore {
             "workout.workout" => workouts::save_workout(connection, &legacy),
             "workout.import" => workouts::save_import(connection, &legacy),
             "workout.training_note" => workouts::save_training_note(connection, &legacy),
-            "note.note" => notes::save_note(connection, &legacy, true, false).map(|_| ()),
+            "note.note" => notes::save_note(connection, &legacy, true, false)
+                .and_then(|saved| crate::database::note_links::sync_note_links(connection, &saved).map(|_| ())),
             "note.folder" => notes::save_folder(connection, &legacy).map(|_| ()),
             "note.tag" => notes::save_tag(connection, &legacy).map(|_| ()),
             "note.tag_relation" => {
