@@ -148,6 +148,19 @@ test("xunji desktop import uses raw tauri IPC for image bytes and JSON IPC for c
   assert.match(lib, /commands::xunji::xunji_parse_image/);
 });
 
+test("desktop build no longer bootstraps vendor web dependencies", () => {
+  const packageJson = read("package.json");
+  const vite = read("vite.tauri.config.ts");
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release-windows.yml");
+
+  assert.doesNotMatch(packageJson, /prepare:web-shared|ensure-shared-web-deps/);
+  assert.doesNotMatch(vite, /vendor.*web|webRoot|maplibre-gl|pmtiles/);
+  assert.doesNotMatch(ci, /prepare:web-shared/);
+  assert.doesNotMatch(release, /prepare:web-shared/);
+  assert.equal(existsSync("scripts/ensure-shared-web-deps.mjs"), false);
+});
+
 test("desktop startup renders before probing the localhost compatibility server", () => {
   const main = read("tauri-ui/main.tsx");
   assert.match(main, /createRoot\(root!\)\.render/);
