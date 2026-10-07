@@ -132,7 +132,7 @@ test("Footprints ships offline province and prefecture datasets with explicit hi
   assert.match(mapComponent, /onBackToCountry/);
   assert.match(mapComponent, /onEnterProvince/);
   assert.match(mapComponent, /event\.detail > 1/);
-  assert.match(mapComponent, /onDoubleClick/);
+  assert.match(mapComponent, /onDoubleClickCapture=\{doubleClickProvince\}/);
   assert.doesNotMatch(mapComponent, /event\.detail >= 2/);
   assert.doesNotMatch(mapComponent, /isDoubleRegionActivation/);
   assert.match(mapComponent, /双击进入省内地图/);
@@ -181,7 +181,7 @@ test("Footprints hierarchy navigation is double-click driven without a dedicated
   const drawer = read("src/components/feature/footprints/ProvinceDrawer.tsx");
   const page = read("src/components/feature/footprints/Footprints.tsx");
 
-  assert.match(map, /onDoubleClick/);
+  assert.match(map, /onDoubleClickCapture=\{doubleClickProvince\}/);
   assert.match(map, /onEnterProvince/);
   assert.doesNotMatch(drawer, /查看省内地图/);
   assert.doesNotMatch(drawer, /先选择省份/);
