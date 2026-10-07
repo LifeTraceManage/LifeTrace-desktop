@@ -1249,6 +1249,54 @@ mod note_sync_tests {
     }
 
     #[test]
+    fn remote_note_update_preserves_separately_synced_tags_and_relations() {
+        let (connection, profile) = migrated_connection();
+        connection.execute("UPDATE sync_context SET origin='remote' WHERE singleton=1", []).unwrap();
+
+        let tag_id = crate::database::repositories::notes::save_tag(
+            &connection,
+            &json!({"id":"tag-1","name":"sync","color":"#64748b"})
+        ).unwrap();
+        crate::database::repositories::notes::save_note(
+            &connection,
+            &json!({
+                "id":"note-keep","title":"Before","noteType":"document","folderId":null,
+                "contentJson":{"type":"doc","content":[]},"contentHtml":"","contentText":"before",
+                "contentMarkdown":"before","summary":"before","isPinned":false,"isFavorite":false,
+                "isArchived":false,"tagIds":[tag_id],"relations":[{
+                    "id":"rel-keep","noteId":"note-keep","entityType":"habit.activity",
+                    "entityId":"habit-1","relationType":"reference","createdAt":"2026-10-07T00:00:00Z"
+                }]
+            }),
+            false,
+            false,
+        ).unwrap();
+
+        let payload = json!({
+            "meta": {
+                "id":"note-keep","userId":profile,"createdAt":"2026-10-07T00:00:00Z",
+                "updatedAt":"2026-10-07T02:00:00Z","deletedAt":null,"localVersion":2,
+                "serverVersion":"2","modifiedByDevice":"other-device"
+            },
+            "title":"After","noteType":"document","folderId":null,
+            "contentJson":{"type":"doc","content":[]},"contentHtml":"","contentText":"after",
+            "contentMarkdown":"after","summary":"after","isPinned":false,"isFavorite":true,
+            "isArchived":false,"aiSummary":null,"aiTags":null,"embeddingStatus":null,
+            "lastAiProcessedAt":null
+        });
+        SqliteSyncStore::apply_upsert(&connection, &profile, "note.note", &payload).unwrap();
+
+        let loaded = crate::database::repositories::notes::get_note(&connection, "note-keep")
+            .unwrap().unwrap();
+        assert_eq!(loaded["title"], "After");
+        assert_eq!(loaded["contentText"], "after");
+        assert_eq!(loaded["tags"].as_array().unwrap().len(), 1);
+        assert_eq!(loaded["tags"][0]["id"], "tag-1");
+        assert_eq!(loaded["relations"].as_array().unwrap().len(), 1);
+        assert_eq!(loaded["relations"][0]["id"], "rel-keep");
+    }
+
+    #[test]
     fn note_revision_roundtrips_through_native_tables() {
         let connection = connection();
         let payload = json!({
