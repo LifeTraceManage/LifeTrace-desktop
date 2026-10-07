@@ -92,6 +92,22 @@ test("analytics search uses tauri ipc while http routes remain compatibility ada
   assert.doesNotMatch(adapter, /profile::active_profile_id|analytics_repo::search\(/);
 });
 
+test("execution desktop requests use tauri ipc while browser compatibility stays behind the service", () => {
+  const api = read("src/services/executionApi.ts");
+  const commands = read("src-tauri/src/commands/execution.rs");
+  const server = read("src-tauri/src/server.rs");
+  const lib = read("src-tauri/src/lib.rs");
+
+  assert.match(api, /execution_api_request/);
+  assert.match(api, /isTauriRuntime/);
+  assert.match(commands, /server::execution_ipc_router/);
+  assert.match(commands, /ServiceExt/);
+  assert.match(commands, /signal_local_change/);
+  assert.match(server, /fn execution_routes\(\) -> Router<AppState>/);
+  assert.match(server, /pub\(crate\) fn execution_ipc_router/);
+  assert.match(lib, /commands::execution::execution_api_request/);
+});
+
 test("desktop startup renders before probing the localhost compatibility server", () => {
   const main = read("tauri-ui/main.tsx");
   assert.match(main, /createRoot\(root!\)\.render/);
