@@ -14,10 +14,10 @@ import { common, createLowlight } from "lowlight";
 import DOMPurify from "dompurify";
 import TurndownService from "turndown";
 import {
-  Archive, ArchiveRestore, Bold, Braces, ChevronLeft, ChevronRight, Copy, Download,
+  Archive, ArchiveRestore, Bold, Braces, CalendarDays, ChevronRight, Command, Copy, Download,
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
-  History, ImagePlus, Italic, Link as LinkIcon, List, ListChecks, ListOrdered,
-  MoreHorizontal, Paperclip, Pin, Plus, Quote, Redo2, RotateCcw, Save, Search,
+  History, ImagePlus, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, ListTree,
+  Network, NotebookPen, Paperclip, Pin, Plus, Quote, Redo2, RotateCcw, Save, Search,
   Star, Strikethrough, Tag, Trash2, Undo2, Unlink, X,
 } from "lucide-react";
 import { noteApi, type NoteInputValue } from "@/src/services/noteApi";
@@ -34,6 +34,18 @@ const emptyJson={type:"doc",content:[{type:"paragraph"}]};
 const cleanSummary=(text:string)=>text.trim().replace(/\s+/g," ").slice(0,160);
 const titleOf=(note:Pick<Note,"title"|"summary">)=>note.title?.trim()||note.summary?.trim().split("\n")[0]||"无标题笔记";
 const formatTime=(value:string)=>new Intl.DateTimeFormat("zh-CN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(value));
+const dayTitle=(date=new Date())=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")} 日记`;
+const noteHeadings=(markdown:string)=>markdown.split(/\r?\n/).map((line,index)=>{const match=/^(#{1,3})\s+(.+)$/.exec(line.trim());return match?{level:match[1].length,text:match[2].trim(),index}:null}).filter((item):item is {level:number;text:string;index:number}=>Boolean(item));
+const flattenFolders=(folders:NoteFolder[])=>{
+  const children=new Map<string|null,NoteFolder[]>();
+  for(const folder of folders){const key=folder.parentFolderId??null;children.set(key,[...(children.get(key)??[]),folder])}
+  for(const items of children.values())items.sort((a,b)=>a.sortOrder-b.sortOrder||a.name.localeCompare(b.name,"zh-CN"));
+  const rows:Array<{folder:NoteFolder;depth:number}>=[];
+  const visit=(parent:string|null,depth:number,path:Set<string>)=>{for(const folder of children.get(parent)??[]){if(path.has(folder.id))continue;rows.push({folder,depth});const next=new Set(path);next.add(folder.id);visit(folder.id,depth+1,next)}};
+  visit(null,0,new Set());
+  for(const folder of folders)if(!rows.some(row=>row.folder.id===folder.id))rows.push({folder,depth:0});
+  return rows;
+};
 const notify=(message:string)=>window.dispatchEvent(new CustomEvent("hengxu-toast",{detail:message}));
 
 type NoteWikiLink={id:string;targetNoteId:string|null;targetTitle:string;displayTitle:string;alias:string|null;resolved:boolean;createdAt:string};
