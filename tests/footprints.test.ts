@@ -101,7 +101,7 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.match(photo, /photos_geo_idx/);
 });
 
-test("Footprints ships offline province and prefecture datasets with hierarchical wheel drilldown", () => {
+test("Footprints ships offline province and prefecture datasets with explicit hierarchical navigation", () => {
   const map = JSON.parse(read("src/assets/maps/china-provinces.json")) as {
     features: Array<{ properties: { adcode: number | string; name?: string } }>;
   };
@@ -124,11 +124,12 @@ test("Footprints ships offline province and prefecture datasets with hierarchica
   assert.ok(codes.has("100000_JD"));
   assert.ok(prefectureCodes.has("510100"), "成都 should have an offline city boundary");
   assert.ok(prefectureCodes.has("440100"), "广州 should have an offline city boundary");
-  assert.match(mapComponent, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.match(mapComponent, /onWheel=\{wheel\}/);
   assert.match(mapComponent, /event\.preventDefault\(\)/);
-  assert.match(mapComponent, /event\.stopPropagation\(\)/);
-  assert.match(mapComponent, /countryDrillScale/);
-  assert.match(mapComponent, /enterProvince\(/);
+  assert.doesNotMatch(mapComponent, /countryDrillScale/);
+  assert.doesNotMatch(mapComponent, /enterProvince\(/);
+  assert.match(mapComponent, /level: FootprintMapLevel/);
+  assert.match(mapComponent, /onBackToCountry/);
   assert.match(mapComponent, /onSelectCity/);
   assert.match(mapComponent, /shortAdminName/);
   assert.match(mapComponent, /labelPoint/);

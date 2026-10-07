@@ -161,24 +161,6 @@ export default function Footprints() {
 
   return (
     <div className="footprints">
-      <section className="footprint-hero">
-        <div>
-          <span className="hx-pill">本地优先 · LifeTrace Footprints</span>
-          <h1>把人生经历放回地图里</h1>
-          <p>
-            用地点连接照片、日期和回忆。核心地图离线工作，
-            GPS 不发送给第三方地图服务。
-          </p>
-        </div>
-        <button
-          className="hx-btn primary"
-          type="button"
-          onClick={() => setEditor({ entry: null, photoIds: [] })}
-        >
-          <Plus />添加足迹
-        </button>
-      </section>
-
       <FootprintSummary value={summary} />
 
       <section className="footprint-controls">
@@ -214,6 +196,13 @@ export default function Footprints() {
         >
           <RefreshCw className={loading ? "spin" : ""} />刷新
         </button>
+        <button
+          className="footprint-add hx-btn primary"
+          type="button"
+          onClick={() => setEditor({ entry: null, photoIds: [] })}
+        >
+          <Plus />添加足迹
+        </button>
       </section>
 
       {error ? <div className="footprint-error" role="alert">{error}</div> : null}
@@ -233,6 +222,7 @@ export default function Footprints() {
           />
           <ProvinceDrawer
             mapLevel={mapLevel}
+            selected={Boolean(selectedProvince)}
             summary={selectedSummary}
             name={selectedProvince?.name ?? "选择一个省份"}
             detail={provinceDetail}

@@ -78,6 +78,9 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
   assert.doesNotMatch(map, /setLevel\(/);
   assert.match(map, /level: FootprintMapLevel/);
   assert.match(footprints, /const \[mapLevel, setMapLevel\]/);
+  assert.match(footprints, /selected=\{Boolean\(selectedProvince\)\}/);
+  assert.match(drawer, /selected: boolean/);
   assert.match(drawer, /查看省内地图/);
   assert.match(drawer, /返回全国/);
+  assert.match(drawer, /选中后可进入省内地图/);
 });

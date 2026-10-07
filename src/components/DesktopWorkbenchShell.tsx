@@ -20,6 +20,7 @@ import {
   Mail,
   MapPinned,
   NotebookPen,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   Settings,
@@ -298,6 +299,17 @@ export default function DesktopWorkbenchShell({
         <section className="lt-desk-stage">
           <header className="lt-desktop-commandbar">
             <div className="lt-desk-history-actions">
+              {sidebarCompact ? (
+                <button
+                  type="button"
+                  className="lt-desk-sidebar-reopen"
+                  title="展开侧栏"
+                  aria-label="展开侧栏"
+                  onClick={() => setSidebar(false)}
+                >
+                  <PanelLeftOpen />
+                </button>
+              ) : null}
               <button type="button" title="后退" disabled={!canBack} onClick={onBack}><ChevronLeft /></button>
               <button type="button" title="前进" disabled={!canForward} onClick={onForward}><ChevronRight /></button>
             </div>
