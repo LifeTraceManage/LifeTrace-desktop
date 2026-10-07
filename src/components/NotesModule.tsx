@@ -264,50 +264,76 @@ export default function NotesModule(){
   const [query,setQuery]=useState("");
   const [sort,setSort]=useState("updated_desc");
   const [notes,setNotes]=useState<Note[]>([]);
+  const [libraryNotes,setLibraryNotes]=useState<Note[]>([]);
   const [folders,setFolders]=useState<NoteFolder[]>([]);
   const [tags,setTags]=useState<NoteTag[]>([]);
   const [selected,setSelected]=useState<Note|null>(null);
+  const [openedIds,setOpenedIds]=useState<string[]>([]);
   const [loading,setLoading]=useState(true);
-  const [leftCollapsed,setLeftCollapsed]=useState(false);
-  const [listCollapsed,setListCollapsed]=useState(false);
-  const [leftWidth,setLeftWidth]=useState(210);
-  const [listWidth,setListWidth]=useState(330);
   const [commandOpen,setCommandOpen]=useState(false);
+  const [graphOpen,setGraphOpen]=useState(false);
   const saveBeforeSwitch=useRef<((revision?:boolean)=>Promise<Note|null>)|null>(null);
+  const selectedIdRef=useRef<string|null>(null);
   const debouncedQuery=useDebounced(query,300);
   const searchRef=useRef<HTMLInputElement>(null);
+  const folderRows=flattenFolders(folders);
+
   useEffect(()=>{
-    setLeftWidth(Math.min(300,Math.max(170,Number(window.localStorage.getItem("lifetrace:notes-left-width"))||210)));
-    setListWidth(Math.min(520,Math.max(260,Number(window.localStorage.getItem("lifetrace:notes-list-width"))||330)));
-    setLeftCollapsed(window.localStorage.getItem("lifetrace:notes-left-collapsed")==="1");
-    setListCollapsed(window.localStorage.getItem("lifetrace:notes-list-collapsed")==="1");
+    try{
+      const stored=JSON.parse(window.localStorage.getItem("lifetrace:notes:tabs")||"[]");
+      if(Array.isArray(stored))setOpenedIds(stored.filter((value):value is string=>typeof value==="string").slice(0,12));
+    }catch{setOpenedIds([])}
   },[]);
-  const resize=(column:"left"|"list",event:React.PointerEvent)=>{
-    event.preventDefault();const start=event.clientX;const original=column==="left"?leftWidth:listWidth;let latest=original;
-    const move=(next:PointerEvent)=>{latest=Math.round(Math.min(column==="left"?300:520,Math.max(column==="left"?170:260,original+next.clientX-start)));if(column==="left")setLeftWidth(latest);else setListWidth(latest)};
-    const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);window.localStorage.setItem(`lifetrace:notes-${column}-width`,String(latest))};
-    window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);
-  };
-  useEffect(()=>{window.localStorage.setItem("lifetrace:notes-left-collapsed",leftCollapsed?"1":"0");window.localStorage.setItem("lifetrace:notes-list-collapsed",listCollapsed?"1":"0")},[leftCollapsed,listCollapsed]);
+  useEffect(()=>{window.localStorage.setItem("lifetrace:notes:tabs",JSON.stringify(openedIds.slice(0,12)))},[openedIds]);
 
   const loadMeta=useCallback(async()=>{const meta=await noteApi.meta();setFolders(meta.folders);setTags(meta.tags)},[]);
   const loadList=useCallback(async(preferId?:string)=>{
     setLoading(true);
     try{
-      const list=await noteApi.list({q:debouncedQuery,scope,folderId,tagId,sort,limit:150});setNotes(list);
-      const target=preferId||selected?.id||window.localStorage.getItem("lifetrace:last-note")||list[0]?.id;
-      if(target&&list.some(item=>item.id===target)){const full=await noteApi.get(target);setSelected(full);window.localStorage.setItem("lifetrace:last-note",target)}
-      else setSelected(list[0]?await noteApi.get(list[0].id):null);
+      const [list,all]=await Promise.all([
+        noteApi.list({q:debouncedQuery,scope,folderId,tagId,sort,limit:150}),
+        noteApi.list({scope:"all",sort:"updated_desc",limit:250}),
+      ]);
+      setNotes(list);setLibraryNotes(all);
+      const target=preferId||selectedIdRef.current||window.localStorage.getItem("lifetrace:last-note")||list[0]?.id;
+      if(target){
+        try{
+          const full=await noteApi.get(target);
+          setSelected(full);selectedIdRef.current=target;
+          setOpenedIds(current=>current.includes(target)?current:[...current,target].slice(-12));
+          window.localStorage.setItem("lifetrace:last-note",target);
+        }catch{
+          const fallback=list[0];
+          if(fallback){const full=await noteApi.get(fallback.id);setSelected(full);selectedIdRef.current=fallback.id}
+          else{setSelected(null);selectedIdRef.current=null}
+        }
+      }else{setSelected(null);selectedIdRef.current=null}
     }catch(error){notify(error instanceof Error?error.message:"笔记加载失败")}finally{setLoading(false)}
-  },[debouncedQuery,folderId,scope,selected?.id,sort,tagId]);
+  },[debouncedQuery,folderId,scope,sort,tagId]);
   useEffect(()=>{void loadMeta()},[loadMeta]);
-  useEffect(()=>{void loadList()},[debouncedQuery,folderId,scope,sort,tagId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{void loadList()},[loadList]);
 
-  const open=async(id:string)=>{if(selected?.id===id)return;await saveBeforeSwitch.current?.(false);const full=await noteApi.get(id);setSelected(full);window.localStorage.setItem("lifetrace:last-note",id)};
+  const open=async(id:string)=>{
+    if(selected?.id===id)return;
+    await saveBeforeSwitch.current?.(false);
+    const full=await noteApi.get(id);
+    setSelected(full);selectedIdRef.current=id;
+    setOpenedIds(current=>current.includes(id)?current:[...current,id].slice(-12));
+    window.localStorage.setItem("lifetrace:last-note",id);
+  };
   const create=useCallback(async(type:NoteType="document",seed?:Partial<NoteInputValue>)=>{
-    const created=await noteApi.create({title:null,noteType:type,folderId:null,contentJson:emptyJson,contentHtml:"<p></p>",contentText:"",contentMarkdown:"",summary:"",isPinned:false,isFavorite:false,isArchived:false,tagIds:[],relations:[],...seed});
-    setScope("all");setFolderId("");setTagId("");await loadList(created.id);setSelected(created);notify(type==="quick"?"快速记录已创建":"新笔记已创建");
-  },[loadList]);
+    const created=await noteApi.create({title:null,noteType:type,folderId:folderId||null,contentJson:emptyJson,contentHtml:"<p></p>",contentText:"",contentMarkdown:"",summary:"",isPinned:false,isFavorite:false,isArchived:false,tagIds:[],relations:[],...seed});
+    setScope("all");setTagId("");selectedIdRef.current=created.id;await loadList(created.id);setSelected(created);
+    setOpenedIds(current=>current.includes(created.id)?current:[...current,created.id].slice(-12));
+    notify(type==="quick"?"快速记录已创建":"新笔记已创建");
+  },[folderId,loadList]);
+  const openDailyNote=useCallback(async()=>{
+    const title=dayTitle();
+    const daily=await noteApi.list({scope:"all",noteType:"daily",sort:"updated_desc",limit:250});
+    const existing=daily.find(item=>titleOf(item)===title);
+    if(existing){await open(existing.id);return}
+    await create("daily",{title});
+  },[create]);
   const importMarkdown=useCallback(async()=>{
     if(!desktopNotes.available()){notify("Markdown 导入仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.importMarkdown();if(!result.ok||result.canceled)return;if(result.error){notify(result.error);return}
@@ -315,11 +341,11 @@ export default function NotesModule(){
     const escaped=lines.map(line=>`<p>${line.replace(/[&<>"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char]!) )||"<br>"}</p>`).join("");
     await create("document",{title:result.title||null,contentJson,contentHtml:escaped,contentText:content,contentMarkdown:content,summary:cleanSummary(content)});
   },[create]);
-  const refresh=useCallback(()=>void loadList(),[loadList]);
+  const refresh=useCallback(()=>void loadList(selectedIdRef.current??undefined),[loadList]);
 
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
-      if(event.key==="Escape"){setCommandOpen(false);return}
+      if(event.key==="Escape"){setCommandOpen(false);setGraphOpen(false);return}
       if(!(event.ctrlKey||event.metaKey))return;
       if(event.key.toLowerCase()==="p"){event.preventDefault();setCommandOpen(true);return}
       if(event.key.toLowerCase()==="n"){event.preventDefault();void create(event.shiftKey?"quick":"document")}
@@ -330,41 +356,73 @@ export default function NotesModule(){
     return()=>{window.removeEventListener("keydown",handler);dispose?.()};
   },[create,importMarkdown]);
 
-  const makeFolder=async()=>{const name=prompt("文件夹名称");if(!name)return;await noteApi.saveFolder({name,icon:"folder",color:"#2a7a5e",sortOrder:folders.length});await loadMeta()};
+  const makeFolder=async()=>{const name=prompt("文件夹名称");if(!name)return;await noteApi.saveFolder({name,icon:"folder",color:"#2a7a5e",sortOrder:folders.length,parentFolderId:folderId||null});await loadMeta()};
   const makeTag=async()=>{const name=prompt("标签名称");if(!name)return;await noteApi.saveTag({name,color:"#5f7d70"});await loadMeta()};
-  const manageFolder=async(folder:NoteFolder)=>{const name=prompt("修改文件夹名称；留空并确定可删除（其中笔记会移到未分类）",folder.name);if(name===null)return;if(!name.trim()){if(confirm(`删除文件夹“${folder.name}”？笔记不会被删除。`))await noteApi.deleteFolder(folder.id)}else await noteApi.saveFolder({...folder,name:name.trim()});await loadMeta();await loadList()};
+  const manageFolder=async(folder:NoteFolder)=>{const name=prompt("修改文件夹名称；留空并确定可删除（其中笔记会移到 Inbox）",folder.name);if(name===null)return;if(!name.trim()){if(confirm(`删除文件夹“${folder.name}”？笔记不会被删除。`))await noteApi.deleteFolder(folder.id)}else await noteApi.saveFolder({...folder,name:name.trim()});await loadMeta();await loadList()};
   const manageTag=async(tag:NoteTag)=>{const name=prompt("修改标签名称；留空并确定可删除",tag.name);if(name===null)return;if(!name.trim()){if(confirm(`删除标签“${tag.name}”？笔记不会被删除。`))await noteApi.deleteTag(tag.id)}else await noteApi.saveTag({...tag,name:name.trim()});await loadMeta();await loadList()};
   const restoreTrash=async()=>{for(const note of notes)await noteApi.restore(note.id);notify(`已恢复 ${notes.length} 篇笔记`);await loadList()};
   const emptyTrash=async()=>{if(!confirm(`永久删除回收站中的 ${notes.length} 篇笔记？此操作无法撤销。`))return;for(const item of notes){const full=await noteApi.get(item.id);for(const file of full.attachments??[])await desktopNotes.deleteAttachment(item.id,file.fileName);await noteApi.delete(item.id)}notify("回收站已清空");await loadList()};
   const toggleSelected=async(field:"isFavorite"|"isPinned")=>{if(!selected)return;const saved=await noteApi.update({...selected,[field]:!selected[field],tagIds:selected.tags.map(x=>x.id),relations:selected.relations,createRevision:false});setSelected(saved);setCommandOpen(false);await loadList(saved.id)};
   const exportSelected=async()=>{if(!selected)return;const content=selected.contentMarkdown||selected.contentText;if(desktopNotes.available())await desktopNotes.exportNote({format:"md",title:titleOf(selected),content});setCommandOpen(false)};
   const choose=(nextScope:string,nextFolder="",nextTag="")=>{setScope(nextScope);setFolderId(nextFolder);setTagId(nextTag)};
+  const closeTab=async(id:string)=>{
+    if(selected?.id===id)await saveBeforeSwitch.current?.(false);
+    const remaining=openedIds.filter(value=>value!==id);setOpenedIds(remaining);
+    if(selected?.id===id){
+      const next=remaining[remaining.length-1];
+      if(next)await open(next);else{setSelected(null);selectedIdRef.current=null}
+    }
+  };
 
-  return <><div className={`nt-workspace ${leftCollapsed?"left-collapsed":""} ${listCollapsed?"list-collapsed":""}`} style={{gridTemplateColumns:`${leftCollapsed?0:leftWidth}px ${listCollapsed?0:listWidth}px minmax(460px,1fr)`}}>
-    <aside className="nt-sidebar">
-      <header><strong>笔记库</strong><button onClick={()=>setLeftCollapsed(true)} title="折叠分类"><ChevronLeft/></button></header>
-      <nav>
-        {[["quick","快速记录",FileText],["all","全部笔记",File],["recent","最近编辑",History],["favorite","收藏",Star],["pinned","置顶",Pin],["archived","归档",Archive],["trash","回收站",Trash2]].map(([id,label,Icon])=><button key={String(id)} className={scope===id&&!folderId&&!tagId?"active":""} onClick={()=>choose(String(id))}><span><Icon/>{String(label)}</span>{id==="all"&&<b>{notes.length}</b>}</button>)}
-      </nav>
-      <section><header><span>文件夹 · 右键管理</span><button onClick={()=>void makeFolder()}><FolderPlus/></button></header>{folders.map(folder=><button key={folder.id} className={folderId===folder.id?"active":""} onClick={()=>choose("all",folder.id)} onContextMenu={event=>{event.preventDefault();void manageFolder(folder)}}><span><i style={{background:folder.color}}/><Folder/>{folder.name}</span></button>)}</section>
-      <section><header><span>标签 · 右键管理</span><button onClick={()=>void makeTag()}><Plus/></button></header><div className="nt-sidebar-tags">{tags.map(tag=><button key={tag.id} className={tagId===tag.id?"active":""} onClick={()=>choose("all","",tag.id)} onContextMenu={event=>{event.preventDefault();void manageTag(tag)}}><i style={{background:tag.color}}/>{tag.name}</button>)}</div></section>
+  const inboxCount=libraryNotes.filter(note=>!note.folderId).length;
+  const favoriteCount=libraryNotes.filter(note=>note.isFavorite).length;
+  const pinnedCount=libraryNotes.filter(note=>note.isPinned).length;
+  const builtin=[
+    ["inbox","Inbox",NotebookPen,inboxCount],
+    ["all","全部笔记",File,libraryNotes.length],
+    ["recent","最近",History,Math.min(libraryNotes.length,30)],
+    ["favorite","收藏",Star,favoriteCount],
+    ["pinned","置顶",Pin,pinnedCount],
+    ["archived","归档",Archive,0],
+    ["trash","废纸篓",Trash2,0],
+  ] as const;
+  const activeLabel=folderId?folders.find(item=>item.id===folderId)?.name:tagId?`#${tags.find(item=>item.id===tagId)?.name??""}`:builtin.find(item=>item[0]===scope)?.[1]??"全部笔记";
+
+  const graphNotes=libraryNotes.slice(0,80);
+  const graphPoints=graphNotes.map((note,index)=>{const angle=graphNotes.length<=1?0:Math.PI*2*index/graphNotes.length-Math.PI/2;const radius=Math.min(180,90+graphNotes.length*2);return{id:note.id,title:titleOf(note),x:380+Math.cos(angle)*radius,y:220+Math.sin(angle)*radius,favorite:note.isFavorite}});
+  const graphById=new Map(graphPoints.map(point=>[point.id,point]));
+  const graphEdges=libraryNotes.flatMap(note=>note.relations.map(relation=>({source:graphById.get(note.id),target:(relation.entityType as string)==="note.note"?graphById.get(relation.entityId):undefined}))).filter((edge):edge is {source:(typeof graphPoints)[number];target:(typeof graphPoints)[number]}=>Boolean(edge.source&&edge.target));
+
+  return <><div className="nt-workspace" data-testid="notes-workspace">
+    <aside className="nt-library" data-testid="notes-sidebar">
+      <div className="nt-library-actions">
+        <button className="primary" onClick={()=>void create("document")}><Plus/>新建笔记</button>
+        <button title="Daily" onClick={()=>void openDailyNote()}><CalendarDays/></button>
+        <button title="Graph" onClick={()=>setGraphOpen(true)}><Network/></button>
+        <button title="命令" onClick={()=>setCommandOpen(true)}><Command/></button>
+      </div>
+      <div className="nt-search"><Search/><input ref={searchRef} value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、正文、文件夹或标签"/>{query&&<button onClick={()=>setQuery("")}><X/></button>}</div>
+      <div className="nt-library-nav">
+        <nav aria-label="笔记导航">{builtin.map(([id,label,Icon,count])=><button key={id} className={scope===id&&!folderId&&!tagId?"active":""} onClick={()=>choose(id)}><Icon/><span>{label}</span>{count>0&&<b>{count}</b>}</button>)}</nav>
+        <section><header><span>Folders</span><button title="新建文件夹" onClick={()=>void makeFolder()}><FolderPlus/></button></header>{folderRows.length?folderRows.map(({folder,depth})=><button key={folder.id} style={{paddingLeft:`${10+depth*14}px`}} className={folderId===folder.id?"active":""} onClick={()=>choose("all",folder.id)} onContextMenu={event=>{event.preventDefault();void manageFolder(folder)}}><Folder/><span>{folder.name}</span></button>):<small>还没有文件夹</small>}</section>
+        <section><header><span>Tags</span><button title="新建标签" onClick={()=>void makeTag()}><Plus/></button></header>{tags.length?tags.map(tag=><button key={tag.id} className={tagId===tag.id?"active":""} onClick={()=>choose("all","",tag.id)} onContextMenu={event=>{event.preventDefault();void manageTag(tag)}}><Tag/><span>{tag.name}</span></button>):<small>还没有标签</small>}</section>
+      </div>
+      <div className="nt-scope-head"><strong>{activeLabel}</strong><span>{notes.length} 篇</span></div>
+      <div className="nt-list-toolbar">{scope==="trash"&&notes.length>0&&<><button title="恢复全部" onClick={()=>void restoreTrash()}><ArchiveRestore/></button><button title="清空回收站" onClick={()=>void emptyTrash()}><Trash2/></button></>}<select value={sort} onChange={e=>setSort(e.target.value)}><option value="updated_desc">最近编辑</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option><option value="title_asc">标题 A–Z</option><option value="title_desc">标题 Z–A</option></select><button title="导入 Markdown" onClick={()=>void importMarkdown()}><FileUp/></button></div>
+      <div className="nt-list-scroll">{loading?<p className="nt-list-empty">正在读取笔记…</p>:notes.length===0?<div className="nt-list-empty"><FileText/><strong>{query?"没有匹配的笔记":"这里还没有笔记"}</strong><p>创建一篇笔记，或调整搜索和筛选条件。</p></div>:notes.map(note=><button key={note.id} className={selected?.id===note.id?"active":""} onClick={()=>void open(note.id)}><header><strong>{titleOf(note)}</strong><span>{note.isPinned&&<Pin/>}{note.isFavorite&&<Star/>}</span></header><p>{note.summary||"暂无正文"}</p><footer><time>{formatTime(note.updatedAt)}</time>{note.folderId&&<span>· {folders.find(folder=>folder.id===note.folderId)?.name??"文件夹"}</span>}</footer></button>)}</div>
     </aside>
-    {!leftCollapsed&&<i className="nt-resizer left" style={{left:leftWidth-3}} onPointerDown={event=>resize("left",event)}/>}
-    {leftCollapsed&&<button className="nt-expand left" onClick={()=>setLeftCollapsed(false)} title="展开分类"><ChevronRight/></button>}
-    <section className="nt-list">
-      <header>
-        <div className="nt-search"><Search/><input ref={searchRef} value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、正文、标签…"/>{query&&<button onClick={()=>setQuery("")}><X/></button>}</div>
-        <div>{scope==="trash"&&notes.length>0&&<><button title="恢复全部" onClick={()=>void restoreTrash()}><ArchiveRestore/></button><button title="清空回收站" onClick={()=>void emptyTrash()}><Trash2/></button></>}<select value={sort} onChange={e=>setSort(e.target.value)}><option value="updated_desc">最近编辑</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option><option value="title_asc">标题 A–Z</option><option value="title_desc">标题 Z–A</option></select><button title="导入 Markdown" onClick={()=>void importMarkdown()}><FileUp/></button><button title="折叠列表" onClick={()=>setListCollapsed(true)}><ChevronLeft/></button><button className="primary" title="新建笔记" onClick={()=>void create("document")}><Plus/></button></div>
-      </header>
-      <div className="nt-list-scroll">{loading?<p className="nt-list-empty">正在读取笔记…</p>:notes.length===0?<div className="nt-list-empty"><FileText/><strong>这里还没有笔记</strong><p>创建一篇笔记，或调整搜索和筛选条件。</p></div>:notes.map(note=><button key={note.id} className={selected?.id===note.id?"active":""} onClick={()=>void open(note.id)}><header><strong>{titleOf(note)}</strong><span>{note.isPinned&&<Pin/>}{note.isFavorite&&<Star/>}</span></header><p>{note.summary||"暂无正文"}</p><footer><span>{labels[note.noteType]}</span><time>{formatTime(note.updatedAt)}</time></footer>{note.tags.length>0&&<div>{note.tags.slice(0,3).map(tag=><i key={tag.id} style={{"--tag-color":tag.color} as React.CSSProperties}>{tag.name}</i>)}</div>}</button>)}</div>
-    </section>
-    {!listCollapsed&&<i className="nt-resizer list" style={{left:(leftCollapsed?0:leftWidth)+listWidth-3}} onPointerDown={event=>resize("list",event)}/>}
-    {listCollapsed&&<button className="nt-expand list" onClick={()=>setListCollapsed(false)} title="展开列表"><ChevronRight/></button>}
-    {selected?<NoteEditor key={selected.id} note={selected} folders={folders} tags={tags} trashMode={scope==="trash"} onOpenNote={open} registerSave={save=>{saveBeforeSwitch.current=save;return()=>{if(saveBeforeSwitch.current===save)saveBeforeSwitch.current=null}}} onSaved={saved=>{setSelected(saved);setNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item))}} onListChanged={refresh}/>:<section className="nt-editor nt-empty-editor"><div><FileText/><h2>选择或创建一篇笔记</h2><p>内容会自动保存到本机 SQLite 数据库。</p><button className="hx-btn primary" onClick={()=>void create("document")}><Plus/>新建笔记</button></div></section>}
-  </div>{commandOpen&&<div className="nt-command-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setCommandOpen(false)}}><section className="nt-command"><header><Search/><strong>快速命令</strong><kbd>Esc</kbd><button onClick={()=>setCommandOpen(false)}><X/></button></header><div>
+    <main className="nt-note-stage">
+      {openedIds.length>0&&<div className="nt-tabs">{openedIds.map(id=>{const note=libraryNotes.find(item=>item.id===id)||(selected?.id===id?selected:null);return <div key={id} className={selected?.id===id?"active":""}><button onClick={()=>void open(id)}>{note?titleOf(note):"笔记"}</button><button aria-label="关闭标签" onClick={()=>void closeTab(id)}><X/></button></div>})}</div>}
+      {selected?<NoteEditor key={selected.id} note={selected} folders={folders} tags={tags} trashMode={scope==="trash"} onOpenNote={open} registerSave={save=>{saveBeforeSwitch.current=save;return()=>{if(saveBeforeSwitch.current===save)saveBeforeSwitch.current=null}}} onSaved={saved=>{setSelected(saved);selectedIdRef.current=saved.id;setNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item));setLibraryNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item))}} onListChanged={refresh}/>:<section className="nt-editor nt-empty-editor"><div><NotebookPen/><h2>选择一篇笔记</h2><p>内容会自动保存到本机 SQLite，并通过原生同步引擎同步。</p><button className="hx-btn primary" onClick={()=>void create("document")}><Plus/>新建笔记</button></div></section>}
+    </main>
+  </div>
+  {graphOpen&&<div className="nt-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setGraphOpen(false)}}><section className="nt-graph"><header><div><Network/><strong>Notes Graph</strong><small>Wiki Link 关系图 · 最多 80 篇</small></div><button onClick={()=>setGraphOpen(false)}><X/></button></header>{graphPoints.length?<svg viewBox="0 0 760 440" role="img" aria-label="笔记知识图谱"><g className="edges">{graphEdges.map((edge,index)=><line key={index} x1={edge.source.x} y1={edge.source.y} x2={edge.target.x} y2={edge.target.y}/>)}</g>{graphPoints.map(point=><g key={point.id} className="node" onClick={()=>{setGraphOpen(false);void open(point.id)}}><circle cx={point.x} cy={point.y} r={point.favorite?8:6}/><text x={point.x} y={point.y+18} textAnchor="middle">{point.title.length>18?`${point.title.slice(0,17)}…`:point.title}</text></g>)}</svg>:<div className="nt-list-empty"><Network/><strong>知识图谱为空</strong></div>}</section></div>}
+  {commandOpen&&<div className="nt-command-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setCommandOpen(false)}}><section className="nt-command"><header><Search/><strong>快速命令</strong><kbd>Esc</kbd><button onClick={()=>setCommandOpen(false)}><X/></button></header><div>
     <button onClick={()=>{setCommandOpen(false);void create("document")}}><Plus/><span><strong>新建笔记</strong><small>Ctrl + N</small></span></button>
+    <button onClick={()=>{setCommandOpen(false);void openDailyNote()}}><CalendarDays/><span><strong>打开今日日记</strong><small>Daily</small></span></button>
     <button onClick={()=>{setCommandOpen(false);void create("quick")}}><FileText/><span><strong>新建快速记录</strong><small>Ctrl + Shift + N</small></span></button>
     <button onClick={()=>{setCommandOpen(false);searchRef.current?.focus()}}><Search/><span><strong>搜索笔记</strong><small>Ctrl + Shift + F</small></span></button>
+    <button onClick={()=>{setCommandOpen(false);setGraphOpen(true)}}><Network/><span><strong>打开知识图谱</strong><small>Graph</small></span></button>
     <button onClick={()=>{setCommandOpen(false);void importMarkdown()}}><FileUp/><span><strong>导入 Markdown</strong><small>桌面文件</small></span></button>
     {selected&&<><button onClick={()=>void toggleSelected("isFavorite")}><Star/><span><strong>{selected.isFavorite?"取消收藏":"收藏当前笔记"}</strong></span></button><button onClick={()=>void toggleSelected("isPinned")}><Pin/><span><strong>{selected.isPinned?"取消置顶":"置顶当前笔记"}</strong></span></button><button onClick={()=>void exportSelected()}><Download/><span><strong>导出当前笔记</strong><small>Markdown</small></span></button></>}
     {notes.slice(0,8).map(note=><button key={note.id} onClick={()=>{setCommandOpen(false);void open(note.id)}}><File/><span><strong>打开 · {titleOf(note)}</strong><small>{formatTime(note.updatedAt)}</small></span></button>)}
