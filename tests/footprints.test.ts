@@ -9,6 +9,7 @@ import {
   footprintVisitIntensity,
   groupFootprintsByYear,
 } from "../src/components/feature/footprints/footprintViewModel";
+import { buildFootprintInsights } from "../src/components/feature/footprints/footprintInsights";
 import type { FootprintEntry } from "../src/components/feature/footprints/types";
 
 const root = process.cwd();
@@ -65,6 +66,21 @@ test("footprint view model groups, searches, labels, and shades records", () => 
   assert.equal(footprintVisitIntensity(0, 5), 0);
   assert.equal(footprintVisitIntensity(1, 10), 0.25);
   assert.equal(footprintVisitIntensity(10, 10), 1);
+});
+
+test("footprint insights derive years, revisits, photo coverage, and top cities from real entries", () => {
+  const entries = [
+    { ...entry("a", "成都一", "2026-05-01", "成都市"), locationId: "chengdu", photoCount: 3 },
+    { ...entry("b", "成都二", "2026-10-02", "成都市"), locationId: "chengdu", photoCount: 0, favorite: true },
+    { ...entry("c", "上海", "2025-08-09", "上海市"), locationId: "shanghai", photoCount: 2 },
+  ];
+  const insights = buildFootprintInsights(entries);
+  assert.equal(insights.yearCount, 2);
+  assert.equal(insights.revisitCount, 1);
+  assert.equal(insights.photoCoveragePercent, 67);
+  assert.deepEqual(insights.years.map((year) => [year.year, year.visitCount]), [["2026", 2], ["2025", 1]]);
+  assert.equal(insights.topCities[0].label, "四川省 · 成都市");
+  assert.equal(insights.topCities[0].visitCount, 2);
 });
 
 test("desktop navigation exposes Footprints in both local and signed-in shells", () => {
