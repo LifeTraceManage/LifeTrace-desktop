@@ -68,6 +68,16 @@ const withNoteProperties=(contentJson:Record<string,unknown>,properties:DesktopN
   ...contentJson,
   properties:{status:properties.status.trim(),source:properties.source.trim(),aliases:properties.aliases},
 });
+const markdownSource=(note:Pick<Note,"contentJson"|"contentMarkdown"|"contentText">)=>{
+  const jsonSource=note.contentJson&&typeof note.contentJson==="object"&&!Array.isArray(note.contentJson)
+    &&typeof (note.contentJson as Record<string,unknown>).source==="string"
+      ? String((note.contentJson as Record<string,unknown>).source)
+      : "";
+  return note.contentMarkdown||jsonSource||note.contentText||"";
+};
+const markdownContentJson=(markdown:string,current:Record<string,unknown>,properties:DesktopNoteProperties)=>withNoteProperties({
+  ...current,type:"markdown",source:markdown,editor:"desktop-markdown",
+},properties);
 const flattenFolders=(folders:NoteFolder[])=>{
   const children=new Map<string|null,NoteFolder[]>();
   for(const folder of folders){const key=folder.parentFolderId??null;children.set(key,[...(children.get(key)??[]),folder])}
