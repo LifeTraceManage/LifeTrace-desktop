@@ -128,6 +128,7 @@ type DesktopWorkbenchShellProps = {
   loading: boolean;
   privacy: boolean;
   error: string;
+  syncLabel?: string;
   onNavigate: (route: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -165,6 +166,7 @@ export default function DesktopWorkbenchShell({
   loading,
   privacy,
   error,
+  syncLabel,
   onNavigate,
   onBack,
   onForward,
@@ -304,7 +306,7 @@ export default function DesktopWorkbenchShell({
               <button type="button" title="命令面板（Ctrl+K）" onClick={() => setCommandOpen(true)}><Search /></button>
               <button type="button" className={`lt-desk-sync${!online ? " offline" : ""}`} title={online ? "立即同步" : "当前离线"} disabled={!online || loading} onClick={onRefresh}>
                 {!online ? <WifiOff /> : loading ? <LoaderCircle className="spin" /> : <RefreshCw />}
-                <span>{online ? (loading ? "同步中" : "已连接") : "离线"}</span>
+                <span>{online ? (loading ? "同步中" : syncLabel || "已连接") : "离线"}</span>
               </button>
               <button type="button" title={privacy ? "关闭隐私模式" : "开启隐私模式"} onClick={onTogglePrivacy}>{privacy ? <EyeOff /> : <Eye />}</button>
             </div>
