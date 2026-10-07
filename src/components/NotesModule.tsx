@@ -259,8 +259,8 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
           fileSize:cloud.sizeBytes,createdAt:cloud.createdAt,
         });
         setCloudAttachments(current=>[cloud,...current.filter(item=>item.id!==cloud.id)]);
-        insertSnippet(attachmentMarkdown(cloud));
         await refreshLocalAttachmentState();
+        insertSnippet(attachmentMarkdown(cloud));
         notify("附件已上传云端并插入引用");
         return;
       }catch(error){
