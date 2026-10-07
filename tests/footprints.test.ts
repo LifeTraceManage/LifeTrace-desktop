@@ -124,6 +124,25 @@ test("photo library can hand selected photos to a new Footprint draft", () => {
   assert.match(page, /photoIds: photoDraft\.photoIds/);
 });
 
+test("Footprints can associate real notes and tasks through the local API", () => {
+  const repository = read("src-tauri/src/database/repositories/footprints.rs");
+  const server = read("src-tauri/src/server.rs");
+  const api = read("src/services/footprintApi.ts");
+  const detail = read("src/components/feature/footprints/FootprintEntryDetail.tsx");
+  const links = read("src/components/feature/footprints/FootprintLinks.tsx");
+
+  assert.match(repository, /pub fn link_candidates/);
+  assert.match(repository, /pub fn save_entry_link/);
+  assert.match(repository, /"note\.note"/);
+  assert.match(repository, /"execution\.task"/);
+  assert.match(server, /"\/api\/footprints\/entries\/\{id\}\/links"/);
+  assert.match(server, /"\/api\/footprints\/link-candidates"/);
+  assert.match(api, /attachLink:/);
+  assert.match(api, /detachLink:/);
+  assert.match(detail, /<FootprintLinks entryId=\{entry\.id\}/);
+  assert.match(links, /搜索笔记或任务/);
+});
+
 test("Footprints discovers unlinked GPS photo clusters before creating entries", () => {
   const repository = read("src-tauri/src/database/repositories/footprints.rs");
   const server = read("src-tauri/src/server.rs");
