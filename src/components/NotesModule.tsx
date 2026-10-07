@@ -118,7 +118,6 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [status,setStatus]=useState<"saved"|"dirty"|"saving"|"failed">("saved");
   const [revisions,setRevisions]=useState<NoteRevision[]>([]);
   const [historyOpen,setHistoryOpen]=useState(false);
-  const [menuOpen,setMenuOpen]=useState(false);
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const [markdown,setMarkdown]=useState(()=>markdownSource(note));
@@ -441,7 +440,7 @@ export default function NotesModule(){
     window.localStorage.setItem("lifetrace:last-note",id);
   };
   const create=useCallback(async(type:NoteType="document",seed?:Partial<NoteInputValue>)=>{
-    const created=await noteApi.create({title:null,noteType:type,folderId:folderId||null,contentJson:emptyJson,contentHtml:"<p></p>",contentText:"",contentMarkdown:"",summary:"",isPinned:false,isFavorite:false,isArchived:false,tagIds:[],relations:[],...seed});
+    const created=await noteApi.create({title:null,noteType:type,folderId:folderId||null,contentJson:emptyJson,contentHtml:"",contentText:"",contentMarkdown:"",summary:"",isPinned:false,isFavorite:false,isArchived:false,tagIds:[],relations:[],...seed});
     setScope("all");setTagId("");selectedIdRef.current=created.id;await loadList(created.id);setSelected(created);
     setOpenedIds(current=>current.includes(created.id)?current:[...current,created.id].slice(-12));
     notify(type==="quick"?"快速记录已创建":"新笔记已创建");
