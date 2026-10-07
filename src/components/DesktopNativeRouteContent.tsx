@@ -15,6 +15,7 @@ import EditorModal, { type EditorModalState } from "@/src/components/feature/for
 import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
 import Footprints from "@/src/components/feature/footprints/Footprints";
+import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
 import CloudAgentModule from "@/src/components/CloudAgentModule";
 import DesktopSearchModule from "@/src/components/DesktopSearchModule";
 import DesktopHealthModule from "@/src/components/DesktopHealthModule";
@@ -36,6 +37,7 @@ function routeForLegacyView(view: string): string {
     case "accounts": return "/app/finance/accounts";
     case "finance": return "/app/finance";
     case "notes": return "/app/notes";
+    case "mail": return "/app/mail";
     case "calendar": return "/app/calendar";
     case "review": return "/app/review";
     case "execution": return "/app/execution";
@@ -194,6 +196,8 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
     content = <PhotoSyncModule />;
   } else if (route === "/app/footprints") {
     content = <Footprints />;
+  } else if (route === "/app/mail") {
+    content = <MailActionCenter />;
   } else if (route === "/app/finance/transactions") {
     content = <Transactions edit={(value) => setModal({ kind: "transaction", value })} note={transactionNote} />;
   } else if (route === "/app/finance/accounts") {
