@@ -312,6 +312,7 @@ pub fn list_notes(
         conditions.push("t.is_archived = 1".to_owned());
     }
     match scope {
+        "inbox" => conditions.push("t.folder_id IS NULL".to_owned()),
         "favorite" => conditions.push("t.is_favorite = 1".to_owned()),
         "pinned" => conditions.push("t.is_pinned = 1".to_owned()),
         "quick" => conditions.push("t.note_type = 'quick'".to_owned()),
