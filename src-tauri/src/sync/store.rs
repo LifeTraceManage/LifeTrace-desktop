@@ -1096,3 +1096,98 @@ impl SyncStore for SqliteSyncStore {
         )
     }
 }
+
+
+#[cfg(test)]
+mod note_sync_tests {
+    use super::*;
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    fn connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE notes(
+               id TEXT PRIMARY KEY,user_id TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+             );
+             CREATE TABLE note_relations(
+               id TEXT PRIMARY KEY,note_id TEXT NOT NULL,entity_type TEXT NOT NULL,
+               entity_id TEXT NOT NULL,relation_type TEXT NOT NULL,created_at TEXT NOT NULL
+             );
+             CREATE TABLE note_revisions(
+               id TEXT PRIMARY KEY,note_id TEXT NOT NULL,revision_version INTEGER NOT NULL,
+               title TEXT,content_json TEXT NOT NULL,content_html TEXT NOT NULL,
+               content_markdown TEXT NOT NULL,created_at TEXT NOT NULL
+             );
+             INSERT INTO notes VALUES(
+               'note-1','profile-1','2026-10-07T00:00:00Z','2026-10-07T01:00:00Z'
+             );"
+        ).unwrap();
+        connection
+    }
+
+    fn meta(id: &str) -> Value {
+        json!({
+            "id": id,
+            "userId": "profile-1",
+            "createdAt": "2026-10-07T00:00:00Z",
+            "updatedAt": "2026-10-07T01:00:00Z",
+            "deletedAt": null,
+            "localVersion": 1,
+            "serverVersion": "1",
+            "modifiedByDevice": "cloud-device"
+        })
+    }
+
+    #[test]
+    fn note_relation_roundtrips_through_native_tables() {
+        let connection = connection();
+        let payload = json!({
+            "meta": meta("rel-1"),
+            "noteId": "note-1",
+            "entityType": "note.note",
+            "entityId": "note-2",
+            "relationType": "wiki_link"
+        });
+        SqliteSyncStore::apply_upsert(&connection, "profile-1", "note.relation", &payload).unwrap();
+
+        let loaded = SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.relation", "rel-1"
+        ).unwrap().unwrap();
+        assert_eq!(loaded["noteId"], "note-1");
+        assert_eq!(loaded["entityType"], "note.note");
+        assert_eq!(loaded["entityId"], "note-2");
+
+        SqliteSyncStore::apply_delete(&connection, "profile-1", "note.relation", "rel-1").unwrap();
+        assert!(SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.relation", "rel-1"
+        ).unwrap().is_none());
+    }
+
+    #[test]
+    fn note_revision_roundtrips_through_native_tables() {
+        let connection = connection();
+        let payload = json!({
+            "meta": meta("rev-1"),
+            "noteId": "note-1",
+            "revisionVersion": 3,
+            "title": "Snapshot",
+            "contentJson": {"type":"doc","content":[]},
+            "contentHtml": "<p>snapshot</p>",
+            "contentMarkdown": "snapshot"
+        });
+        SqliteSyncStore::apply_upsert(&connection, "profile-1", "note.revision", &payload).unwrap();
+
+        let loaded = SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.revision", "rev-1"
+        ).unwrap().unwrap();
+        assert_eq!(loaded["revisionVersion"], 3);
+        assert_eq!(loaded["contentMarkdown"], "snapshot");
+        assert_eq!(loaded["contentJson"]["type"], "doc");
+
+        SqliteSyncStore::apply_delete(&connection, "profile-1", "note.revision", "rev-1").unwrap();
+        assert!(SqliteSyncStore::load_local_entity(
+            &connection, "profile-1", "note.revision", "rev-1"
+        ).unwrap().is_none());
+    }
+}
