@@ -81,6 +81,8 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
   assert.match(footprints, /selected=\{Boolean\(selectedProvince\)\}/);
   assert.match(drawer, /selected: boolean/);
   assert.match(drawer, /查看省内地图/);
+  assert.match(drawer, /先选择省份/);
+  assert.match(drawer, /disabled=\{!selected\}/);
   assert.match(drawer, /返回全国/);
   assert.match(drawer, /选中后可进入省内地图/);
 });
