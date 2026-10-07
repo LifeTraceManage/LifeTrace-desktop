@@ -64,6 +64,7 @@ type HoveredRegion = {
 };
 
 type DragState = {
+  pointerId: number;
   startClient: MapPoint;
   startPan: MapPoint;
   moved: boolean;
@@ -316,8 +317,8 @@ export default function ChinaMap({
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (scale <= 1 || event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
+      pointerId: event.pointerId,
       startClient: { x: event.clientX, y: event.clientY },
       startPan: pan,
       moved: false,
@@ -326,13 +327,14 @@ export default function ChinaMap({
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
     const clientPoint = { x: event.clientX, y: event.clientY };
     if (!drag.moved) {
       if (!isDragGesture(drag.startClient, clientPoint)) return;
       drag.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
     }
 
     const deltaX = (event.clientX - drag.startClient.x) / Math.max(rect.width, 1) * width;
@@ -345,13 +347,14 @@ export default function ChinaMap({
 
   const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    if (!drag?.moved) return;
+    if (!drag.moved) return;
     suppressClickRef.current = true;
     if (suppressTimerRef.current) {
       clearTimeout(suppressTimerRef.current);
@@ -462,10 +465,7 @@ export default function ChinaMap({
                   onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (event.detail >= 2) {
-                      onEnterProvince?.(item.code, item.name);
-                      return;
-                    }
+                    if (event.detail > 1) return;
                     if (!allowRegionClick()) return;
                     onSelectProvince(item.code, item.name);
                   }}
@@ -556,10 +556,7 @@ export default function ChinaMap({
                       onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (event.detail >= 2) {
-                          onEnterProvince?.(item.code, item.name);
-                          return;
-                        }
+                        if (event.detail > 1) return;
                         if (!allowRegionClick()) return;
                         onSelectProvince(item.code, item.name);
                       }}
