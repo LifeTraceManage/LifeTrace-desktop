@@ -201,9 +201,10 @@ export interface NoteTag {
 export interface NoteRelation {
   id: string;
   noteId: string;
-  entityType: "habit" | "habit_checkin" | "workout" | "exercise" | "transaction" | "account" | "project";
+  /** Sync-contract entity type, e.g. habit.activity or finance.transaction. */
+  entityType: string;
   entityId: string;
-  relationType: "reference" | "created_from" | "summary" | "attachment";
+  relationType: string;
   createdAt: string;
 }
 
