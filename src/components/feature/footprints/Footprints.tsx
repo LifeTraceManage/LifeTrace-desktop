@@ -132,8 +132,20 @@ export default function Footprints() {
   };
 
   const backToCountryMap = () => {
+    provinceRequestRef.current += 1;
     setSelectedCity(null);
+    setSelectedProvince(null);
+    setProvinceDetail(null);
+    setProvinceLoading(false);
     setMapLevel("country");
+  };
+
+  const enterProvinceByCode = (code: string, name: string) => {
+    if (selectedProvince?.code !== code) {
+      void chooseProvince(code, name);
+    }
+    setSelectedCity(null);
+    setMapLevel("province");
   };
 
   const filtered = useMemo(
@@ -217,6 +229,7 @@ export default function Footprints() {
             selectedCityCode={selectedCity?.code}
             selectedCityName={selectedCity?.name}
             onSelectProvince={(code, name) => void chooseProvince(code, name)}
+            onEnterProvince={enterProvinceByCode}
             onSelectCity={(code, name) => setSelectedCity({ code, name })}
             onBackToCountry={backToCountryMap}
           />
