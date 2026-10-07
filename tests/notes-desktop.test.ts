@@ -105,3 +105,38 @@ test("notes graph reads the derived wiki-link index instead of business relation
   assert.match(notes, /graph\.edges\.map/);
   assert.doesNotMatch(notes, /graphEdges=libraryNotes\.flatMap/);
 });
+
+
+test("desktop note attachments use the native cloud file service", () => {
+  const notes = read("src/components/NotesModule.tsx");
+  const service = read("src/services/noteFileApi.ts");
+  const rust = read("src-tauri/src/commands/note_files.rs");
+  const lib = read("src-tauri/src/lib.rs");
+
+  assert.match(notes, /noteFileApi\.upload\(note\.id,localPath\)/);
+  assert.match(notes, /noteFileApi\.list\(note\.id\)/);
+  assert.match(notes, /noteFileApi\.download\(note\.id,file\.id\)/);
+  assert.match(notes, /attachment:\/\//);
+  assert.match(service, /invoke<CloudNoteAttachment>\("note_cloud_upload_attachment"/);
+  assert.match(service, /invoke<CloudNoteAttachment\[\]>\("note_cloud_list_attachments"/);
+  assert.match(rust, /trusted_local_attachment/);
+  assert.match(rust, /only|只允许上传当前笔记已导入到 LifeTrace 的附件/);
+  assert.match(rust, /matches!\(url\.scheme\(\), "http" \| "https"\)/);
+  assert.match(rust, /"domain":"notes_attachments"/);
+  assert.match(rust, /"entityType":"note.note"/);
+  assert.match(lib, /note_cloud_upload_attachment/);
+  assert.match(lib, /note_cloud_download_attachment/);
+});
+
+test("new note relations use sync-contract entity type names", () => {
+  const notes = read("src/components/NotesModule.tsx");
+  const types = read("src/types/index.ts");
+
+  assert.match(notes, /type:"habit\.activity"/);
+  assert.match(notes, /type:"workout\.workout"/);
+  assert.match(notes, /type:"finance\.transaction"/);
+  assert.match(types, /entityType: string/);
+  assert.doesNotMatch(notes, /type:"habit",id:/);
+  assert.doesNotMatch(notes, /type:"workout",id:/);
+  assert.doesNotMatch(notes, /type:"transaction",id:/);
+});
