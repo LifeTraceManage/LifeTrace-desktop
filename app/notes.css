@@ -90,9 +90,9 @@
 .nt-formatbar button{width:28px;height:28px;border:0;background:transparent;display:grid;place-items:center;color:var(--hx-muted,#66756e)}
 .nt-formatbar button:hover,.nt-formatbar button.active{background:var(--hx-soft,#edf1ed);color:var(--hx-accent2,#176b54)}
 .nt-formatbar svg{width:13px;height:13px}.nt-formatbar i{height:17px;width:1px;margin:0 3px;background:var(--hx-line,#dfe5e1)}
-.nt-prose{min-height:420px}
-.nt-prose .tiptap{min-height:420px;outline:0;padding:22px 0;font:15px/1.85 Georgia,"Noto Serif SC","Songti SC",serif;color:var(--hx-ink,var(--lt-color-text,#25302b))}
-.nt-prose .tiptap p{margin:.7em 0}.nt-prose .tiptap h1{font:700 25px/1.35 Inter,sans-serif;margin:1.5em 0 .6em}.nt-prose .tiptap h2{font:700 20px/1.4 Inter,sans-serif;margin:1.4em 0 .5em}.nt-prose .tiptap h3{font:700 16px/1.4 Inter,sans-serif}.nt-prose .tiptap blockquote{margin:1.2em 0;padding:.2em 1em;border-left:3px solid #97b7a6;color:var(--hx-muted,#66736d);background:color-mix(in srgb,var(--hx-soft,#edf1ed) 65%,transparent)}.nt-prose .tiptap pre{padding:15px;overflow:auto;background:#17231e;color:#dfe9e3;font:12px/1.6 Consolas,monospace}.nt-prose .tiptap code:not(pre code){padding:2px 5px;background:var(--hx-soft,#edf0ed);font:12px Consolas,monospace}.nt-prose .tiptap img{max-width:100%}.nt-prose .tiptap a{color:#247253;text-decoration:underline}.nt-prose .tiptap ul[data-type=taskList]{list-style:none;padding:0}.nt-prose .tiptap ul[data-type=taskList] li{display:flex;gap:8px}.nt-prose .tiptap ul[data-type=taskList] li>div{flex:1}.nt-prose .tiptap p.is-editor-empty:first-child:before{content:attr(data-placeholder);float:left;color:#a7b0ab;pointer-events:none;height:0}
+.nt-markdown-editor{display:block;width:100%;min-height:520px;height:calc(100% - 112px);resize:none;border:0;outline:0;background:transparent;color:var(--hx-ink,var(--lt-color-text,#25302b));padding:20px 0 80px;font:14px/1.78 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;tab-size:2;caret-color:var(--hx-accent2,#176b54)}
+.nt-markdown-editor::placeholder{color:color-mix(in srgb,var(--hx-muted,#738079) 58%,transparent)}
+.nt-markdown-editor::selection{background:color-mix(in srgb,var(--hx-accent,#2a7a5e) 20%,transparent)}
 
 .nt-inspector{min-width:0;overflow:auto;border-left:1px solid var(--hx-line,var(--lt-color-border,#dfe5e1));background:color-mix(in srgb,var(--lt-color-surface,#fff) 97%,var(--hx-soft,#edf1ed))}
 .nt-inspector-section{padding:12px;border-bottom:1px solid var(--hx-line,var(--lt-color-border,#dfe5e1))}
