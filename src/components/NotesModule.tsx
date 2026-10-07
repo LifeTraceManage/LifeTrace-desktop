@@ -112,9 +112,12 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
   useEffect(()=>{if(!dirty)return;const timer=window.setTimeout(()=>void save(false),800);return()=>window.clearTimeout(timer)},[draft,dirty,save]);
   useEffect(()=>{
-    const beforeUnload=()=>{if(!dirty)return;const payload={action:"update",note:{...draft,tagIds:draft.tags.map(x=>x.id),createRevision:false}};navigator.sendBeacon?.("/api/notes",new Blob([JSON.stringify(payload)],{type:"application/json"}))};
-    window.addEventListener("beforeunload",beforeUnload);return()=>window.removeEventListener("beforeunload",beforeUnload);
-  },[dirty,draft]);
+    const flush=()=>{if(dirty)void save(false)};
+    const visibility=()=>{if(document.visibilityState==="hidden")flush()};
+    window.addEventListener("blur",flush);
+    document.addEventListener("visibilitychange",visibility);
+    return()=>{window.removeEventListener("blur",flush);document.removeEventListener("visibilitychange",visibility)};
+  },[dirty,save]);
   useEffect(()=>{
     let active=true;
     noteApi.list({scope:"all",sort:"title_asc",limit:250}).then(items=>{if(active)setLinkCandidates(items.filter(item=>item.id!==note.id))}).catch(()=>{if(active)setLinkCandidates([])});
