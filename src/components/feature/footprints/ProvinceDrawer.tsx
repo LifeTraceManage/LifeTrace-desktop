@@ -1,14 +1,12 @@
-import { ArrowLeft, CalendarDays, Camera, Map, MapPin } from "lucide-react";
+import { CalendarDays, Camera, MapPin } from "lucide-react";
 import type {
   FootprintEntry,
   ProvinceFootprintDetail,
   ProvinceFootprintSummary,
 } from "./types";
-import type { FootprintMapLevel } from "./ChinaMap";
 import { footprintDateLabel } from "./footprintViewModel";
 
 type Props = {
-  mapLevel: FootprintMapLevel;
   selected: boolean;
   summary: ProvinceFootprintSummary | null;
   name: string;
@@ -17,13 +15,10 @@ type Props = {
   selectedCityCode?: string | null;
   selectedCityName?: string | null;
   onSelectCity?: (code: string | null, name: string) => void;
-  onEnterProvinceMap: () => void;
-  onBackToCountry: () => void;
   onOpenEntry: (entry: FootprintEntry) => void;
 };
 
 export default function ProvinceDrawer({
-  mapLevel,
   selected,
   summary,
   name,
@@ -32,8 +27,6 @@ export default function ProvinceDrawer({
   selectedCityCode,
   selectedCityName,
   onSelectCity,
-  onEnterProvinceMap,
-  onBackToCountry,
   onOpenEntry,
 }: Props) {
   const scopedEntries = selectedCityCode || selectedCityName
@@ -55,34 +48,16 @@ export default function ProvinceDrawer({
               : "还没有在这里记录足迹"}
         </p>
 
-        <div className="footprint-drawer-nav">
-          {mapLevel === "country" ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={onEnterProvinceMap}
-              disabled={!selected}
-              title={selected ? "进入市 / 地区级地图" : "请先在地图上选择一个省份"}
-            >
-              <Map />{selected ? "查看省内地图" : "先选择省份"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onBackToCountry}
-            >
-              <ArrowLeft />返回全国
-            </button>
-          )}
-          {selectedCityName ? (
+        {selectedCityName ? (
+          <div className="footprint-drawer-nav">
             <button
               type="button"
               onClick={() => onSelectCity?.(null, "")}
             >
               查看全省
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </header>
 
       {loading
@@ -140,8 +115,8 @@ export default function ProvinceDrawer({
             {selectedCityName
               ? "这个城市还没有足迹记录。"
               : selected
-                ? "这个省份还没有足迹记录；仍然可以点击“查看省内地图”进入市 / 地区级。"
-                : "点击地图上的省份查看详情；选中后可进入省内地图。"}
+                ? "这个省份还没有足迹记录；双击地图上的省份可进入市 / 地区级。"
+                : "单击省份查看详情，双击省份进入市 / 地区级地图。"}
           </p>
         </div>
       ) : null}
