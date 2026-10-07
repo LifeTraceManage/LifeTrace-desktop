@@ -42,16 +42,23 @@ const dailyTemplate=(day:string)=>{
   return{
     markdown,
     text:`${day}\n今日记录\n待处理\n复盘`,
-    html:`<h1>${day}</h1><h2>今日记录</h2><p></p><h2>待处理</h2><p></p><h2>复盘</h2><p></p>`,
-    json:withNoteProperties({type:"doc",content:[
-      {type:"heading",attrs:{level:1},content:[{type:"text",text:day}]},
-      {type:"heading",attrs:{level:2},content:[{type:"text",text:"今日记录"}]},{type:"paragraph"},
-      {type:"heading",attrs:{level:2},content:[{type:"text",text:"待处理"}]},{type:"paragraph"},
-      {type:"heading",attrs:{level:2},content:[{type:"text",text:"复盘"}]},{type:"paragraph"},
-    ]},{status:"daily",source:"lifetrace",aliases:[]}),
+    html:"",
+    json:withNoteProperties({type:"markdown",source:markdown,editor:"desktop-markdown"},{status:"daily",source:"lifetrace",aliases:[]}),
   };
 };
-const noteHeadings=(markdown:string)=>markdown.split(/\r?\n/).map((line,index)=>{const match=/^(#{1,3})\s+(.+)$/.exec(line.trim());return match?{level:match[1].length,text:match[2].trim(),index}:null}).filter((item):item is {level:number;text:string;index:number}=>Boolean(item));
+const noteHeadings=(markdown:string)=>{
+  const headings:Array<{level:number;text:string;index:number}>=[];
+  const lines=markdown.split(/\r?\n/);let fenced=false;
+  lines.forEach((line,index)=>{
+    if(/^\s*(?:```|~~~)/.test(line)){fenced=!fenced;return}
+    if(fenced)return;
+    const match=/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if(!match)return;
+    const text=plainTextFromMarkdown(match[2]).trim();
+    if(text)headings.push({level:match[1].length,text,index});
+  });
+  return headings;
+};
 type DesktopNoteProperties={status:string;source:string;aliases:string[]};
 const readNoteProperties=(value:unknown):DesktopNoteProperties=>{
   if(!value||typeof value!=="object"||Array.isArray(value))return{status:"",source:"",aliases:[]};
