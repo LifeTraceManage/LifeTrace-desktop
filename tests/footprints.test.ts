@@ -131,8 +131,9 @@ test("Footprints ships offline province and prefecture datasets with explicit hi
   assert.match(mapComponent, /level: FootprintMapLevel/);
   assert.match(mapComponent, /onBackToCountry/);
   assert.match(mapComponent, /onEnterProvince/);
-  assert.match(mapComponent, /isDoubleRegionActivation/);
-  assert.doesNotMatch(mapComponent, /onDoubleClick/);
+  assert.match(mapComponent, /event\.detail >= 2/);
+  assert.match(mapComponent, /onDoubleClick/);
+  assert.doesNotMatch(mapComponent, /isDoubleRegionActivation/);
   assert.match(mapComponent, /双击进入省内地图/);
   assert.match(mapComponent, /onSelectCity/);
   assert.match(mapComponent, /shortAdminName/);
