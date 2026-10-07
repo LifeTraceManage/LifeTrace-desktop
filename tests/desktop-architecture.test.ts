@@ -223,3 +223,13 @@ test("desktop execution center keeps native extras and restores web execution wo
   assert.match(api, /execution_api_request/);
   assert.doesNotMatch(module, /vendor\/web/);
 });
+
+
+test("collapsed desktop sidebar keeps an explicit reopen action in the command bar", () => {
+  const shell = read("src/components/DesktopWorkbenchShell.tsx");
+
+  assert.match(shell, /sidebarCompact \? \(/);
+  assert.match(shell, /className="lt-desk-sidebar-reopen"/);
+  assert.match(shell, /title="展开侧栏"/);
+  assert.match(shell, /onClick=\{\(\) => setSidebar\(false\)\}/);
+});
