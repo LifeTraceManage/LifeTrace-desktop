@@ -21,6 +21,7 @@ import {
   footprintDisplayPlace,
 } from "./footprintViewModel";
 import PhotoSuggestions from "./PhotoSuggestions";
+import FootprintLinks from "./FootprintLinks";
 
 export default function FootprintEntryDetail({
   entryId,
@@ -141,6 +142,7 @@ export default function FootprintEntryDetail({
           </section>
         ) : null}
 
+        <FootprintLinks entryId={entry.id} />
         <PhotoSuggestions entryId={entry.id} onAttached={load} />
       </article>
     </div>
