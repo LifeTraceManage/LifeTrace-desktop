@@ -10,6 +10,7 @@ import {
   Star, Strikethrough, Tag, Trash2, X,
 } from "lucide-react";
 import { noteApi, type NoteGraph, type NoteInputValue } from "@/src/services/noteApi";
+import { noteFileApi, type CloudNoteAttachment } from "@/src/services/noteFileApi";
 import { executionApi } from "@/src/services/executionApi";
 import { desktopNotes } from "@/src/desktop/noteAdapter";
 import { useLifeStore } from "@/src/stores/useLifeStore";
@@ -121,6 +122,8 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const [markdown,setMarkdown]=useState(()=>markdownSource(note));
+  const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
+  const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
   const editorRef=useRef<HTMLTextAreaElement>(null);
   const saveLock=useRef(false);
 
@@ -170,6 +173,14 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     noteApi.list({scope:"all",sort:"title_asc",limit:250}).then(items=>{if(active)setLinkCandidates(items.filter(item=>item.id!==note.id))}).catch(()=>{if(active)setLinkCandidates([])});
     return()=>{active=false};
   },[note.id]);
+  const reloadCloudAttachments=useCallback(async()=>{
+    if(!noteFileApi.available()){setCloudAttachments([]);return}
+    setCloudAttachmentLoading(true);
+    try{setCloudAttachments(await noteFileApi.list(note.id))}
+    catch{setCloudAttachments([])}
+    finally{setCloudAttachmentLoading(false)}
+  },[note.id]);
+  useEffect(()=>{void reloadCloudAttachments()},[reloadCloudAttachments]);
 
   const patch=(value:Partial<Note>)=>{setDraft(current=>({...current,...value}));setDirty(true);setStatus("dirty")};
   const patchProperties=(value:Partial<DesktopNoteProperties>)=>{
@@ -210,6 +221,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     if(kind==="trash")await noteApi.trash(note.id);
     if(kind==="restore")await noteApi.restore(note.id);
     if(kind==="delete"){
+      for(const attachment of cloudAttachments)await noteFileApi.remove(attachment.id).catch(()=>undefined);
       for(const attachment of note.attachments??[])await desktopNotes.deleteAttachment(note.id,attachment.fileName);
       await noteApi.delete(note.id);
     }
@@ -227,10 +239,54 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     const dispose=desktopNotes.onCommand(command=>{if(command==="save")void save(true);if(command==="favorite")patch({isFavorite:!draft.isFavorite});if(command==="pin")patch({isPinned:!draft.isPinned});if(command==="export")void exportNote("md");if(command==="trash")void action("trash")});
     return()=>{window.removeEventListener("keydown",key);dispose?.()};
   });
+  const attachmentMarkdown=(file:{id:string;originalName:string;mimeType:string})=>{
+    const safeName=file.originalName.replace(/[\[\]]/g,"");
+    return file.mimeType.startsWith("image/")?`![${safeName}](attachment://${file.id})`:`[${safeName}](attachment://${file.id})`;
+  };
+  const refreshLocalAttachmentState=async()=>{
+    const latest=await noteApi.get(note.id);setDraft(latest);setMarkdown(markdownSource(latest));setProperties(readNoteProperties(latest.contentJson));onSaved(latest);
+  };
   const attach=async()=>{
     if(!desktopNotes.available()){notify("附件仅在 LifeTrace Desktop可用");return}
     const result=await desktopNotes.selectAttachment(note.id);if(!result.ok||!result.file){if(result.error)notify(result.error);return}
-    await noteApi.recordAttachment(result.file);notify("附件已添加");const latest=await noteApi.get(note.id);setDraft(latest);setMarkdown(markdownSource(latest));setProperties(readNoteProperties(latest.contentJson));onSaved(latest);
+    const local=result.file as Record<string,unknown>;
+    const localPath=typeof local.storagePath==="string"?local.storagePath:"";
+    if(noteFileApi.available()&&localPath){
+      try{
+        const cloud=await noteFileApi.upload(note.id,localPath);
+        await noteApi.recordAttachment({
+          ...local,id:cloud.id,noteId:note.id,originalName:cloud.originalName,mimeType:cloud.mimeType,
+          fileSize:cloud.sizeBytes,createdAt:cloud.createdAt,
+        });
+        setCloudAttachments(current=>[cloud,...current.filter(item=>item.id!==cloud.id)]);
+        insertSnippet(attachmentMarkdown(cloud));
+        await refreshLocalAttachmentState();
+        notify("附件已上传云端并插入引用");
+        return;
+      }catch(error){
+        await noteApi.recordAttachment(local);
+        await refreshLocalAttachmentState();
+        notify(`附件已保存在本机；云端上传失败：${error instanceof Error?error.message:String(error)}`);
+        return;
+      }
+    }
+    await noteApi.recordAttachment(local);await refreshLocalAttachmentState();notify("附件已添加到本机");
+  };
+  const downloadCloudAttachment=async(file:CloudNoteAttachment)=>{
+    try{
+      const local=await noteFileApi.download(note.id,file.id);
+      await noteApi.recordAttachment(local);
+      await refreshLocalAttachmentState();
+      await desktopNotes.openAttachment(note.id,local.fileName);
+    }catch(error){notify(error instanceof Error?error.message:"下载附件失败")}
+  };
+  const deleteAttachment=async(file:{id:string;fileName?:string},cloud:boolean)=>{
+    if(!confirm("删除这个附件吗？"))return;
+    if(cloud)await noteFileApi.remove(file.id);
+    if(file.fileName)await desktopNotes.deleteAttachment(note.id,file.fileName);
+    await noteApi.deleteAttachment(file.id).catch(()=>undefined);
+    setCloudAttachments(current=>current.filter(item=>item.id!==file.id));
+    await refreshLocalAttachmentState();
   };
   const insertWikiLink=(value:string)=>{
     const target=linkCandidates.find(item=>item.id===value);if(!target)return;
@@ -238,9 +294,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     insertSnippet(`[[${safeTitle}]]`);
   };
   const relationOptions=[
-    ...store.activities.map(x=>({type:"habit",id:x.id,label:`习惯 · ${x.name}`})),
-    ...store.workoutHistory.slice(0,20).map(x=>({type:"workout",id:x.id,label:`训练 · ${x.name}`})),
-    ...store.transactions.slice(0,30).map(x=>({type:"transaction",id:x.id,label:`账单 · ${x.counterparty||x.category} · ¥${x.amount}`})),
+    ...store.activities.map(x=>({type:"habit.activity",id:x.id,label:`习惯 · ${x.name}`})),
+    ...store.workoutHistory.slice(0,20).map(x=>({type:"workout.workout",id:x.id,label:`训练 · ${x.name}`})),
+    ...store.transactions.slice(0,30).map(x=>({type:"finance.transaction",id:x.id,label:`账单 · ${x.counterparty||x.category} · ¥${x.amount}`})),
   ];
   const addRelation=(value:string)=>{if(!value)return;const [entityType,entityId]=value.split(":");if(draft.relations.some(x=>x.entityType===entityType&&x.entityId===entityId))return;patch({relations:[...draft.relations,{id:crypto.randomUUID(),noteId:note.id,entityType:entityType as NoteRelation["entityType"],entityId,relationType:"reference",createdAt:new Date().toISOString()}]})};
   const knowledge=draft as KnowledgeNote;
@@ -280,6 +336,8 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
   if(trashMode)return <section className="nt-editor nt-trash-preview"><div><Trash2/><h2>{titleOf(draft)}</h2><p>{draft.summary||"这篇笔记没有摘要。"}</p><small>删除于 {draft.deletedAt?formatTime(draft.deletedAt):"未知时间"}</small><footer><button className="hx-btn primary" onClick={()=>void action("restore")}><ArchiveRestore/>恢复笔记</button><button className="hx-btn secondary danger" onClick={()=>void action("delete")}><Trash2/>永久删除</button></footer></div></section>;
 
+  const localAttachmentIds=new Set((draft.attachments??[]).map(file=>file.id));
+  const remoteOnlyAttachments=cloudAttachments.filter(file=>!localAttachmentIds.has(file.id));
   const headings=noteHeadings(markdown);
   const wordCount=plainTextFromMarkdown(markdown).replace(/\s+/g,"").length;
   const focusHeading=(lineIndex:number)=>{
@@ -365,7 +423,10 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         </section>
         <section className="nt-inspector-section nt-attachments">
           <header><span><Paperclip/><strong>附件</strong></span><button onClick={()=>void attach()}><Plus/>添加</button></header>
-          {draft.attachments?.length?draft.attachments.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await desktopNotes.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);{const latest=await noteApi.get(note.id);setDraft(latest);setProperties(readNoteProperties(latest.contentJson));onSaved(latest)}}}><Trash2/></button></article>):<small>暂无附件</small>}
+          {cloudAttachmentLoading&&<small>正在读取云附件…</small>}
+          {(draft.attachments??[]).map(file=>{const cloud=cloudAttachments.some(item=>item.id===file.id);return <article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB · {cloud?"云端 + 本机":"仅本机"}</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button>{cloud&&<button title="插入附件引用" onClick={()=>{const remote=cloudAttachments.find(item=>item.id===file.id);if(remote)insertSnippet(attachmentMarkdown(remote))}}><Plus/></button>}<button className="danger" onClick={()=>void deleteAttachment(file,cloud)}><Trash2/></button></article>})}
+          {remoteOnlyAttachments.map(file=><article key={file.id}><Download/><div><strong>{file.originalName}</strong><small>{(file.sizeBytes/1024).toFixed(1)} KB · 云端</small></div><button onClick={()=>void downloadCloudAttachment(file)}>下载</button><button title="插入附件引用" onClick={()=>insertSnippet(attachmentMarkdown(file))}><Plus/></button><button className="danger" onClick={()=>void deleteAttachment({id:file.id},true)}><Trash2/></button></article>)}
+          {!cloudAttachmentLoading&&!(draft.attachments?.length)&&!remoteOnlyAttachments.length&&<small>暂无附件</small>}
         </section>
       </aside>
     </div>
