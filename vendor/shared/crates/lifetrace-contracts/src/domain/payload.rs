@@ -389,6 +389,10 @@ impl TryFrom<(&EntityType, JsonValue)> for EntityPayload {
             EntityType::EXECUTION_ENTITY_LINK => {
                 registered(value, EntityType::EXECUTION_ENTITY_LINK)
             }
+            EntityType::TRAVEL_TRIP => registered(value, EntityType::TRAVEL_TRIP),
+            EntityType::TRAVEL_PLACE => registered(value, EntityType::TRAVEL_PLACE),
+            EntityType::TRAVEL_VISIT => registered(value, EntityType::TRAVEL_VISIT),
+            EntityType::TRAVEL_PHOTO_LINK => registered(value, EntityType::TRAVEL_PHOTO_LINK),
             other => Err(format!("unknown entity type: {other}")),
         }
     }
@@ -412,6 +416,23 @@ mod tests {
             local_version: 1,
             server_version: None,
             modified_by_device: None,
+        }
+    }
+
+    #[test]
+    fn travel_registered_payloads_accept_meta_ids() {
+        for entity_type in [
+            EntityType::TRAVEL_TRIP,
+            EntityType::TRAVEL_PLACE,
+            EntityType::TRAVEL_VISIT,
+            EntityType::TRAVEL_PHOTO_LINK,
+        ] {
+            let payload = JsonValue(serde_json::json!({
+                "meta": meta(&format!("{entity_type}-1")),
+                "name": "Footprints compatibility payload"
+            }));
+            let parsed = EntityPayload::try_from((&EntityType::new(entity_type), payload)).unwrap();
+            assert_eq!(parsed.entity_type().as_str(), entity_type);
         }
     }
 
