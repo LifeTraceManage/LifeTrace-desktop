@@ -30,7 +30,7 @@ export default function ProvinceDrawer({
   const scopedEntries = selectedCityCode || selectedCityName
     ? (detail?.entries ?? []).filter((entry) =>
       (selectedCityCode && entry.cityCode === selectedCityCode)
-      || (!selectedCityCode && selectedCityName && entry.cityName === selectedCityName))
+      || (selectedCityName && entry.cityName === selectedCityName))
     : detail?.entries ?? [];
 
   return (
@@ -65,7 +65,7 @@ export default function ProvinceDrawer({
           <h3>城市</h3>
           {detail.cities.map((city) => {
             const active = (selectedCityCode && city.cityCode === selectedCityCode)
-              || (!selectedCityCode && selectedCityName === city.cityName);
+              || Boolean(selectedCityName && selectedCityName === city.cityName);
             return (
               <button
                 type="button"
