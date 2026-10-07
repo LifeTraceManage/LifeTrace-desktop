@@ -386,7 +386,7 @@ export default function NotesModule(){
     const daily=await noteApi.list({scope:"all",noteType:"daily",sort:"updated_desc",limit:250});
     const existing=daily.find(item=>titleOf(item)===title);
     if(existing){await open(existing.id);return}
-    await create("daily",{title});
+    await create("daily",{title,contentJson:withNoteProperties(emptyJson,{status:"daily",source:"lifetrace",aliases:[]})});
   };
   const importMarkdown=useCallback(async()=>{
     if(!desktopNotes.available()){notify("Markdown 导入仅在 LifeTrace Desktop可用");return}
