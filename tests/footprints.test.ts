@@ -130,11 +130,19 @@ test("Footprints ships offline province and prefecture datasets with hierarchica
   assert.match(mapComponent, /countryDrillScale/);
   assert.match(mapComponent, /enterProvince\(/);
   assert.match(mapComponent, /onSelectCity/);
-  assert.match(mapComponent, /当前最小行政层级：市 \/ 地区/);
+  assert.match(mapComponent, /shortAdminName/);
+  assert.match(mapComponent, /labelPoint/);
+  assert.match(mapComponent, /footprint-map-admin-label/);
+  assert.match(mapComponent, /footprint-map-visit-marker/);
+  assert.match(mapComponent, /省级名称常驻显示/);
+  assert.match(mapComponent, /市 \/ 地区名称常驻显示/);
   assert.equal(packageJson.dependencies["d3-geo"], "^3.1.1");
   assert.match(attribution, /Map of Us/);
   assert.match(attribution, /MIT License/);
   assert.match(entrypoint, /app\/footprints\.css/);
+  const mapStyles = read("app/footprints.css");
+  assert.match(mapStyles, /\.footprint-map-admin-name/);
+  assert.match(mapStyles, /\.footprint-map-visit-count/);
 });
 
 test("Footprints keeps creation compact instead of rendering the oversized hero panel", () => {
