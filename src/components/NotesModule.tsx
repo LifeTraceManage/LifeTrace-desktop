@@ -175,9 +175,20 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
   if(trashMode)return <section className="nt-editor nt-trash-preview"><div><Trash2/><h2>{titleOf(draft)}</h2><p>{draft.summary||"这篇笔记没有摘要。"}</p><small>删除于 {draft.deletedAt?formatTime(draft.deletedAt):"未知时间"}</small><footer><button className="hx-btn primary" onClick={()=>void action("restore")}><ArchiveRestore/>恢复笔记</button><button className="hx-btn secondary danger" onClick={()=>void action("delete")}><Trash2/>永久删除</button></footer></div></section>;
 
+  const headings=noteHeadings(draft.contentMarkdown);
+  const wordCount=draft.contentText.replace(/\s+/g,"").length;
+  const focusHeading=(text:string)=>{
+    const root=document.querySelector(".nt-prose .tiptap");
+    const target=[...root?.querySelectorAll("h1,h2,h3")??[]].find(node=>node.textContent?.trim()===text) as HTMLElement|undefined;
+    target?.scrollIntoView({behavior:"smooth",block:"center"});
+  };
+
   return <section className="nt-editor">
     <header className="nt-editor-head">
-      <div className={`nt-save-state ${status}`}>{status==="saving"?"正在保存":status==="dirty"?"未保存":status==="failed"?"保存失败":"已保存"}</div>
+      <div className="nt-editor-status">
+        <span className={`nt-save-state ${status}`}>{status==="saving"?"正在保存":status==="dirty"?"未保存":status==="failed"?"保存失败":"已保存"}</span>
+        <span>{wordCount} 字</span>
+      </div>
       <div>
         <button className={draft.isFavorite?"active":""} title="收藏" onClick={()=>patch({isFavorite:!draft.isFavorite})}><Star/></button>
         <button className={draft.isPinned?"active":""} title="置顶" onClick={()=>patch({isPinned:!draft.isPinned})}><Pin/></button>
@@ -186,39 +197,61 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         <MoreMenu actions={editorActions} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
       </div>
     </header>
-    <div className="nt-editor-scroll">
-      <input className="nt-title" value={draft.title??""} onChange={e=>patch({title:e.target.value||null})} placeholder={draft.noteType==="quick"?"快速记录无需标题":"无标题笔记"}/>
-      <div className="nt-formatbar">
-        <EditorButton title="撤销" onClick={()=>editor?.chain().focus().undo().run()}><Undo2/></EditorButton><EditorButton title="重做" onClick={()=>editor?.chain().focus().redo().run()}><Redo2/></EditorButton>
-        <i/>
-        <EditorButton title="一级标题" active={editor?.isActive("heading",{level:1})} onClick={()=>editor?.chain().focus().toggleHeading({level:1}).run()}><Heading1/></EditorButton>
-        <EditorButton title="二级标题" active={editor?.isActive("heading",{level:2})} onClick={()=>editor?.chain().focus().toggleHeading({level:2}).run()}><Heading2/></EditorButton>
-        <EditorButton title="加粗" active={editor?.isActive("bold")} onClick={()=>editor?.chain().focus().toggleBold().run()}><Bold/></EditorButton>
-        <EditorButton title="斜体" active={editor?.isActive("italic")} onClick={()=>editor?.chain().focus().toggleItalic().run()}><Italic/></EditorButton>
-        <EditorButton title="删除线" active={editor?.isActive("strike")} onClick={()=>editor?.chain().focus().toggleStrike().run()}><Strikethrough/></EditorButton>
-        <EditorButton title="代码块" active={editor?.isActive("codeBlock")} onClick={()=>editor?.chain().focus().toggleCodeBlock().run()}><Braces/></EditorButton>
-        <EditorButton title="引用" active={editor?.isActive("blockquote")} onClick={()=>editor?.chain().focus().toggleBlockquote().run()}><Quote/></EditorButton>
-        <EditorButton title="无序列表" active={editor?.isActive("bulletList")} onClick={()=>editor?.chain().focus().toggleBulletList().run()}><List/></EditorButton>
-        <EditorButton title="有序列表" active={editor?.isActive("orderedList")} onClick={()=>editor?.chain().focus().toggleOrderedList().run()}><ListOrdered/></EditorButton>
-        <EditorButton title="待办列表" active={editor?.isActive("taskList")} onClick={()=>editor?.chain().focus().toggleTaskList().run()}><ListChecks/></EditorButton>
-        <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editor?.chain().focus().extendMarkRange("link").setLink({href}).run()}}><LinkIcon/></EditorButton>
-        <EditorButton title="移除链接" onClick={()=>editor?.chain().focus().unsetLink().run()}><Unlink/></EditorButton>
-        <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址");if(src?.startsWith("https://"))editor?.chain().focus().setImage({src}).run()}}><ImagePlus/></EditorButton>
-        <EditorButton title="清除格式" onClick={()=>editor?.chain().focus().unsetAllMarks().clearNodes().run()}><RotateCcw/></EditorButton>
-      </div>
-      <EditorContent editor={editor} className="nt-prose"/>
-      <div className="nt-meta">
-        <label><Folder/>文件夹<select value={draft.folderId??""} onChange={e=>patch({folderId:e.target.value||null})}><option value="">未分类</option>{folders.map(folder=><option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
-        <label><FileText/>类型<select value={draft.noteType} onChange={e=>patch({noteType:e.target.value as NoteType})}>{Object.entries(labels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
-        <div className="nt-tag-field"><span><Tag/>标签</span><div>{tags.map(tag=><button key={tag.id} className={draft.tags.some(x=>x.id===tag.id)?"active":""} style={{"--tag-color":tag.color} as React.CSSProperties} onClick={()=>toggleTag(tag)}>{tag.name}</button>)}</div></div>
-        <label><LinkIcon/>链接笔记<select value="" onChange={e=>insertWikiLink(e.target.value)}><option value="">插入 [[笔记标题]]…</option>{linkCandidates.map(item=><option key={item.id} value={item.id}>{titleOf(item)}</option>)}</select></label>
-        <div className="nt-tag-field"><span><LinkIcon/>引用的笔记</span><div>{wikiLinks.length===0?<small>在正文输入 [[笔记标题]] 即可建立双链。</small>:wikiLinks.map(link=><button key={link.id} disabled={!link.targetNoteId} title={link.resolved?`打开 ${link.displayTitle}`:`未找到“${link.targetTitle}”对应的笔记`} onClick={()=>{if(link.targetNoteId)void onOpenNote(link.targetNoteId)}}>{link.alias?`${link.alias} → ${link.displayTitle}`:link.displayTitle}{!link.resolved?" · 未找到":""}</button>)}</div></div>
-        <div className="nt-tag-field"><span><LinkIcon/>反向链接</span><div>{backlinks.length===0?<small>暂时没有其他笔记引用这里。</small>:backlinks.map(link=><button key={link.id} title={link.sourceSummary||link.sourceTitle} onClick={()=>void onOpenNote(link.sourceNoteId)}>{link.sourceTitle}</button>)}</div></div>
-        <label><LinkIcon/>关联数据<select value="" onChange={e=>addRelation(e.target.value)}><option value="">添加习惯、训练或账单…</option>{relationOptions.map(x=><option key={`${x.type}:${x.id}`} value={`${x.type}:${x.id}`}>{x.label}</option>)}</select></label>
-        {draft.relations.length>0&&<div className="nt-relations">{draft.relations.map(rel=><span key={rel.id}>{rel.entityType} · {rel.entityId.slice(0,8)}<button onClick={()=>patch({relations:draft.relations.filter(x=>x.id!==rel.id)})}><X/></button></span>)}</div>}
-        <div className="nt-attachments"><header><span><Paperclip/>附件</span><button onClick={()=>void attach()}><Plus/>添加附件</button></header>{draft.attachments?.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button><button onClick={()=>void desktopNotes.showAttachment(note.id,file.fileName)}>位置</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await desktopNotes.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);onSaved(await noteApi.get(note.id))}}><Trash2/></button></article>)}</div>
-        <footer>创建于 {formatTime(draft.createdAt)} · 更新于 {formatTime(draft.updatedAt)} · 版本 {draft.version}</footer>
-      </div>
+    <div className="nt-editor-body">
+      <main className="nt-editor-main">
+        <div className="nt-editor-scroll">
+          <input className="nt-title" value={draft.title??""} onChange={e=>patch({title:e.target.value||null})} placeholder={draft.noteType==="quick"?"快速记录无需标题":"无标题笔记"}/>
+          <div className="nt-formatbar">
+            <EditorButton title="撤销" onClick={()=>editor?.chain().focus().undo().run()}><Undo2/></EditorButton><EditorButton title="重做" onClick={()=>editor?.chain().focus().redo().run()}><Redo2/></EditorButton>
+            <i/>
+            <EditorButton title="一级标题" active={editor?.isActive("heading",{level:1})} onClick={()=>editor?.chain().focus().toggleHeading({level:1}).run()}><Heading1/></EditorButton>
+            <EditorButton title="二级标题" active={editor?.isActive("heading",{level:2})} onClick={()=>editor?.chain().focus().toggleHeading({level:2}).run()}><Heading2/></EditorButton>
+            <EditorButton title="加粗" active={editor?.isActive("bold")} onClick={()=>editor?.chain().focus().toggleBold().run()}><Bold/></EditorButton>
+            <EditorButton title="斜体" active={editor?.isActive("italic")} onClick={()=>editor?.chain().focus().toggleItalic().run()}><Italic/></EditorButton>
+            <EditorButton title="删除线" active={editor?.isActive("strike")} onClick={()=>editor?.chain().focus().toggleStrike().run()}><Strikethrough/></EditorButton>
+            <EditorButton title="代码块" active={editor?.isActive("codeBlock")} onClick={()=>editor?.chain().focus().toggleCodeBlock().run()}><Braces/></EditorButton>
+            <EditorButton title="引用" active={editor?.isActive("blockquote")} onClick={()=>editor?.chain().focus().toggleBlockquote().run()}><Quote/></EditorButton>
+            <EditorButton title="无序列表" active={editor?.isActive("bulletList")} onClick={()=>editor?.chain().focus().toggleBulletList().run()}><List/></EditorButton>
+            <EditorButton title="有序列表" active={editor?.isActive("orderedList")} onClick={()=>editor?.chain().focus().toggleOrderedList().run()}><ListOrdered/></EditorButton>
+            <EditorButton title="待办列表" active={editor?.isActive("taskList")} onClick={()=>editor?.chain().focus().toggleTaskList().run()}><ListChecks/></EditorButton>
+            <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editor?.chain().focus().extendMarkRange("link").setLink({href}).run()}}><LinkIcon/></EditorButton>
+            <EditorButton title="移除链接" onClick={()=>editor?.chain().focus().unsetLink().run()}><Unlink/></EditorButton>
+            <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址");if(src?.startsWith("https://"))editor?.chain().focus().setImage({src}).run()}}><ImagePlus/></EditorButton>
+            <EditorButton title="清除格式" onClick={()=>editor?.chain().focus().unsetAllMarks().clearNodes().run()}><RotateCcw/></EditorButton>
+          </div>
+          <EditorContent editor={editor} className="nt-prose"/>
+        </div>
+      </main>
+      <aside className="nt-inspector" data-testid="notes-inspector">
+        <section className="nt-inspector-section">
+          <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
+          <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.text)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
+        </section>
+        <section className="nt-inspector-section">
+          <header><Braces/><strong>属性</strong></header>
+          <div className="nt-meta">
+            <label><Folder/><span>文件夹</span><select value={draft.folderId??""} onChange={e=>patch({folderId:e.target.value||null})}><option value="">Inbox</option>{flattenFolders(folders).map(({folder,depth})=><option key={folder.id} value={folder.id}>{`${"— ".repeat(depth)}${folder.name}`}</option>)}</select></label>
+            <label><FileText/><span>类型</span><select value={draft.noteType} onChange={e=>patch({noteType:e.target.value as NoteType})}>{Object.entries(labels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
+            <div className="nt-tag-field"><span><Tag/>标签</span><div>{tags.length?tags.map(tag=><button key={tag.id} className={draft.tags.some(x=>x.id===tag.id)?"active":""} style={{"--tag-color":tag.color} as React.CSSProperties} onClick={()=>toggleTag(tag)}>#{tag.name}</button>):<small>暂无标签</small>}</div></div>
+            <footer>创建 {formatTime(draft.createdAt)}<br/>更新 {formatTime(draft.updatedAt)} · v{draft.version}</footer>
+          </div>
+        </section>
+        <section className="nt-inspector-section">
+          <header><LinkIcon/><strong>知识链接</strong><span>{wikiLinks.length+backlinks.length}</span></header>
+          <label className="nt-inspector-select"><span>插入 Wiki Link</span><select value="" onChange={e=>insertWikiLink(e.target.value)}><option value="">选择笔记…</option>{linkCandidates.map(item=><option key={item.id} value={item.id}>{titleOf(item)}</option>)}</select></label>
+          <div className="nt-link-list"><strong>Links</strong>{wikiLinks.length?wikiLinks.map(link=><button key={link.id} disabled={!link.targetNoteId} onClick={()=>{if(link.targetNoteId)void onOpenNote(link.targetNoteId)}}>{link.resolved?"↗":"×"} {link.alias?link.alias:link.displayTitle}</button>):<small>正文输入 [[笔记标题]] 建立链接。</small>}</div>
+          <div className="nt-link-list"><strong>Backlinks</strong>{backlinks.length?backlinks.map(link=><button key={link.id} onClick={()=>void onOpenNote(link.sourceNoteId)}>↩ {link.sourceTitle}</button>):<small>暂无反向链接</small>}</div>
+        </section>
+        <section className="nt-inspector-section">
+          <header><LinkIcon/><strong>关联数据</strong></header>
+          <label className="nt-inspector-select"><select value="" onChange={e=>addRelation(e.target.value)}><option value="">添加习惯、训练或账单…</option>{relationOptions.map(x=><option key={`${x.type}:${x.id}`} value={`${x.type}:${x.id}`}>{x.label}</option>)}</select></label>
+          {draft.relations.length>0&&<div className="nt-relations">{draft.relations.map(rel=><span key={rel.id}>{rel.entityType} · {rel.entityId.slice(0,8)}<button onClick={()=>patch({relations:draft.relations.filter(x=>x.id!==rel.id)})}><X/></button></span>)}</div>}
+        </section>
+        <section className="nt-inspector-section nt-attachments">
+          <header><span><Paperclip/><strong>附件</strong></span><button onClick={()=>void attach()}><Plus/>添加</button></header>
+          {draft.attachments?.length?draft.attachments.map(file=><article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button><button className="danger" onClick={async()=>{if(!confirm("删除这个附件吗？"))return;await desktopNotes.deleteAttachment(note.id,file.fileName);await noteApi.deleteAttachment(file.id);onSaved(await noteApi.get(note.id))}}><Trash2/></button></article>):<small>暂无附件</small>}
+        </section>
+      </aside>
     </div>
     {historyOpen&&<aside className="nt-history"><header><div><History/><strong>版本历史</strong></div><button onClick={()=>setHistoryOpen(false)}><X/></button></header>{revisions.length===0?<p>手动保存后会在这里保留快照。</p>:revisions.map(revision=><article key={revision.id}><div><strong>版本 {revision.version}</strong><small>{formatTime(revision.createdAt)}</small></div><p>{revision.contentMarkdown.slice(0,120)||"空白版本"}</p><button onClick={async()=>{if(!confirm("恢复此版本？当前内容会先保存为快照。"))return;const restored=await noteApi.restoreRevision(revision.id);onSaved(restored);setDraft(restored);editor?.commands.setContent(restored.contentJson,{emitUpdate:false});setHistoryOpen(false);notify("历史版本已恢复")}}>恢复</button></article>)}</aside>}
   </section>;
