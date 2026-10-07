@@ -1140,6 +1140,21 @@ mod note_sync_tests {
         })
     }
 
+    fn migrated_connection() -> (Connection, String) {
+        use crate::database::migration_runner::{run, MigrationContext};
+        use crate::database::migrations::all;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let data_dir = std::env::temp_dir().join(format!("lifetrace-note-pull-{unique}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let mut connection = Connection::open(data_dir.join("test.db")).unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        run(&mut connection, &MigrationContext::new(data_dir), &all()).unwrap();
+        let profile = crate::database::profile::active_profile_id(&connection).unwrap();
+        (connection, profile)
+    }
+
     #[test]
     fn note_relation_roundtrips_through_native_tables() {
         let connection = connection();
@@ -1163,6 +1178,48 @@ mod note_sync_tests {
         assert!(SqliteSyncStore::load_local_entity(
             &connection, "profile-1", "note.relation", "rel-1"
         ).unwrap().is_none());
+    }
+
+    #[test]
+    fn remote_note_create_materializes_and_rebuilds_wiki_links() {
+        let (connection, profile) = migrated_connection();
+        connection.execute("UPDATE sync_context SET origin='remote' WHERE singleton=1", []).unwrap();
+
+        crate::database::repositories::notes::save_note(
+            &connection,
+            &json!({
+                "id":"target-note","title":"Target","noteType":"document","folderId":null,
+                "contentJson":{"type":"doc","content":[]},"contentHtml":"","contentText":"",
+                "contentMarkdown":"","summary":"","isPinned":false,"isFavorite":false,
+                "isArchived":false,"tagIds":[],"relations":[]
+            }),
+            false,
+            false,
+        ).unwrap();
+
+        let payload = json!({
+            "meta": {
+                "id":"remote-note","userId":profile,"createdAt":"2026-10-07T00:00:00Z",
+                "updatedAt":"2026-10-07T01:00:00Z","deletedAt":null,"localVersion":1,
+                "serverVersion":"1","modifiedByDevice":"other-device"
+            },
+            "title":"Remote","noteType":"document","folderId":null,
+            "contentJson":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"See [[Target]]"}]}]},
+            "contentHtml":"<p>See [[Target]]</p>","contentText":"See [[Target]]",
+            "contentMarkdown":"See [[Target]]","summary":"See Target",
+            "isPinned":false,"isFavorite":false,"isArchived":false,
+            "aiSummary":null,"aiTags":null,"embeddingStatus":null,"lastAiProcessedAt":null
+        });
+
+        SqliteSyncStore::apply_upsert(&connection, &profile, "note.note", &payload).unwrap();
+        let enriched = crate::database::note_links::enrich_note(
+            &connection,
+            crate::database::repositories::notes::get_note(&connection, "remote-note")
+                .unwrap().unwrap(),
+        ).unwrap();
+        assert_eq!(enriched["title"], "Remote");
+        assert_eq!(enriched["wikiLinks"][0]["targetNoteId"], "target-note");
+        assert_eq!(enriched["wikiLinks"][0]["resolved"], true);
     }
 
     #[test]
