@@ -271,6 +271,12 @@ export default function ChinaMap({
   useEffect(() => {
     setHovered(null);
     resetTransform();
+    dragRef.current = null;
+    suppressClickRef.current = false;
+    if (suppressTimerRef.current) {
+      clearTimeout(suppressTimerRef.current);
+      suppressTimerRef.current = null;
+    }
   }, [level, selectedProvinceCode]);
 
   useEffect(() => () => {
