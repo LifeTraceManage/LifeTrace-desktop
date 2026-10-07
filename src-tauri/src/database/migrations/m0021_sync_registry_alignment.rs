@@ -65,7 +65,7 @@ impl Migration for M0021SyncRegistryAlignment {
 
         let placeholders = LOCAL_ONLY_TYPES
             .iter()
-            .map(|value| format!("'{}'", value.replace(''', "''")))
+            .map(|value| format!("'{}'", value.replace('\'', "''")))
             .collect::<Vec<_>>()
             .join(",");
         let mut removed_rows = 0i64;
@@ -82,7 +82,7 @@ impl Migration for M0021SyncRegistryAlignment {
         // that explicitly mention one of the retired local-only entity types.
         let patterns = LOCAL_ONLY_TYPES
             .iter()
-            .map(|value| format!("last_error_message LIKE '%{}%'", value.replace(''', "''")))
+            .map(|value| format!("last_error_message LIKE '%{}%'", value.replace('\'', "''")))
             .collect::<Vec<_>>()
             .join(" OR ");
         let reset_sql = format!(
