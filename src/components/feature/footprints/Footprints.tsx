@@ -25,12 +25,14 @@ import type {
   ProvinceFootprintSummary,
 } from "./types";
 import { filterFootprints } from "./footprintViewModel";
+import { buildFootprintInsights } from "./footprintInsights";
 import { resolveCoordinates } from "./footprintRegion";
 import { consumeFootprintPhotoDraft } from "./footprintPhotoDraft";
 import ChinaMap from "./ChinaMap";
 import FootprintDiscoveries from "./FootprintDiscoveries";
 import FootprintEditor, { type FootprintEditorDraft } from "./FootprintEditor";
 import FootprintEntryDetail from "./FootprintEntryDetail";
+import FootprintInsights from "./FootprintInsights";
 import FootprintSummary from "./FootprintSummary";
 import FootprintTimelineView from "./FootprintTimelineView";
 import ProvinceDrawer from "./ProvinceDrawer";
@@ -124,6 +126,7 @@ export default function Footprints() {
     () => filterFootprints(entries, query),
     [entries, query],
   );
+  const insights = useMemo(() => buildFootprintInsights(entries), [entries]);
   const selectedSummary = selectedProvince
     ? provinces.find((province) =>
       province.provinceCode === selectedProvince.code) ?? null
@@ -186,6 +189,7 @@ export default function Footprints() {
       </section>
 
       <FootprintSummary value={summary} />
+      <FootprintInsights value={insights} />
 
       <FootprintDiscoveries
         refreshToken={detailRefreshToken}
