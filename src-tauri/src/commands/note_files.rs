@@ -257,13 +257,13 @@ pub async fn note_cloud_upload_attachment(
         .ok_or_else(|| "附件名称无效".to_owned())?;
     // Local copies are prefixed with a UUID. Keep the display name from the
     // copy metadata when possible by stripping only our generated prefix.
-    let original_name = if original_name.len() > 37
-        && original_name.as_bytes().get(36) == Some(&b'-')
-        && Uuid::parse_str(&original_name[..36]).is_ok()
-    {
-        original_name[37..].to_owned()
-    } else {
-        original_name
+    let original_name = match (
+        original_name.get(..36),
+        original_name.as_bytes().get(36),
+        original_name.get(37..),
+    ) {
+        (Some(prefix), Some(b'-'), Some(rest)) if Uuid::parse_str(prefix).is_ok() => rest.to_owned(),
+        _ => original_name,
     };
     let mime_type = mime_guess::from_path(&path)
         .first_or_octet_stream()
@@ -380,8 +380,11 @@ pub async fn note_cloud_download_attachment(
     )
     .await?;
     let download_url = transfer_url(&origin, &signed.url)?;
-    let response = client
-        .get(download_url)
+    let mut request = client.get(download_url);
+    for (name, value) in signed.required_headers {
+        request = request.header(name, value);
+    }
+    let response = request
         .send()
         .await
         .map_err(|error| format!("下载云附件失败: {error}"))?;
