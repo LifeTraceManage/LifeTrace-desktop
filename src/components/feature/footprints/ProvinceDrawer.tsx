@@ -53,7 +53,7 @@ export default function ProvinceDrawer({
               : "还没有在这里记录足迹"}
         </p>
 
-        {summary ? (
+        {summary || detail || loading ? (
           <div className="footprint-drawer-nav">
             {mapLevel === "country" ? (
               <button
