@@ -99,3 +99,25 @@ export function isDragGesture(
 ) {
   return Math.hypot(current.x - start.x, current.y - start.y) >= threshold;
 }
+
+
+export type RegionActivation = {
+  code: string;
+  at: number;
+  point: MapPoint;
+};
+
+export function isDoubleRegionActivation(
+  previous: RegionActivation | null,
+  current: RegionActivation,
+  maxDelayMs = 500,
+  maxDistance = 14,
+) {
+  if (!previous || previous.code !== current.code) return false;
+  const delay = current.at - previous.at;
+  if (delay < 0 || delay > maxDelayMs) return false;
+  return Math.hypot(
+    current.point.x - previous.point.x,
+    current.point.y - previous.point.y,
+  ) <= maxDistance;
+}
