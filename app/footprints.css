@@ -747,7 +747,6 @@
   .footprint-photo-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  .footprint-hero { align-items: flex-start; flex-direction: column; }
   .footprint-summary { grid-template-columns: repeat(2, 1fr); }
   .footprint-controls { flex-wrap: wrap; }
   .footprint-search { order: 3; max-width: none; flex-basis: 100%; }
