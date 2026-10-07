@@ -1,12 +1,14 @@
-import { CalendarDays, Camera, MapPin } from "lucide-react";
+import { ArrowLeft, CalendarDays, Camera, Map, MapPin } from "lucide-react";
 import type {
   FootprintEntry,
   ProvinceFootprintDetail,
   ProvinceFootprintSummary,
 } from "./types";
+import type { FootprintMapLevel } from "./ChinaMap";
 import { footprintDateLabel } from "./footprintViewModel";
 
 type Props = {
+  mapLevel: FootprintMapLevel;
   summary: ProvinceFootprintSummary | null;
   name: string;
   detail: ProvinceFootprintDetail | null;
@@ -14,10 +16,13 @@ type Props = {
   selectedCityCode?: string | null;
   selectedCityName?: string | null;
   onSelectCity?: (code: string | null, name: string) => void;
+  onEnterProvinceMap: () => void;
+  onBackToCountry: () => void;
   onOpenEntry: (entry: FootprintEntry) => void;
 };
 
 export default function ProvinceDrawer({
+  mapLevel,
   summary,
   name,
   detail,
@@ -25,6 +30,8 @@ export default function ProvinceDrawer({
   selectedCityCode,
   selectedCityName,
   onSelectCity,
+  onEnterProvinceMap,
+  onBackToCountry,
   onOpenEntry,
 }: Props) {
   const scopedEntries = selectedCityCode || selectedCityName
@@ -45,14 +52,34 @@ export default function ProvinceDrawer({
               ? `${summary.cityCount} 个城市 · ${summary.visitCount} 次足迹 · ${summary.photoCount} 张照片`
               : "还没有在这里记录足迹"}
         </p>
-        {selectedCityName ? (
-          <button
-            type="button"
-            className="footprint-city-clear"
-            onClick={() => onSelectCity?.(null, "")}
-          >
-            查看全省
-          </button>
+
+        {summary ? (
+          <div className="footprint-drawer-nav">
+            {mapLevel === "country" ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={onEnterProvinceMap}
+              >
+                <Map />查看省内地图
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onBackToCountry}
+              >
+                <ArrowLeft />返回全国
+              </button>
+            )}
+            {selectedCityName ? (
+              <button
+                type="button"
+                onClick={() => onSelectCity?.(null, "")}
+              >
+                查看全省
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
