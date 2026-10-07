@@ -308,7 +308,6 @@ impl Migration for M0012AnalyticsInsights {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::database::{
         migration_runner::{run, MigrationContext},
         migrations::all,
