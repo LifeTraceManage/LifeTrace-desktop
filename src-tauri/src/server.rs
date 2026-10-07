@@ -432,6 +432,18 @@ pub async fn serve(
             "/api/footprints/entries/{id}/photos/{photo_id}",
             axum::routing::delete(footprints::detach_photo),
         )
+        .route(
+            "/api/footprints/entries/{id}/links",
+            get(footprints::list_entry_links).post(footprints::create_entry_link),
+        )
+        .route(
+            "/api/footprints/entries/{id}/links/{link_id}",
+            axum::routing::delete(footprints::delete_entry_link),
+        )
+        .route(
+            "/api/footprints/link-candidates",
+            get(footprints::link_candidates),
+        )
         .route("/api/footprints/provinces", get(footprints::provinces))
         .route("/api/footprints/provinces/{code}", get(footprints::province))
         .route("/api/footprints/photos", get(footprints::photos))
