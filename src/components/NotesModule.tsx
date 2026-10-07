@@ -2,23 +2,12 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
-import Placeholder from "@tiptap/extension-placeholder";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { common, createLowlight } from "lowlight";
-import DOMPurify from "dompurify";
-import TurndownService from "turndown";
 import {
   Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
   History, ImagePlus, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, ListTree,
-  Network, NotebookPen, Paperclip, Pin, Plus, Quote, Redo2, RotateCcw, Save, Search,
-  Star, Strikethrough, Tag, Trash2, Undo2, Unlink, X,
+  Network, NotebookPen, Paperclip, Pin, Plus, Quote, Save, Search,
+  Star, Strikethrough, Tag, Trash2, X,
 } from "lucide-react";
 import { noteApi, type NoteGraph, type NoteInputValue } from "@/src/services/noteApi";
 import { executionApi } from "@/src/services/executionApi";
@@ -28,11 +17,23 @@ import type { Note, NoteFolder, NoteRelation, NoteRevision, NoteTag, NoteType } 
 import MoreMenu from "@/src/ui/menu/MoreMenu";
 import type { AppAction } from "@/src/ui/actions/types";
 
-const lowlight=createLowlight(common);
-const turndown=new TurndownService({headingStyle:"atx",bulletListMarker:"-",codeBlockStyle:"fenced"});
 const labels:Record<NoteType,string>={quick:"快速记录",document:"普通笔记",daily:"每日复盘",habit_log:"习惯记录",workout_review:"训练复盘",expense_note:"消费笔记",weekly_review:"周总结",monthly_review:"月总结"};
-const emptyJson={type:"doc",content:[{type:"paragraph"}]};
+const emptyJson={type:"markdown",source:"",editor:"desktop-markdown",properties:{status:"",source:"",aliases:[]}};
+const plainTextFromMarkdown=(markdown:string)=>markdown
+  .replace(/```[\s\S]*?```/g,block=>block.replace(/^```[^\n]*\n?|```$/g," "))
+  .replace(/!\[([^\]]*)\]\([^)]*\)/g,"$1")
+  .replace(/\[([^\]]+)\]\([^)]*\)/g,"$1")
+  .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_match,target:string,label?:string)=>(label||target).trim())
+  .replace(/^\s{0,3}#{1,6}\s+/gm,"")
+  .replace(/^\s*>\s?/gm,"")
+  .replace(/^\s*[-+*]\s+(?:\[[ xX]\]\s*)?/gm,"")
+  .replace(/^\s*\d+[.)]\s+/gm,"")
+  .replace(/\*\*|__|~~|`|\*/g,"")
+  .replace(/<[^>]+>/g," ")
+  .replace(/\s+/g," ")
+  .trim();
 const cleanSummary=(text:string)=>text.trim().replace(/\s+/g," ").slice(0,160);
+const escapeHtml=(value:string)=>value.replace(/[&<>'"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]??char));
 const titleOf=(note:Pick<Note,"title"|"summary">)=>note.title?.trim()||note.summary?.trim().split("\n")[0]||"无标题笔记";
 const formatTime=(value:string)=>new Intl.DateTimeFormat("zh-CN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(value));
 const dayTitle=(date=new Date())=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
