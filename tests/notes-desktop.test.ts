@@ -18,6 +18,11 @@ test("desktop notes mirrors the web workspace without mounting vendor web", () =
   assert.match(notes, /Inbox/);
   assert.match(notes, /Backlinks/);
   assert.match(notes, /版本历史/);
+  assert.match(notes, /Status/);
+  assert.match(notes, /Source/);
+  assert.match(notes, /Aliases/);
+  assert.match(notes, /executionApi\.tasks\.create/);
+  assert.match(notes, /executionApi\.relations\.create/);
   assert.match(notes, /Markdown/);
   assert.doesNotMatch(notes, /vendor\/web|NotesPage/);
   assert.doesNotMatch(notes, /sendBeacon|\/api\/notes/);
@@ -62,6 +67,7 @@ test("notes sync materializes every registered note relation type", () => {
   assert.match(store, /"note\.tag_relation" => \{/);
   assert.match(store, /INSERT INTO note_relations/);
   assert.match(store, /INSERT INTO note_revisions/);
+  assert.match(store, /note_links::sync_note_links/);
   assert.match(store, /DELETE FROM note_relations/);
   assert.match(store, /DELETE FROM note_revisions/);
 
@@ -69,4 +75,13 @@ test("notes sync materializes every registered note relation type", () => {
   assert.match(outbox, /EntityType::NOTE_RELATION/);
   assert.match(outbox, /EntityType::NOTE_REVISION/);
   assert.match(outbox, /parentFolderId/);
+});
+
+
+test("daily notes persist web-compatible properties inside the note snapshot", () => {
+  const notes = read("src/components/NotesModule.tsx");
+  assert.match(notes, /status:"daily",source:"lifetrace",aliases:\[\]/);
+  assert.match(notes, /withNoteProperties/);
+  assert.match(notes, /readNoteProperties/);
+  assert.match(notes, /contentJson:withNoteProperties/);
 });
