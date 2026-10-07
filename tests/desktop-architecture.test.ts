@@ -233,3 +233,16 @@ test("collapsed desktop sidebar keeps an explicit reopen action in the command b
   assert.match(shell, /title="展开侧栏"/);
   assert.match(shell, /onClick=\{\(\) => setSidebar\(false\)\}/);
 });
+
+
+test("desktop mail uses a bounded workspace so wheel scrolling reaches the message list", () => {
+  const shell = read("src/components/DesktopWorkbenchShell.tsx");
+  const styles = read("app/desktop-cloud-workspace.css");
+  const mail = read("src/components/feature/mail/MailActionCenter.tsx");
+
+  assert.match(shell, /routeIsActive\(route, "\/app\/mail"\).*mail-route/);
+  assert.match(styles, /\.lt-desk-content\.mail-route\s*\{[\s\S]*overflow:\s*hidden/);
+  assert.match(styles, /\.lt-desk-content\.mail-route > \.lt-desk-route-content\s*\{[\s\S]*min-height:\s*0;[\s\S]*height:\s*100%;/);
+  assert.match(mail, /overflowY:\s*"auto"/);
+  assert.match(mail, /gridTemplateRows:\s*"auto minmax\(0, 1fr\)"/);
+});
