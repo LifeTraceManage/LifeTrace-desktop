@@ -19,7 +19,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create required bundled dictionary resource
         shell: pwsh
@@ -27,7 +27,7 @@ jobs:
           New-Item -ItemType Directory -Force xunji_service/data | Out-Null
           python -c "import sqlite3; db=sqlite3.connect(r'xunji_service/data/dictionary.db'); db.execute('CREATE TABLE IF NOT EXISTS dictionary_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)'); db.close()"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
