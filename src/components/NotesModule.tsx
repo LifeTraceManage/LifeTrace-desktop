@@ -35,7 +35,21 @@ const emptyJson={type:"doc",content:[{type:"paragraph"}]};
 const cleanSummary=(text:string)=>text.trim().replace(/\s+/g," ").slice(0,160);
 const titleOf=(note:Pick<Note,"title"|"summary">)=>note.title?.trim()||note.summary?.trim().split("\n")[0]||"无标题笔记";
 const formatTime=(value:string)=>new Intl.DateTimeFormat("zh-CN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(value));
-const dayTitle=(date=new Date())=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")} 日记`;
+const dayTitle=(date=new Date())=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+const dailyTemplate=(day:string)=>{
+  const markdown=`# ${day}\n\n## 今日记录\n\n## 待处理\n\n## 复盘\n`;
+  return{
+    markdown,
+    text:`${day}\n今日记录\n待处理\n复盘`,
+    html:`<h1>${day}</h1><h2>今日记录</h2><p></p><h2>待处理</h2><p></p><h2>复盘</h2><p></p>`,
+    json:withNoteProperties({type:"doc",content:[
+      {type:"heading",attrs:{level:1},content:[{type:"text",text:day}]},
+      {type:"heading",attrs:{level:2},content:[{type:"text",text:"今日记录"}]},{type:"paragraph"},
+      {type:"heading",attrs:{level:2},content:[{type:"text",text:"待处理"}]},{type:"paragraph"},
+      {type:"heading",attrs:{level:2},content:[{type:"text",text:"复盘"}]},{type:"paragraph"},
+    ]},{status:"daily",source:"lifetrace",aliases:[]}),
+  };
+};
 const noteHeadings=(markdown:string)=>markdown.split(/\r?\n/).map((line,index)=>{const match=/^(#{1,3})\s+(.+)$/.exec(line.trim());return match?{level:match[1].length,text:match[2].trim(),index}:null}).filter((item):item is {level:number;text:string;index:number}=>Boolean(item));
 type DesktopNoteProperties={status:string;source:string;aliases:string[]};
 const readNoteProperties=(value:unknown):DesktopNoteProperties=>{
@@ -385,10 +399,12 @@ export default function NotesModule(){
   },[folderId,loadList]);
   const openDailyNote=async()=>{
     const title=dayTitle();
-    const daily=await noteApi.list({scope:"all",noteType:"daily",sort:"updated_desc",limit:250});
-    const existing=daily.find(item=>titleOf(item)===title);
+    const candidates=await noteApi.list({scope:"all",sort:"updated_desc",limit:250});
+    const fullMatches=await Promise.all(candidates.filter(item=>titleOf(item)===title).map(item=>noteApi.get(item.id)));
+    const existing=fullMatches.find(item=>readNoteProperties(item.contentJson).status==="daily")??fullMatches[0];
     if(existing){await open(existing.id);return}
-    await create("daily",{title,contentJson:withNoteProperties(emptyJson,{status:"daily",source:"lifetrace",aliases:[]})});
+    const template=dailyTemplate(title);
+    await create("daily",{title,contentJson:template.json,contentHtml:template.html,contentText:template.text,contentMarkdown:template.markdown,summary:cleanSummary(template.text)});
   };
   const importMarkdown=useCallback(async()=>{
     if(!desktopNotes.available()){notify("Markdown 导入仅在 LifeTrace Desktop可用");return}
