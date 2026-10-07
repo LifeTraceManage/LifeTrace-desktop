@@ -72,6 +72,14 @@ const width = 1000;
 const height = 760;
 const countryMaxScale = 2.5;
 const provinceMaxScale = 4.2;
+const easyTapProvinceCodes = new Set([
+  "110000",
+  "120000",
+  "310000",
+  "500000",
+  "810000",
+  "820000",
+]);
 
 function fixWinding(feature: AdminFeature): AdminFeature {
   if (geoArea(feature) <= 2 * Math.PI) return feature;
@@ -150,11 +158,17 @@ export default function ChinaMap({
     );
     const path = geoPath(projection);
     return {
-      paths: provinceFeatures.map((feature) => ({
-        code: String(feature.properties.adcode),
-        name: feature.properties.name,
-        d: path(feature) ?? "",
-      })),
+      paths: provinceFeatures.map((feature) => {
+        const center = feature.properties.centroid ?? feature.properties.center;
+        const projected = center ? projection(center) : null;
+        return {
+          code: String(feature.properties.adcode),
+          name: feature.properties.name,
+          d: path(feature) ?? "",
+          x: projected?.[0] ?? null,
+          y: projected?.[1] ?? null,
+        };
+      }),
       dashPath: dash ? path(fixWinding(dash)) ?? "" : "",
     };
   }, []);
@@ -431,6 +445,40 @@ export default function ChinaMap({
                 </path>
               );
             })}
+            {level === "country"
+              ? countryGeometry.paths
+                .filter((item) =>
+                  easyTapProvinceCodes.has(item.code)
+                  && item.x !== null
+                  && item.y !== null)
+                .map((item) => {
+                  const summary = summaryByCode.get(item.code);
+                  return (
+                    <circle
+                      key={`${item.code}-hit-target`}
+                      cx={item.x ?? undefined}
+                      cy={item.y ?? undefined}
+                      r={item.code === "820000" ? 24 : 19}
+                      className="footprint-map-hit-target"
+                      aria-hidden="true"
+                      onPointerEnter={() => setHovered({
+                        level: "province",
+                        code: item.code,
+                        name: item.name,
+                        visits: summary?.visitCount ?? 0,
+                        photoCount: summary?.photoCount ?? 0,
+                        cityCount: summary?.cityCount ?? 0,
+                      })}
+                      onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!allowRegionClick()) return;
+                        onSelectProvince(item.code, item.name);
+                      }}
+                    />
+                  );
+                })
+              : null}
             {level === "country" && countryGeometry.dashPath
               ? <path d={countryGeometry.dashPath} className="footprint-map-dashline" pointerEvents="none" />
               : null}
