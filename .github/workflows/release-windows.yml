@@ -47,9 +47,6 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Prepare shared web dependencies
-        run: npm run prepare:web-shared
-
       - name: Check version consistency
         run: node scripts/check-version-consistency.mjs
 
