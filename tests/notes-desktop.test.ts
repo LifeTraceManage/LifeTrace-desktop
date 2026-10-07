@@ -28,6 +28,8 @@ test("desktop notes mirrors the web workspace without mounting vendor web", () =
   assert.doesNotMatch(notes, /sendBeacon|\/api\/notes/);
   assert.match(api, /invoke<T>\("notes_query"/);
   assert.match(api, /invoke<T>\("notes_mutate"/);
+  assert.match(api, /graph:\(limit=80\)=>query<NoteGraph>/);
+  assert.match(notes, /noteApi\.graph\(80\)/);
 
   assert.match(css, /\.nt-workspace\{/);
   assert.doesNotMatch(css, /\.nt-workspace\{[^}]*border-radius/s);
@@ -84,4 +86,17 @@ test("daily notes persist web-compatible properties inside the note snapshot", (
   assert.match(notes, /withNoteProperties/);
   assert.match(notes, /readNoteProperties/);
   assert.match(notes, /contentJson:withNoteProperties/);
+});
+
+
+test("notes graph reads the derived wiki-link index instead of business relations", () => {
+  const links = read("src-tauri/src/database/note_links.rs");
+  const app = read("src-tauri/src/application/notes.rs");
+  const notes = read("src/components/NotesModule.tsx");
+
+  assert.match(links, /pub fn graph\(connection: &Connection, limit: usize\)/);
+  assert.match(links, /FROM note_links l/);
+  assert.match(app, /"graph" => crate::database::note_links::graph/);
+  assert.match(notes, /graph\.edges\.map/);
+  assert.doesNotMatch(notes, /graphEdges=libraryNotes\.flatMap/);
 });
