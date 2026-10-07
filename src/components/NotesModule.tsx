@@ -172,6 +172,31 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     setDraft(noteValue=>({...noteValue,contentJson:withNoteProperties(noteValue.contentJson,next)}));
     setDirty(true);setStatus("dirty");
   };
+  const editSelection=(prefix:string,suffix=prefix,placeholder="文本")=>{
+    const textarea=editorRef.current;if(!textarea)return;
+    const start=textarea.selectionStart;const end=textarea.selectionEnd;
+    const selected=markdown.slice(start,end)||placeholder;
+    const next=`${markdown.slice(0,start)}${prefix}${selected}${suffix}${markdown.slice(end)}`;
+    updateMarkdown(next);
+    requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+prefix.length,start+prefix.length+selected.length)});
+  };
+  const prefixSelectionLines=(prefix:string)=>{
+    const textarea=editorRef.current;if(!textarea)return;
+    const start=markdown.lastIndexOf("\n",Math.max(0,textarea.selectionStart-1))+1;
+    const nextBreak=markdown.indexOf("\n",textarea.selectionEnd);
+    const end=nextBreak<0?markdown.length:nextBreak;
+    const source=markdown.slice(start,end);
+    const inserted=source.split("\n").map(line=>prefix+line).join("\n");
+    updateMarkdown(markdown.slice(0,start)+inserted+markdown.slice(end));
+    requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+prefix.length,start+inserted.length)});
+  };
+  const insertSnippet=(snippet:string)=>{
+    const textarea=editorRef.current;if(!textarea)return;
+    const start=textarea.selectionStart;const end=textarea.selectionEnd;
+    const next=markdown.slice(0,start)+snippet+markdown.slice(end);
+    updateMarkdown(next);
+    requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+snippet.length,start+snippet.length)});
+  };
   const toggleTag=(tag:NoteTag)=>patch({tags:draft.tags.some(x=>x.id===tag.id)?draft.tags.filter(x=>x.id!==tag.id):[...draft.tags,tag]});
   const loadHistory=async()=>{setRevisions(await noteApi.revisions(note.id));setHistoryOpen(true)};
   const action=async(kind:"trash"|"restore"|"delete"|"duplicate")=>{
@@ -186,7 +211,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     notify(kind==="restore"?"笔记已恢复":kind==="duplicate"?"已创建副本":"操作已完成");onListChanged();
   };
   const exportNote=async(format:"md"|"html"|"json")=>{
-    const content=format==="md"?draft.contentMarkdown:format==="html"?`<!doctype html><meta charset="utf-8"><title>${titleOf(draft)}</title><article>${DOMPurify.sanitize(draft.contentHtml)}</article>`:JSON.stringify(draft,null,2);
+    const content=format==="md"?draft.contentMarkdown:format==="html"?`<!doctype html><meta charset="utf-8"><title>${escapeHtml(titleOf(draft))}</title><pre>${escapeHtml(draft.contentMarkdown)}</pre>`:JSON.stringify(draft,null,2);
     if(desktopNotes.available()){const result=await desktopNotes.exportNote({format,title:titleOf(draft),content});if(!result.ok)notify(result.error||"导出失败")}
     else{const blob=new Blob([content],{type:"text/plain;charset=utf-8"});const anchor=document.createElement("a");anchor.href=URL.createObjectURL(blob);anchor.download=`${titleOf(draft)}.${format}`;anchor.click();URL.revokeObjectURL(anchor.href)}
   };
@@ -202,9 +227,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     await noteApi.recordAttachment(result.file);notify("附件已添加");const latest=await noteApi.get(note.id);setDraft(latest);setProperties(readNoteProperties(latest.contentJson));onSaved(latest);
   };
   const insertWikiLink=(value:string)=>{
-    const target=linkCandidates.find(item=>item.id===value);if(!target||!editor)return;
+    const target=linkCandidates.find(item=>item.id===value);if(!target)return;
     const safeTitle=titleOf(target).replace(/\|/g,"／").replace(/\]\]/g,"］］");
-    editor.chain().focus().insertContent(`[[${safeTitle}]]`).run();
+    insertSnippet(`[[${safeTitle}]]`);
   };
   const relationOptions=[
     ...store.activities.map(x=>({type:"habit",id:x.id,label:`习惯 · ${x.name}`})),
@@ -216,8 +241,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const wikiLinks=knowledge.wikiLinks??[];
   const backlinks=knowledge.backlinks??[];
   const createTaskFromNote=async()=>{
-    const sourceText=draft.contentMarkdown.trim()||draft.contentText.trim();
-    const selection=editor?editor.state.doc.textBetween(editor.state.selection.from,editor.state.selection.to,"\n").trim():"";
+    const sourceText=markdown.trim()||draft.contentText.trim();
+    const textarea=editorRef.current;
+    const selection=textarea?markdown.slice(textarea.selectionStart,textarea.selectionEnd).trim():"";
     const selectedText=selection||sourceText;
     const title=(selection?cleanSummary(selection).split("\n")[0]:titleOf(draft)).slice(0,160)||"处理笔记";
     const saved=dirty?await save(false):draft;
