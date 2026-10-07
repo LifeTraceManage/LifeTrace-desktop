@@ -11,6 +11,9 @@ type Props = {
   name: string;
   detail: ProvinceFootprintDetail | null;
   loading: boolean;
+  selectedCityCode?: string | null;
+  selectedCityName?: string | null;
+  onSelectCity?: (code: string | null, name: string) => void;
   onOpenEntry: (entry: FootprintEntry) => void;
 };
 
@@ -19,18 +22,38 @@ export default function ProvinceDrawer({
   name,
   detail,
   loading,
+  selectedCityCode,
+  selectedCityName,
+  onSelectCity,
   onOpenEntry,
 }: Props) {
+  const scopedEntries = selectedCityCode || selectedCityName
+    ? (detail?.entries ?? []).filter((entry) =>
+      (selectedCityCode && entry.cityCode === selectedCityCode)
+      || (!selectedCityCode && selectedCityName && entry.cityName === selectedCityName))
+    : detail?.entries ?? [];
+
   return (
     <aside className="footprint-province-drawer">
       <header>
-        <span>省份详情</span>
-        <h2>{summary?.provinceName || name}</h2>
+        <span>{selectedCityName ? "城市详情" : "省份详情"}</span>
+        <h2>{selectedCityName || summary?.provinceName || name}</h2>
         <p>
-          {summary
-            ? `${summary.cityCount} 个城市 · ${summary.visitCount} 次足迹 · ${summary.photoCount} 张照片`
-            : "还没有在这里记录足迹"}
+          {selectedCityName
+            ? `${scopedEntries.length} 次足迹 · ${scopedEntries.reduce((sum, entry) => sum + entry.photoCount, 0)} 张照片`
+            : summary
+              ? `${summary.cityCount} 个城市 · ${summary.visitCount} 次足迹 · ${summary.photoCount} 张照片`
+              : "还没有在这里记录足迹"}
         </p>
+        {selectedCityName ? (
+          <button
+            type="button"
+            className="footprint-city-clear"
+            onClick={() => onSelectCity?.(null, "")}
+          >
+            查看全省
+          </button>
+        ) : null}
       </header>
 
       {loading
@@ -40,23 +63,32 @@ export default function ProvinceDrawer({
       {!loading && detail?.cities.length ? (
         <section className="footprint-city-list">
           <h3>城市</h3>
-          {detail.cities.map((city) => (
-            <article key={city.cityCode || city.cityName}>
-              <MapPin />
-              <div>
-                <strong>{city.cityName}</strong>
-                <small>{city.visitCount} 次到访</small>
-              </div>
-              <span>{city.photoCount} 张</span>
-            </article>
-          ))}
+          {detail.cities.map((city) => {
+            const active = (selectedCityCode && city.cityCode === selectedCityCode)
+              || (!selectedCityCode && selectedCityName === city.cityName);
+            return (
+              <button
+                type="button"
+                className={active ? "active" : ""}
+                key={city.cityCode || city.cityName}
+                onClick={() => onSelectCity?.(city.cityCode, city.cityName)}
+              >
+                <MapPin />
+                <div>
+                  <strong>{city.cityName}</strong>
+                  <small>{city.visitCount} 次到访</small>
+                </div>
+                <span>{city.photoCount} 张</span>
+              </button>
+            );
+          })}
         </section>
       ) : null}
 
-      {!loading && detail?.entries.length ? (
+      {!loading && scopedEntries.length ? (
         <section className="footprint-province-entries">
-          <h3>回忆</h3>
-          {detail.entries.map((entry) => (
+          <h3>{selectedCityName ? "城市回忆" : "回忆"}</h3>
+          {scopedEntries.map((entry) => (
             <button
               type="button"
               key={entry.id}
@@ -72,10 +104,10 @@ export default function ProvinceDrawer({
         </section>
       ) : null}
 
-      {!loading && !detail?.entries.length ? (
+      {!loading && !scopedEntries.length ? (
         <div className="footprint-drawer-empty">
           <MapPin />
-          <p>点击“添加足迹”，把第一次到访记录在这里。</p>
+          <p>{selectedCityName ? "这个城市还没有足迹记录。" : "点击“添加足迹”，把第一次到访记录在这里。"}</p>
         </div>
       ) : null}
     </aside>
