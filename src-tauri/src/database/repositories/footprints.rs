@@ -162,6 +162,27 @@ pub struct CitySummary {
     pub last_visited_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryLinkRecord {
+    pub id: String,
+    pub entry_id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub relation_type: String,
+    pub label: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCandidate {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub label: String,
+    pub detail: String,
+}
+
 fn stamp() -> String {
     Utc::now().to_rfc3339()
 }
@@ -860,6 +881,182 @@ fn haversine_km(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
     2.0 * earth_radius_km * hav.sqrt().asin()
 }
 
+pub fn list_entry_links(
+    connection: &Connection,
+    user_id: &str,
+    entry_id: &str,
+) -> Result<Vec<EntryLinkRecord>, String> {
+    if get_entry(connection, user_id, entry_id)?.is_none() {
+        return Err("足迹不存在".to_owned());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT el.id,el.entry_id,el.entity_type,el.entity_id,el.relation_type,
+                    CASE
+                      WHEN el.entity_type='note.note' THEN COALESCE((
+                        SELECT COALESCE(NULLIF(TRIM(n.title),''),'无标题笔记')
+                        FROM notes n
+                        WHERE n.id=el.entity_id AND n.user_id=?2 AND n.deleted_at IS NULL
+                      ),el.entity_id)
+                      WHEN el.entity_type='execution.task' THEN COALESCE((
+                        SELECT t.title FROM execution_tasks t
+                        WHERE t.id=el.entity_id AND t.user_id=?2 AND t.deleted_at IS NULL
+                      ),el.entity_id)
+                      ELSE el.entity_id
+                    END AS label,
+                    el.created_at
+             FROM footprint_entry_links el
+             WHERE el.entry_id=?1
+             ORDER BY el.created_at ASC,el.id ASC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![entry_id, user_id], |row| {
+            Ok(EntryLinkRecord {
+                id: row.get(0)?,
+                entry_id: row.get(1)?,
+                entity_type: row.get(2)?,
+                entity_id: row.get(3)?,
+                relation_type: row.get(4)?,
+                label: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())
+}
+
+pub fn link_candidates(
+    connection: &Connection,
+    user_id: &str,
+    query: Option<&str>,
+) -> Result<Vec<LinkCandidate>, String> {
+    let raw = query.unwrap_or("").trim();
+    let pattern = format!("%{raw}%");
+    let mut statement = connection
+        .prepare(
+            "SELECT entity_type,entity_id,label,detail FROM (
+               SELECT 'note.note' AS entity_type,n.id AS entity_id,
+                      COALESCE(NULLIF(TRIM(n.title),''),'无标题笔记') AS label,
+                      '笔记' AS detail,n.updated_at AS sort_at
+               FROM notes n
+               WHERE n.user_id=?1 AND n.deleted_at IS NULL
+                 AND (?2='' OR COALESCE(n.title,'') LIKE ?3 OR n.content_text LIKE ?3)
+               UNION ALL
+               SELECT 'execution.task',t.id,t.title,
+                      CASE t.status
+                        WHEN 'done' THEN '已完成任务'
+                        WHEN 'in_progress' THEN '进行中任务'
+                        WHEN 'waiting' THEN '等待中任务'
+                        WHEN 'cancelled' THEN '已取消任务'
+                        ELSE '待办任务'
+                      END,
+                      t.updated_at
+               FROM execution_tasks t
+               WHERE t.user_id=?1 AND t.deleted_at IS NULL
+                 AND (?2='' OR t.title LIKE ?3 OR IFNULL(t.description,'') LIKE ?3)
+             )
+             ORDER BY sort_at DESC,label ASC
+             LIMIT 40",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![user_id, raw, pattern], |row| {
+            Ok(LinkCandidate {
+                entity_type: row.get(0)?,
+                entity_id: row.get(1)?,
+                label: row.get(2)?,
+                detail: row.get(3)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())
+}
+
+fn target_exists(
+    connection: &Connection,
+    user_id: &str,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<bool, String> {
+    let sql = match entity_type {
+        "note.note" => "SELECT COUNT(*) FROM notes WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+        "execution.task" => "SELECT COUNT(*) FROM execution_tasks WHERE id=?1 AND user_id=?2 AND deleted_at IS NULL",
+        _ => return Ok(false),
+    };
+    connection
+        .query_row(sql, params![entity_id, user_id], |row| row.get::<_, i64>(0))
+        .map(|count| count > 0)
+        .map_err(|error| error.to_string())
+}
+
+pub fn save_entry_link(
+    connection: &Connection,
+    user_id: &str,
+    entry_id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    relation_type: &str,
+) -> Result<EntryLinkRecord, String> {
+    if get_entry(connection, user_id, entry_id)?.is_none() {
+        return Err("足迹不存在".to_owned());
+    }
+    if !target_exists(connection, user_id, entity_type, entity_id)? {
+        return Err("关联目标不存在或不属于当前资料".to_owned());
+    }
+    let relation = relation_type.trim();
+    let relation = if relation.is_empty() { "related" } else { relation };
+    let existing: Option<String> = connection
+        .query_row(
+            "SELECT id FROM footprint_entry_links
+             WHERE entry_id=?1 AND entity_type=?2 AND entity_id=?3 AND relation_type=?4",
+            params![entry_id, entity_type, entity_id, relation],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if existing.is_none() {
+        connection
+            .execute(
+                "INSERT INTO footprint_entry_links(
+                   id,entry_id,entity_type,entity_id,relation_type,created_at
+                 ) VALUES(?1,?2,?3,?4,?5,?6)",
+                params![Uuid::new_v4().to_string(), entry_id, entity_type, entity_id, relation, stamp()],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    list_entry_links(connection, user_id, entry_id)?
+        .into_iter()
+        .find(|link| {
+            link.entity_type == entity_type
+                && link.entity_id == entity_id
+                && link.relation_type == relation
+        })
+        .ok_or_else(|| "关联保存后无法读取".to_owned())
+}
+
+pub fn delete_entry_link(
+    connection: &Connection,
+    user_id: &str,
+    entry_id: &str,
+    link_id: &str,
+) -> Result<bool, String> {
+    connection
+        .execute(
+            "DELETE FROM footprint_entry_links
+             WHERE id=?1 AND entry_id=?2
+               AND EXISTS(
+                 SELECT 1 FROM footprint_entries e
+                 WHERE e.id=?2 AND e.user_id=?3 AND e.deleted_at IS NULL
+               )",
+            params![link_id, entry_id, user_id],
+        )
+        .map(|changed| changed == 1)
+        .map_err(|error| error.to_string())
+}
+
 pub fn photo_discoveries(
     connection: &Connection,
     user_id: &str,
@@ -1128,6 +1325,14 @@ mod tests {
                   captured_at TEXT,imported_at TEXT NOT NULL,latitude REAL,longitude REAL,
                   processing_status TEXT NOT NULL,deleted_at TEXT
                 );
+                CREATE TABLE notes(
+                  id TEXT PRIMARY KEY,user_id TEXT NOT NULL,title TEXT,content_text TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,deleted_at TEXT
+                );
+                CREATE TABLE execution_tasks(
+                  id TEXT PRIMARY KEY,user_id TEXT NOT NULL,title TEXT NOT NULL,description TEXT,
+                  status TEXT NOT NULL,updated_at TEXT NOT NULL,deleted_at TEXT
+                );
                 "#,
             )
             .unwrap();
@@ -1201,6 +1406,50 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM footprint_entry_photos", [], |row| row.get(0))
             .unwrap();
         assert_eq!(link_count, 0);
+    }
+
+    #[test]
+    fn entry_links_attach_real_notes_and_tasks_idempotently() {
+        let connection = connection();
+        let user = active_profile_id(&connection).unwrap();
+        let location = save_location(&connection, &user, &location_write()).unwrap();
+        let entry = save_entry(
+            &connection,
+            &user,
+            &EntryWrite {
+                id: None,
+                location_id: location.id,
+                title: "成都".to_owned(),
+                description: None,
+                started_at: "2026-05-01".to_owned(),
+                ended_at: None,
+                visit_type: "trip".to_owned(),
+                rating: None,
+                favorite: false,
+            },
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO notes(id,user_id,title,content_text,updated_at,deleted_at)
+             VALUES('note-1',?1,'旅行清单','宽窄巷子','2026-05-01T00:00:00Z',NULL)",
+            [&user],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO execution_tasks(id,user_id,title,description,status,updated_at,deleted_at)
+             VALUES('task-1',?1,'整理成都照片','', 'todo','2026-05-02T00:00:00Z',NULL)",
+            [&user],
+        ).unwrap();
+
+        let candidates = link_candidates(&connection, &user, Some("成都")).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].entity_id, "task-1");
+
+        let first = save_entry_link(&connection, &user, &entry.id, "note.note", "note-1", "related").unwrap();
+        let second = save_entry_link(&connection, &user, &entry.id, "note.note", "note-1", "related").unwrap();
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.label, "旅行清单");
+        assert_eq!(list_entry_links(&connection, &user, &entry.id).unwrap().len(), 1);
+        assert!(delete_entry_link(&connection, &user, &entry.id, &first.id).unwrap());
+        assert!(list_entry_links(&connection, &user, &entry.id).unwrap().is_empty());
     }
 
     #[test]
