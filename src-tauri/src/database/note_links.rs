@@ -448,4 +448,56 @@ mod tests {
             }]
         );
     }
+
+    #[test]
+    fn aliases_resolve_wiki_links_and_backfill_unresolved_edges() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE notes(
+               id TEXT PRIMARY KEY,user_id TEXT NOT NULL,title TEXT,content_json TEXT NOT NULL,
+               content_markdown TEXT NOT NULL,content_text TEXT NOT NULL,updated_at TEXT NOT NULL,
+               deleted_at TEXT
+             );
+             CREATE TABLE note_links(
+               id TEXT PRIMARY KEY,source_note_id TEXT NOT NULL,target_note_id TEXT,
+               target_title TEXT NOT NULL,alias TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+             );
+             INSERT INTO notes VALUES(
+               'source','profile','Source','{}','See [[别名]]','See 别名','2026-10-07T00:00:00Z',NULL
+             );"
+        ).unwrap();
+
+        sync_note_fields(&connection, "source", "profile", Some("Source"), &[], "See [[别名]]").unwrap();
+        let unresolved: Option<String> = connection.query_row(
+            "SELECT target_note_id FROM note_links WHERE source_note_id='source'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(unresolved.is_none());
+
+        connection.execute(
+            "INSERT INTO notes VALUES(
+               'target','profile','Canonical',?1,'','', '2026-10-07T01:00:00Z',NULL
+             )",
+            [json!({"type":"doc","content":[],"properties":{"aliases":["别名","Alias"]}}).to_string()],
+        ).unwrap();
+        sync_note_fields(
+            &connection,
+            "target",
+            "profile",
+            Some("Canonical"),
+            &["别名".to_owned(), "Alias".to_owned()],
+            "",
+        ).unwrap();
+
+        let resolved: Option<String> = connection.query_row(
+            "SELECT target_note_id FROM note_links WHERE source_note_id='source'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(resolved.as_deref(), Some("target"));
+
+        let direct = resolve_target_id(&connection, "profile", "source", "alias").unwrap();
+        assert_eq!(direct.as_deref(), Some("target"));
+    }
 }
