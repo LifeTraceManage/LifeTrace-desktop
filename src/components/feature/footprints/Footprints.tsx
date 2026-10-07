@@ -233,6 +233,7 @@ export default function Footprints() {
           />
           <ProvinceDrawer
             mapLevel={mapLevel}
+            selected={Boolean(selectedProvince)}
             summary={selectedSummary}
             name={selectedProvince?.name ?? "选择一个省份"}
             detail={provinceDetail}
