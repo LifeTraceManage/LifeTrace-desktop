@@ -338,6 +338,25 @@
   margin: 0 auto;
 }
 
+.lt-desk-content.mail-route {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lt-desk-content.mail-route > .lt-desk-error {
+  flex: 0 0 auto;
+}
+
+.lt-desk-content.mail-route > .lt-desk-route-content {
+  flex: 1 1 auto;
+  width: min(100%, 1480px);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 .lt-desk-route-content > .web-page,
 .lt-desk-route-content > .web-workspace,
 .lt-desk-route-content > section {
