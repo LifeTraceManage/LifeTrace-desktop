@@ -844,6 +844,8 @@
 }
 
 @media (max-width: 1120px) {
+  .footprint-insights { grid-template-columns: 1fr 1fr; }
+  .footprint-top-cities { grid-column: 1 / -1; }
   .footprint-map-layout { grid-template-columns: 1fr; }
   .footprint-province-drawer { max-height: 420px; }
   .footprint-search-results > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -851,6 +853,8 @@
   .footprint-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .footprint-insights { grid-template-columns: 1fr; }
+  .footprint-top-cities { grid-column: auto; }
   .footprint-hero { align-items: flex-start; flex-direction: column; }
   .footprint-summary { grid-template-columns: repeat(2, 1fr); }
   .footprint-controls { flex-wrap: wrap; }
@@ -866,4 +870,140 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .footprint-map-province { transition: none; }
+}
+
+
+.footprint-insights {
+  display: grid;
+  grid-template-columns: 1.05fr 1.4fr 1fr;
+  gap: 10px;
+}
+.footprint-insight-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+.footprint-insight-metrics article,
+.footprint-year-stats,
+.footprint-top-cities {
+  border: 1px solid var(--hx-line, #dfe5e1);
+  border-radius: 13px;
+  background: var(--lt-color-surface, #fff);
+}
+.footprint-insight-metrics article {
+  min-width: 0;
+  padding: 11px 9px;
+}
+.footprint-insight-metrics svg {
+  width: 15px;
+  color: var(--hx-accent, #2a7a5e);
+}
+.footprint-insight-metrics span,
+.footprint-insight-metrics strong {
+  display: block;
+}
+.footprint-insight-metrics span {
+  margin-top: 8px;
+  color: var(--hx-muted, #738079);
+  font-size: 7px;
+}
+.footprint-insight-metrics strong {
+  margin-top: 3px;
+  font-size: 18px;
+}
+.footprint-year-stats,
+.footprint-top-cities {
+  padding: 11px 12px;
+}
+.footprint-year-stats > header > div,
+.footprint-top-cities > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.footprint-year-stats > header svg {
+  width: 15px;
+  color: var(--hx-accent, #2a7a5e);
+}
+.footprint-year-stats > header span,
+.footprint-year-stats > header strong,
+.footprint-year-stats > header small,
+.footprint-top-cities > header strong,
+.footprint-top-cities > header small {
+  display: block;
+}
+.footprint-year-stats > header strong,
+.footprint-top-cities > header strong { font-size: 9px; }
+.footprint-year-stats > header small,
+.footprint-top-cities > header small {
+  margin-top: 2px;
+  color: var(--hx-muted, #738079);
+  font-size: 7px;
+}
+.footprint-year-stats > div { display: grid; gap: 7px; margin-top: 10px; }
+.footprint-year-stats article {
+  display: grid;
+  grid-template-columns: 38px minmax(70px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+.footprint-year-stats article > strong { font-size: 8px; }
+.footprint-year-stats article > small {
+  color: var(--hx-muted, #738079);
+  font-size: 7px;
+  white-space: nowrap;
+}
+.footprint-year-bar {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hx-soft, #edf1ed);
+}
+.footprint-year-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--hx-accent, #2a7a5e);
+}
+.footprint-year-stats > p,
+.footprint-top-cities > p {
+  margin: 10px 0 0;
+  color: var(--hx-muted, #738079);
+  font-size: 8px;
+}
+.footprint-top-cities > header { justify-content: space-between; }
+.footprint-top-cities > article {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+.footprint-top-cities > article > b {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--hx-soft, #edf1ed);
+  color: var(--hx-accent, #2a7a5e);
+  font-size: 7px;
+}
+.footprint-top-cities article span strong,
+.footprint-top-cities article span small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.footprint-top-cities article span strong { font-size: 8px; }
+.footprint-top-cities article span small {
+  margin-top: 2px;
+  color: var(--hx-muted, #738079);
+  font-size: 6px;
+}
+.footprint-top-cities article em {
+  color: var(--hx-accent, #2a7a5e);
+  font-size: 7px;
+  font-style: normal;
 }
