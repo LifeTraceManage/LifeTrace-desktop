@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FolderOpen, Images, LockKeyhole } from "lucide-react";
+import { FolderOpen, LockKeyhole } from "lucide-react";
 import LocalPhotoLibrary from "@/src/components/LocalPhotoLibrary";
-import PhotoSyncDashboard from "@/src/components/PhotoSyncDashboard";
 import LocalVaultModule from "@/src/components/LocalVaultModule";
 import { lockVaultBeforeLeave } from "@/src/lib/vaultAutoLock";
 import { desktopVault } from "@/src/desktop/vaultAdapter";
 
-type AlbumMode = "local" | "saved" | "vault";
+type AlbumMode = "local" | "vault";
 
 export default function PhotoSyncModule() {
   const [mode, setMode] = useState<AlbumMode>("local");
@@ -40,9 +39,8 @@ export default function PhotoSyncModule() {
   return <div className="photo-album-shell">
     <div className="photo-album-tabs" role="tablist" aria-label="相册模式">
       <button role="tab" aria-selected={mode === "local"} className={mode === "local" ? "active" : ""} onClick={() => void switchMode("local")}><FolderOpen/>本地图库</button>
-      <button role="tab" aria-selected={mode === "saved"} className={mode === "saved" ? "active" : ""} onClick={() => void switchMode("saved")}><Images/>已保存的照片</button>
       <button role="tab" aria-selected={mode === "vault"} className={mode === "vault" ? "active" : ""} onClick={() => void switchMode("vault")}><LockKeyhole/>私密相册</button>
     </div>
-    {mode === "local" ? <LocalPhotoLibrary/> : mode === "saved" ? <PhotoSyncDashboard/> : <LocalVaultModule/>}
+    {mode === "local" ? <LocalPhotoLibrary/> : <LocalVaultModule/>}
   </div>;
 }
