@@ -40,6 +40,7 @@ pub fn run() {
             commands::medical::medical_list_reports,
             commands::medical::medical_get_report,
             commands::medical::medical_read_asset,
+            commands::medical::medical_metric_history,
             commands::execution::execution_api_request,
             commands::local_api::local_json_api_request,
             commands::notes::notes_query,
