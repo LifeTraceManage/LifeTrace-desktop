@@ -133,6 +133,9 @@ fn validate_report<'a>(report: &'a Value, sources: &HashSet<&str>) -> Result<&'a
     if asset_ids.is_empty() || !asset_ids.iter().all(|id|id.as_str().is_some_and(|id|sources.contains(id))) {
         return Err("报告引用了无效的源文件".into());
     }
+    if asset_ids.iter().filter_map(Value::as_str).collect::<HashSet<_>>().len() != asset_ids.len() {
+        return Err("同一检查报告包含重复的源文件引用".into());
+    }
     let sections = report.get("sections").and_then(Value::as_array).ok_or("缺少报告章节")?;
     let results = report.get("observations").and_then(Value::as_array).ok_or("缺少报告结果数组")?;
     if sections.len()>100 || results.len()>500 {return Err("报告条目过多".into());}
@@ -518,10 +521,27 @@ mod tests {
                    "sourceAssetId":"scan-1","pageIndex":0}]}
             ]}),
         };
+        let mut orphan = make_input();
+        orphan.idempotency_key = "unlinked-pages-123".into();
+        orphan.assets.push(MedicalAssetInput {
+            asset_id: "unlinked-page".into(), original_name: "second.jpg".into(),
+            mime_type: "image/jpeg".into(), base64: STANDARD.encode([0xff,0xd8,0xff,0xe0,9,8,7]),
+        });
+        assert!(commit(&dir,orphan).unwrap_err().contains("未关联"));
         let first=commit(&dir,make_input()).unwrap();
         assert_eq!(first.len(),1);
         let second=commit(&dir,make_input()).unwrap();
         assert_eq!(first[0].id,second[0].id);
+        let mut alternate = make_input();
+        alternate.idempotency_key = "different-request-123".into();
+        assert!(commit(&dir,alternate).unwrap_err().contains("相同原始图片"));
+        let mut repeated_images = make_input();
+        repeated_images.idempotency_key = "repeated-images-123".into();
+        repeated_images.assets.push(MedicalAssetInput {
+            asset_id: "identical-second".into(), original_name: "repeat.jpg".into(),
+            mime_type: "image/jpeg".into(), base64: STANDARD.encode(&image),
+        });
+        assert!(commit(&dir,repeated_images).unwrap_err().contains("完全相同"));
         {
             let db=open_db(&dir).unwrap();
             let report_count:i64=db.query_row("SELECT count(*) FROM medical_reports",[],|r|r.get(0)).unwrap();
