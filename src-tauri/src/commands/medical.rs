@@ -374,4 +374,57 @@ mod tests {
         let ids=HashSet::from(["one"]);
         assert_eq!(validate_report(&report,&ids).unwrap().len(),1);
     }
+    #[test]
+    fn commits_original_image_report_and_numeric_results_once() {
+        use crate::database::migration_runner::{Migration, MigrationContext};
+        use crate::database::migrations::M0022MedicalReports;
+
+        let dir=std::env::temp_dir().join(format!("lifetrace-medical-test-{}",Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        {
+            let mut db=open_db(&dir).unwrap();
+            db.execute_batch("CREATE TABLE local_profiles(id TEXT PRIMARY KEY);
+                INSERT INTO local_profiles VALUES('local');").unwrap();
+            let tx=db.transaction().unwrap();
+            M0022MedicalReports.up(&tx,&MigrationContext::new(dir.clone())).unwrap();
+            tx.commit().unwrap();
+        }
+        let image=vec![0xff,0xd8,0xff,0xe0,1,2,3,4];
+        let make_input=||MedicalCommitInput{
+            idempotency_key:"fixed-request-123".into(),
+            assets:vec![MedicalAssetInput{
+                asset_id:"scan-1".into(),original_name:"report.jpg".into(),
+                mime_type:"image/jpeg".into(),base64:STANDARD.encode(&image),
+            }],
+            draft:serde_json::json!({"reports":[
+                {"title":"血检","reportType":"laboratory","examAt":"2026-10-08",
+                 "facility":"测试医院","sourceAssetIds":["scan-1"],
+                 "sections":[],
+                 "observations":[{"nameRaw":"ALT","valueRaw":"89.0","valueNumber":89.0,
+                   "kind":"numeric","unitRaw":"U/L","referenceRangeRaw":"9-60",
+                   "sourceAssetId":"scan-1","pageIndex":0}]}
+            ]}),
+        };
+        let first=commit(&dir,make_input()).unwrap();
+        assert_eq!(first.len(),1);
+        let second=commit(&dir,make_input()).unwrap();
+        assert_eq!(first[0].id,second[0].id);
+        {
+            let db=open_db(&dir).unwrap();
+            let report_count:i64=db.query_row("SELECT count(*) FROM medical_reports",[],|r|r.get(0)).unwrap();
+            let obs_count:i64=db.query_row("SELECT count(*) FROM medical_observations",[],|r|r.get(0)).unwrap();
+            let asset_count:i64=db.query_row("SELECT count(*) FROM medical_report_assets",[],|r|r.get(0)).unwrap();
+            assert_eq!((report_count,obs_count,asset_count),(1,1,1));
+            let row:(String,String,f64)=db.query_row(
+                "SELECT name_raw,unit_raw,value_number FROM medical_observations LIMIT 1",
+                [],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+            assert_eq!(row,("ALT".to_owned(),"U/L".to_owned(),89.0));
+        }
+        let asset_dir=dir.join("medical/originals");
+        let stored=fs::read_dir(&asset_dir).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
+        assert_eq!(stored.len(),1);
+        assert_eq!(fs::read(stored[0].path()).unwrap(),image);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }
