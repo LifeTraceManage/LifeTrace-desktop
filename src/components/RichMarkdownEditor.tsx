@@ -24,9 +24,18 @@ type Props = {
 function toHtml(markdown: string): string {
   // ReactMarkdown escapes raw HTML by default, so imported Markdown cannot
   // introduce arbitrary HTML into Tiptap.
-  return renderToStaticMarkup(
+  const html = renderToStaticMarkup(
     <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>,
   );
+  // GFM task lists use class names and disabled inputs; Tiptap requires
+  // data-type attributes. Normalize the safe renderer output before parsing.
+  return html
+    .replace(/<ul class="contains-task-list">/g, '<ul data-type="taskList">')
+    .replace(/<li class="task-list-item">([\\s\\S]*?)<\\/li>/g, (_match, inner: string) => {
+      const checked = /<input\\b[^>]*\\bchecked(?:=""|(?=\\s|>))/.test(inner);
+      return '<li data-type="taskItem" data-checked="' + checked + '">' +
+        inner.replace(/<input\\b[^>]*>/, "") + '</li>';
+    });
 }
 
 function toMarkdown(html: string): string {
