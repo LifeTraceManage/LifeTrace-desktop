@@ -5,6 +5,7 @@ import {
   type MedicalAssetData,
   type MedicalListItem,
   type MedicalReportDetail,
+  type MedicalMetricHistoryPoint,
 } from "@/src/services/medicalReportApi";
 
 /** Read-only archive. New reports are intentionally added through the cloud Agent. */
@@ -12,6 +13,9 @@ export default function MedicalReportBrowser() {
   const [items, setItems] = useState<MedicalListItem[]>([]);
   const [selected, setSelected] = useState<MedicalReportDetail | null>(null);
   const [preview, setPreview] = useState<MedicalAssetData | null>(null);
+  const [trend, setTrend] = useState<{
+    name: string; unit: string; points: MedicalMetricHistoryPoint[];
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
@@ -28,6 +32,7 @@ export default function MedicalReportBrowser() {
   const open = async (id: string) => {
     setError("");
     setPreview(null);
+    setTrend(null);
     try { setSelected(await medicalReportApi.detail(id)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取报告详情"); }
   };
@@ -35,6 +40,15 @@ export default function MedicalReportBrowser() {
     setError("");
     try { setPreview(await medicalReportApi.readAsset(id)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取原始图片"); }
+  };
+  const openTrend = async (name: string, unit: string) => {
+    setError("");
+    try {
+      const points = await medicalReportApi.metricHistory(name, unit);
+      setTrend({ name, unit, points });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法读取历史检验数据");
+    }
   };
   const visible = items.filter((item) => [item.title, item.facility || "", item.examAt || "", item.reportType]
     .join(" ").toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
@@ -61,7 +75,7 @@ export default function MedicalReportBrowser() {
       {selected ? <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <h3>{selected.report.title}</h3>
-          <button type="button" onClick={() => { setSelected(null); setPreview(null); }}>关闭详情</button>
+          <button type="button" onClick={() => { setSelected(null); setPreview(null); setTrend(null); }}>关闭详情</button>
         </div>
         <p>{selected.report.examAt || selected.report.issuedAt || "日期未知"} · {selected.report.facility || "医疗机构未知"} · {selected.report.reportType}</p>
         {selected.report.sections?.map((section, index) =>
@@ -75,11 +89,56 @@ export default function MedicalReportBrowser() {
             <thead><tr><th>项目</th><th>结果</th><th>单位</th><th>参考范围</th><th>标记</th></tr></thead>
             <tbody>{selected.report.observations.map((value, index) =>
               <tr key={index}>
-                <td>{value.nameRaw}</td><td>{value.valueRaw}</td><td>{value.unitRaw || "—"}</td>
+                <td>{typeof value.valueNumber === "number" ?
+                  <button type="button" title="查看该指标的历次检测值" onClick={() => void openTrend(value.nameRaw, value.unitRaw || "")}>
+                    {value.nameRaw}
+                  </button> : value.nameRaw}</td>
+                <td>{value.valueRaw}</td><td>{value.unitRaw || "—"}</td>
                 <td>{value.referenceRangeRaw || "—"}</td><td>{value.sourceFlag || "—"}</td>
               </tr>)}</tbody>
           </table>
         </div> : null}
+        {trend ? <section aria-label="检验指标历史趋势" style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <strong>{trend.name} · 历次检测</strong>
+            <button type="button" onClick={() => setTrend(null)}>关闭趋势</button>
+          </div>
+          <small>只比较同名、同单位、有实际检查日期的数值。不同检验方法与参考范围仍需结合原报告核对。</small>
+          {trend.points.length ? <>
+            <svg viewBox="0 0 560 160" role="img" aria-label={trend.name + " 历次检测值"}
+              style={{ width: "100%", maxHeight: 200 }}>
+              {(() => {
+                const numbers = trend.points.map((point) => point.valueNumber);
+                const min = Math.min(...numbers), max = Math.max(...numbers);
+                const span = Math.max(1, max - min);
+                const coords = trend.points.map((point, index) => ({
+                  x: 35 + index * 485 / Math.max(1, trend.points.length - 1),
+                  y: 125 - (point.valueNumber - min) * 90 / span,
+                  point,
+                }));
+                return <>
+                  <line x1="35" y1="125" x2="525" y2="125" stroke="currentColor" opacity="0.4"/>
+                  <polyline fill="none" stroke="currentColor" strokeWidth="2"
+                    points={coords.map(({ x, y }) => x + "," + y).join(" ")}/>
+                  {coords.map(({ x, y, point }, index) => <g key={index}>
+                    <circle cx={x} cy={y} r="4" fill="currentColor"/>
+                    <text x={x} y={Math.max(14, y - 12)} textAnchor="middle" fontSize="11" fill="currentColor">
+                      {point.valueNumber}
+                    </text>
+                    <text x={x} y="148" textAnchor="middle" fontSize="10" fill="currentColor">
+                      {point.examAt.slice(2)}
+                    </text>
+                  </g>)}
+                </>;
+              })()}
+            </svg>
+            <div style={{ maxHeight: 150, overflowY: "auto" }}>
+              {trend.points.map((point) => <p key={point.reportId + point.examAt} style={{ fontSize: 12 }}>
+                {point.examAt} · {point.valueNumber} {point.unitRaw} · {point.reportTitle}
+              </p>)}
+            </div>
+          </> : <p>没有可以比较的历史数值。</p>}
+        </section> : null}
         <h4>原始报告图片</h4>
         {selected.assets.map((asset) => <button type="button" key={asset.id}
           onClick={() => void openAsset(asset.id)}
