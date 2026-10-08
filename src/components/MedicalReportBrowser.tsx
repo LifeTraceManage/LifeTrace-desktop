@@ -86,7 +86,7 @@ export default function MedicalReportBrowser() {
         {selected.report.observations?.length ? <div style={{ maxHeight: 340, overflow: "auto" }}>
           <h4>检查结果（{selected.report.observations.length} 项）</h4>
           <table style={{ width: "100%", fontSize: 12 }}>
-            <thead><tr><th>项目</th><th>结果</th><th>单位</th><th>参考范围</th><th>标记</th></tr></thead>
+            <thead><tr><th>项目</th><th>结果</th><th>单位</th><th>参考范围</th><th>标记</th><th>证据</th></tr></thead>
             <tbody>{selected.report.observations.map((value, index) =>
               <tr key={index}>
                 <td>{typeof value.valueNumber === "number" ?
@@ -95,6 +95,8 @@ export default function MedicalReportBrowser() {
                   </button> : value.nameRaw}</td>
                 <td>{value.valueRaw}</td><td>{value.unitRaw || "—"}</td>
                 <td>{value.referenceRangeRaw || "—"}</td><td>{value.sourceFlag || "—"}</td>
+                <td><button type="button" title="查看该检测值对应的原始报告"
+                  onClick={() => void openAsset(value.sourceAssetId)}>查看原图</button></td>
               </tr>)}</tbody>
           </table>
         </div> : null}
