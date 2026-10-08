@@ -14,7 +14,6 @@
 
 /* Native, read-only system Pictures gallery */
 .local-photo-library{display:flex;flex-direction:column;gap:14px}
-.local-photo-library .photo-sync-hero{margin:0}
 .local-photo-library .photo-timeline{min-height:360px}
 .local-photo-folders{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:30px}
 .local-photo-folder{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:7px 11px;border:1px solid var(--hx-line);border-radius:99px;background:var(--hx-soft);font-size:11px;color:var(--hx-muted)}
