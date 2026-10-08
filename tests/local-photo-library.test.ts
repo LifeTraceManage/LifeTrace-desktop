@@ -24,7 +24,7 @@ test("native Pictures scanner is read-only and restricts preview paths to config
   assert.match(rust, /fn system_picture_folders\(/);
   assert.match(rust, /fn library_scan\(/);
   assert.match(rust, /fn image_from_library\(/);
-  assert.match(rust, /canonical\.starts_with\(&root\.path\)/);
+  assert.match(rust, /canonical\.starts_with\(Path::new\(&root\.path\)\)/);
   assert.doesNotMatch(rust, /fs::copy|INSERT INTO photos|UPDATE photos/);
   assert.match(lib, /photo_library::photo_library_scan/);
   assert.match(lib, /photo_library::photo_library_image/);
