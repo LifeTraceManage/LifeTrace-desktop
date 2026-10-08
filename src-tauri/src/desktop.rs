@@ -1,7 +1,6 @@
 use std::{
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
 };
 
 use serde_json::{json, Value};
@@ -9,11 +8,8 @@ use tauri::State;
 use tokio::fs;
 use uuid::Uuid;
 
-use crate::server::photo::Runtime;
-
 pub struct DesktopState {
     pub data_dir: PathBuf,
-    pub photo_runtime: Arc<Runtime>,
 }
 
 fn safe_segment(value: &str) -> Result<&str, String> {
