@@ -1,5 +1,7 @@
 # LifeTrace Desktop · Agent 驱动医疗检查报告归档方案
 
+> **工程实施清单**：参见 [Agent 医疗报告归档实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md)。接口、安全、数据表、阶段任务及验收以实施方案为准。
+
 > 状态：方案更新（Agent-first；尚未实现）  
 > 仓库：`LifeTraceManage/LifeTrace-desktop`  
 > 用户目标：**把医疗检查报告照片或 PDF 发给 LifeTrace 云端 Agent，由 Agent 识别并填写检查记录。**  
