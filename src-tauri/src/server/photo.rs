@@ -299,7 +299,9 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS photos_geo_idx ON photos(latitude,longitude,captured_at)
            WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;
          CREATE UNIQUE INDEX IF NOT EXISTS photos_local_path_idx ON photos(local_file_path)
-           WHERE storage_type='local' AND local_file_path IS NOT NULL;"
+           WHERE storage_type='local' AND local_file_path IS NOT NULL;
+         CREATE INDEX IF NOT EXISTS photos_managed_size_idx ON photos(file_size)
+           WHERE storage_type='managed' AND deleted_at IS NULL;"
     )?;
     let footprint_links_exist: i64 = connection.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='footprint_entry_photos'",
