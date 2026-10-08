@@ -35,6 +35,14 @@ pub struct MedicalCommitInput {
     pub assets: Vec<MedicalAssetInput>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all="camelCase")]
+pub struct MedicalReplaceInput {
+    pub report_id: String,
+    pub idempotency_key: String,
+    pub draft: Value,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct SavedMedicalReport {
@@ -382,6 +390,101 @@ pub async fn medical_commit_draft(
     tauri::async_runtime::spawn_blocking(move ||commit(&dir,input))
         .await.map_err(|_|"医疗档案写入任务中断".to_owned())?
 }
+/// Updates one existing report from a newly reviewed vision draft.
+/// Original media and its content hash never change.
+fn replace_report(root: &Path, input: MedicalReplaceInput) -> Result<SavedMedicalReport, String> {
+    if input.report_id.len()>100
+        || input.idempotency_key.trim().len()<8 || input.idempotency_key.len()>128 {
+        return Err("报告或修订标识无效".into());
+    }
+    let mut db=open_db(root)?;
+    let owner=profile_id(&db)?;
+    let old_json:String=db.query_row(
+        "SELECT content_json FROM medical_reports WHERE id=?1 AND user_id=?2",
+        params![input.report_id,owner], |row|row.get(0)
+    ).map_err(|_|"报告不存在或无权限修改".to_owned())?;
+
+    let existing:Option<i64>=db.query_row(
+        "SELECT 1 FROM medical_report_revisions WHERE report_id=?1 AND request_key=?2",
+        params![input.report_id,input.idempotency_key],|r|r.get(0)
+    ).optional().map_err(|e|e.to_string())?;
+    let current:Value=serde_json::from_str(&old_json)
+        .map_err(|_|"原检查报告格式损坏".to_owned())?;
+    if existing.is_some() {
+        return Ok(SavedMedicalReport{
+            id:input.report_id,
+            title:required_str(&current,"title",200)?.to_owned(),
+        });
+    }
+    let mut stmt=db.prepare("SELECT a.id FROM medical_report_assets a
+        JOIN medical_report_asset_links l ON l.asset_id=a.id
+        WHERE l.report_id=?1 AND a.user_id=?2").map_err(|e|e.to_string())?;
+    let source_ids=stmt.query_map(params![input.report_id,owner],|r|r.get::<_,String>(0))
+        .map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+    drop(stmt);
+    let sources=source_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    if sources.is_empty() {return Err("原报告没有可用附件".into());}
+    let reports=input.draft.get("reports").and_then(Value::as_array)
+        .ok_or("缺少重新识别结果")?;
+    if reports.len()!=1 {
+        return Err("重新识别必须对应唯一一份已有报告，请调整图片分组".into());
+    }
+    let report=&reports[0];
+    validate_report(report,&sources)?;
+    let associated=report["sourceAssetIds"].as_array().ok_or("缺少来源照片")?
+        .iter().filter_map(Value::as_str).collect::<HashSet<_>>();
+    if associated!=sources {
+        return Err("重新识别必须保留原报告的全部源文件".into());
+    }
+
+    let id=input.report_id;
+    let title=required_str(report,"title",200)?.to_owned();
+    let kind=required_str(report,"reportType",40)?;
+    let tx=db.transaction().map_err(|e|e.to_string())?;
+    tx.execute("INSERT INTO medical_report_revisions
+        (id,report_id,request_key,old_content_json,new_content_json,created_at)
+        VALUES (?1,?2,?3,?4,?5,?6)",
+        params![Uuid::new_v4().to_string(),id,input.idempotency_key,
+        old_json,report.to_string(),Utc::now().to_rfc3339()]
+    ).map_err(|e|e.to_string())?;
+    tx.execute("UPDATE medical_reports SET title=?1, report_type=?2, exam_at=?3,
+        facility=?4, content_json=?5 WHERE id=?6 AND user_id=?7",
+        params![title,kind,optional_str(report,"examAt",30)?,
+        optional_str(report,"facility",500)?,report.to_string(),id,owner]
+    ).map_err(|e|e.to_string())?;
+    tx.execute("DELETE FROM medical_report_sections WHERE report_id=?1",[&id])
+        .map_err(|e|e.to_string())?;
+    tx.execute("DELETE FROM medical_observations WHERE report_id=?1",[&id])
+        .map_err(|e|e.to_string())?;
+    for (n,section) in report["sections"].as_array().ok_or("缺少原文章节")?.iter().enumerate(){
+        tx.execute("INSERT INTO medical_report_sections(id,report_id,position,content_json)
+            VALUES (?1,?2,?3,?4)",
+            params![Uuid::new_v4().to_string(),id,n as i64,section.to_string()]
+        ).map_err(|e|e.to_string())?;
+    }
+    for (n,item) in report["observations"].as_array().ok_or("缺少结构化结果")?.iter().enumerate(){
+        tx.execute("INSERT INTO medical_observations
+            (id,report_id,position,name_raw,metric_key,value_number,unit_raw,content_json)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![Uuid::new_v4().to_string(),id,n as i64,required_str(item,"nameRaw",200)?,
+                optional_str(item,"metricKey",100)?,item.get("valueNumber").and_then(Value::as_f64),
+                optional_str(item,"unitRaw",80)?,item.to_string()]
+        ).map_err(|e|e.to_string())?;
+    }
+    tx.commit().map_err(|e|e.to_string())?;
+    Ok(SavedMedicalReport{id,title})
+}
+
+#[tauri::command]
+pub async fn medical_replace_report(
+    state: State<'_,DesktopState>,
+    input: MedicalReplaceInput,
+) -> Result<SavedMedicalReport, String> {
+    let root=state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move ||replace_report(&root,input))
+        .await.map_err(|_|"医疗报告修订任务中断".to_owned())?
+}
+
 #[tauri::command]
 pub async fn medical_list_reports(state:State<'_,DesktopState>) -> Result<Vec<MedicalListItem>,String> {
     let dir=state.data_dir.clone();
