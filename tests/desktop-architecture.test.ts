@@ -183,7 +183,7 @@ test("desktop mail is a native route backed by the cloud API service", () => {
   const api = read("src/services/mailApi.ts");
 
   assert.match(shell, /path: "\/app\/mail", label: "邮件"/);
-  assert.match(routes, /import MailActionCenter from "@\/src\/components\/feature\/mail\/MailActionCenter"/);
+  assert.match(routes, /const MailActionCenter = lazy\(\(\) => import\("@\/src\/components\/feature\/mail\/MailActionCenter"\)\)/);
   assert.match(routes, /route === "\/app\/mail"/);
   assert.match(routes, /<MailActionCenter \/>/);
   assert.match(api, /cloudAuthClient\.request/);
