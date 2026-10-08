@@ -427,18 +427,6 @@ pub async fn serve(
     tokio::spawn(async move {
         photo::run_exif_background_indexer(exif_state).await;
     });
-    let lan_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_lan(lan_state).await {
-            eprintln!("LifeTrace photo sync service stopped: {error}");
-        }
-    });
-    let compatibility_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_compatibility(compatibility_state).await {
-            eprintln!("LifeTrace photo compatibility service stopped: {error}");
-        }
-    });
     let media_state = state.clone();
     tokio::spawn(async move {
         if let Err(error) = photo::serve_media(media_state).await {
