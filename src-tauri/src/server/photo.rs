@@ -542,7 +542,7 @@ fn photo_response(bytes: Vec<u8>, mime: String, file_name: &str) -> Response {
             (header::CONTENT_TYPE, mime),
             (
                 header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{}\"", file_name.replace(['"', '\r', '\n'], "")),
+                format!("inline; filename=\"{}\"", file_name.replace('"', "").replace('\r', "").replace('\n', "")),
             ),
             (header::CACHE_CONTROL, "private, max-age=3600".to_owned()),
         ],
