@@ -8,7 +8,7 @@ const styles = readFileSync("app/notes.css", "utf8");
 
 test("notes open with a focused editable canvas and optional chrome", () => {
   assert.match(moduleSource, /useState<"rich"\|"split"\|"source"\|"preview">\("rich"\)/);
-  assert.match(moduleSource, /showFormatting&&<div className="nt-formatbar"/);
+  assert.match(moduleSource, /showFormatting&&effectiveEditorMode!=="rich"&&<div className="nt-formatbar"/);
   assert.match(moduleSource, /showInspector&&<aside className="nt-inspector"/);
   assert.match(moduleSource, /data-testid="markdown-editor"/);
   assert.match(moduleSource, /<RichMarkdownEditor/);
