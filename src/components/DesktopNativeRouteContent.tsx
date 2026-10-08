@@ -1,24 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Check } from "lucide-react";
-
-
-
-
-
-
-
-
-
-
-
 import type { EditorModalState } from "@/src/components/feature/forms/EditorModal";
-
-
-
-
-
-
-
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import { noteApi } from "@/src/services/noteApi";
 import { dayKey, escapeHtml } from "@/src/utils/format";
