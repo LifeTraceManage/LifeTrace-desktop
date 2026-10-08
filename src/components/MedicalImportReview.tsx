@@ -1,8 +1,9 @@
-import type { MedicalExtractReply } from "@/src/services/medicalReportApi";
+import type { MedicalExtractReply, MedicalImageInput } from "@/src/services/medicalReportApi";
 import { AlertTriangle, Check, FileText, RefreshCw, X } from "lucide-react";
 
 type Props = {
   draft: MedicalExtractReply;
+  images: MedicalImageInput[];
   disabled: boolean;
   onConfirm: () => void;
   onDiscard: () => void;
@@ -11,7 +12,7 @@ type Props = {
 };
 
 /** Review happens locally, never in persistent cloud Agent messages. */
-export default function MedicalImportReview({ draft, disabled, onConfirm, onDiscard, onReextract, correction }: Props) {
+export default function MedicalImportReview({ draft, images, disabled, onConfirm, onDiscard, onReextract, correction }: Props) {
   return <section className="lt-cloud-agent-approvals" aria-label="医疗检查报告归档预览">
     <header><FileText/><strong>检查报告识别结果 · 待确认归档</strong></header>
     <p>以下内容由视觉模型直接从图片提取，可能存在遗漏或识别错误。请对照原报告核对后再保存。</p>
@@ -23,6 +24,18 @@ export default function MedicalImportReview({ draft, disabled, onConfirm, onDisc
         <strong>{report.title}</strong>
         <small>{report.examAt || report.issuedAt || "日期未识别"} · {report.facility || "医疗机构未知"} · {report.reportType} · {report.sourceAssetIds.length} 张原图</small>
         {report.reviewReasons?.length ? <p role="alert">待核对：{report.reviewReasons.join("；")}</p> : null}
+        <details>
+          <summary>查看对应原始报告图片（{report.sourceAssetIds.length} 张）</summary>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 10 }}>
+            {images.filter((img) => report.sourceAssetIds.includes(img.assetId)).map((img) =>
+              <figure key={img.assetId} style={{ margin: 0, minWidth: 0 }}>
+                <img src={"data:" + img.mimeType + ";base64," + img.base64}
+                  alt={img.originalName}
+                  style={{ width: "100%", maxHeight: "560px", objectFit: "contain", borderRadius: 6 }}/>
+                <figcaption style={{ fontSize: 12, overflowWrap: "anywhere" }}>{img.originalName}</figcaption>
+              </figure>)}
+          </div>
+        </details>
         {report.sections.map((section, j) => <details key={j} open={j === 0}>
           <summary>{section.titleRaw || section.kind}</summary>
           <p style={{ whiteSpace: "pre-wrap" }}>{section.textRaw}</p>
