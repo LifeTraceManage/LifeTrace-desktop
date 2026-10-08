@@ -162,6 +162,73 @@
   stroke-width: 3;
   filter: drop-shadow(0 5px 9px rgba(215, 153, 50, .28));
 }
+.footprint-map-province-outline {
+  fill: color-mix(in srgb, var(--hx-soft, #edf1ed) 88%, transparent);
+  stroke: color-mix(in srgb, var(--hx-muted, #738079) 58%, transparent);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+.footprint-map-city-node-layer {
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+.footprint-map-city-node {
+  cursor: pointer;
+  outline: none;
+}
+.footprint-map-city-node-halo {
+  fill: color-mix(in srgb, var(--lt-color-surface, #fff) 86%, transparent);
+  stroke: color-mix(in srgb, var(--hx-muted, #738079) 36%, transparent);
+  stroke-width: 1;
+}
+.footprint-map-city-node-dot {
+  fill: color-mix(in srgb, var(--hx-muted, #738079) 48%, var(--hx-soft, #edf1ed));
+  stroke: var(--lt-color-surface, #fff);
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 3px rgba(20, 61, 42, .18));
+}
+.footprint-map-city-node.visited .footprint-map-city-node-dot {
+  fill: color-mix(
+    in srgb,
+    var(--hx-accent, #2a7a5e) calc(42% + var(--footprint-intensity) * 45%),
+    var(--hx-soft, #edf1ed)
+  );
+}
+.footprint-map-city-node.selected .footprint-map-city-node-halo {
+  stroke: #d79932;
+  stroke-width: 2.5;
+}
+.footprint-map-city-node.selected .footprint-map-city-node-dot {
+  fill: #d79932;
+}
+.footprint-map-city-node:hover .footprint-map-city-node-halo,
+.footprint-map-city-node:focus .footprint-map-city-node-halo {
+  stroke: var(--hx-accent, #2a7a5e);
+  stroke-width: 2;
+}
+.footprint-map-city-node-name,
+.footprint-map-city-node-count {
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--lt-color-surface, #fff) 94%, transparent);
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.footprint-map-city-node-name {
+  fill: color-mix(in srgb, var(--hx-ink, #223129) 90%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  stroke-width: 3px;
+}
+.footprint-map-city-node-count {
+  fill: var(--hx-accent2, #176b54);
+  font-size: 8px;
+  font-weight: 750;
+  stroke-width: 2.5px;
+}
+.footprint-map-city-node.selected .footprint-map-city-node-name,
+.footprint-map-city-node.selected .footprint-map-city-node-count {
+  fill: #a36512;
+}
 .footprint-map-hit-target {
   fill: transparent;
   stroke: none;

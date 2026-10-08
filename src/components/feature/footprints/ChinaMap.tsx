@@ -13,7 +13,7 @@ import {
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
 import { geoArea, geoMercator, geoPath } from "d3-geo";
 import rawChina from "@/src/assets/maps/china-provinces.json";
-import rawPrefectures from "@/src/assets/maps/china-prefectures.json";
+import rawCityPoints from "@/src/assets/maps/china-city-points.json";
 import type { CityFootprintSummary, ProvinceFootprintSummary } from "./types";
 import { footprintVisitIntensity } from "./footprintViewModel";
 import {
@@ -26,6 +26,7 @@ import {
 
 type Position = [number, number];
 type Ring = Position[];
+
 type AdminFeature = {
   type: "Feature";
   properties: {
@@ -40,6 +41,16 @@ type AdminFeature = {
     | { type: string; coordinates: unknown };
 };
 
+type CityPoint = {
+  id: string;
+  name: string;
+  provinceCode: string;
+  provinceName: string;
+  cityCode: string | null;
+  longitude: number;
+  latitude: number;
+};
+
 export type FootprintMapLevel = "country" | "province";
 
 type ChinaMapProps = {
@@ -51,7 +62,7 @@ type ChinaMapProps = {
   selectedCityName?: string | null;
   onSelectProvince: (code: string, name: string) => void;
   onEnterProvince?: (code: string, name: string) => void;
-  onSelectCity?: (code: string, name: string) => void;
+  onSelectCity?: (code: string | null, name: string) => void;
   onBackToCountry?: () => void;
 };
 
@@ -84,6 +95,19 @@ const easyTapProvinceCodes = new Set([
   "820000",
 ]);
 
+const chinaSource = rawChina as unknown as { type: string; features: AdminFeature[] };
+const cityPointData = rawCityPoints as { cities: CityPoint[] };
+
+function normalizeCityName(name: string) {
+  return name
+    .trim()
+    .replace(/特别行政区$/, "")
+    .replace(/自治州$/, "")
+    .replace(/地区$/, "")
+    .replace(/盟$/, "")
+    .replace(/市$/, "");
+}
+
 function shortAdminName(name: string, level: "province" | "city"): string {
   const replacements = level === "province"
     ? [
@@ -98,7 +122,7 @@ function shortAdminName(name: string, level: "province" | "city"): string {
       break;
     }
   }
-  const limit = level === "province" ? 5 : 6;
+  const limit = level === "province" ? 5 : 7;
   return result.length > limit ? `${result.slice(0, limit)}…` : result;
 }
 
@@ -192,22 +216,26 @@ export default function ChinaMap({
     [cities],
   );
   const citySummaryByName = useMemo(
-    () => new Map(cities.map((city) => [city.cityName, city])),
+    () => new Map(cities.map((city) => [normalizeCityName(city.cityName), city])),
     [cities],
   );
+
   const maxProvinceVisits = Math.max(1, ...provinces.map((province) => province.visitCount));
   const maxCityVisits = Math.max(1, ...cities.map((city) => city.visitCount));
 
-  const countryGeometry = useMemo(() => {
-    const source = rawChina as unknown as { type: string; features: AdminFeature[] };
-    const provinceFeatures = source.features
+  const provinceFeatures = useMemo(
+    () => chinaSource.features
       .filter((feature) =>
         feature.geometry
         && (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon")
         && /^\d{6}$/.test(String(feature.properties.adcode)),
       )
-      .map(fixWinding);
-    const dash = source.features.find((feature) => String(feature.properties.adcode) === "100000_JD");
+      .map(fixWinding),
+    [],
+  );
+
+  const countryGeometry = useMemo(() => {
+    const dash = chinaSource.features.find((feature) => String(feature.properties.adcode) === "100000_JD");
     const projection = geoMercator().fitExtent(
       [[32, 24], [width - 32, height - 34]],
       featureCollection(provinceFeatures),
@@ -231,39 +259,44 @@ export default function ChinaMap({
       }),
       dashPath: dash ? path(fixWinding(dash)) ?? "" : "",
     };
-  }, []);
+  }, [provinceFeatures]);
 
   const provinceGeometry = useMemo(() => {
-    if (!selectedProvinceCode) return [];
-    const prefix = selectedProvinceCode.slice(0, 2);
-    const source = rawPrefectures as unknown as { type: string; features: AdminFeature[] };
-    const features = source.features
-      .filter((feature) => {
-        const code = String(feature.properties.adcode);
-        return /^\d{6}$/.test(code)
-          && code.slice(0, 2) === prefix
-          && feature.geometry
-          && (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon");
-      })
-      .map(fixWinding);
-    if (!features.length) return [];
+    if (!selectedProvinceCode) {
+      return { outline: "", cities: [] as Array<CityPoint & { x: number; y: number }> };
+    }
+
+    const feature = provinceFeatures.find(
+      (candidate) => String(candidate.properties.adcode) === selectedProvinceCode,
+    );
+    if (!feature) {
+      return { outline: "", cities: [] as Array<CityPoint & { x: number; y: number }> };
+    }
+
     const projection = geoMercator().fitExtent(
-      [[42, 34], [width - 42, height - 42]],
-      featureCollection(features),
+      [[76, 62], [width - 76, height - 72]],
+      featureCollection([feature]),
     );
     const path = geoPath(projection);
-    return features.map((feature) => {
-      const d = path(feature) ?? "";
-      const [labelX, labelY] = labelPoint(feature, projection, d);
-      return {
-        code: String(feature.properties.adcode),
-        name: feature.properties.name,
-        d,
-        labelX,
-        labelY,
-      };
-    });
-  }, [selectedProvinceCode]);
+    const points = cityPointData.cities
+      .filter((city) => city.provinceCode === selectedProvinceCode)
+      .map((city) => {
+        const projected = projection([city.longitude, city.latitude]);
+        return projected
+          ? { ...city, x: projected[0], y: projected[1] }
+          : null;
+      })
+      .filter((city): city is CityPoint & { x: number; y: number } => Boolean(city));
+
+    return {
+      outline: path(feature) ?? "",
+      cities: points,
+    };
+  }, [provinceFeatures, selectedProvinceCode]);
+
+  const citySummaryForPoint = (city: CityPoint) =>
+    (city.cityCode ? citySummaryByCode.get(city.cityCode) : undefined)
+    || citySummaryByName.get(normalizeCityName(city.name));
 
   const resetTransform = () => {
     setScale(1);
@@ -282,15 +315,10 @@ export default function ChinaMap({
   }, [level]);
 
   useEffect(() => () => {
-    if (suppressTimerRef.current) {
-      clearTimeout(suppressTimerRef.current);
-    }
+    if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
   }, []);
 
-  const scaleAround = (
-    nextValue: number,
-    pointer?: MapPoint,
-  ) => {
+  const scaleAround = (nextValue: number, pointer?: MapPoint) => {
     const next = zoomAtPoint(
       { scale, pan },
       nextValue,
@@ -357,9 +385,7 @@ export default function ChinaMap({
 
     if (!drag.moved) return;
     suppressClickRef.current = true;
-    if (suppressTimerRef.current) {
-      clearTimeout(suppressTimerRef.current);
-    }
+    if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
     suppressTimerRef.current = setTimeout(() => {
       suppressClickRef.current = false;
       suppressTimerRef.current = null;
@@ -390,10 +416,11 @@ export default function ChinaMap({
   const transformX = (1 - scale) * width / 2 + pan.x;
   const transformY = (1 - scale) * height / 2 + pan.y;
   const transform = `translate(${transformX} ${transformY}) scale(${scale})`;
-  const labelPosition = (x: number, y: number) => ({
+  const screenPoint = (x: number, y: number) => ({
     x: transformX + x * scale,
     y: transformY + y * scale,
   });
+
   const provinceName = selectedProvinceCode
     ? provinces.find((province) => province.provinceCode === selectedProvinceCode)?.provinceName
       || countryGeometry.paths.find((item) => item.code === selectedProvinceCode)?.name
@@ -439,7 +466,7 @@ export default function ChinaMap({
         <svg
           viewBox={`0 0 ${width} ${height}`}
           role="img"
-          aria-label={level === "country" ? "中国省级足迹地图" : `${provinceName}市级足迹地图`}
+          aria-label={level === "country" ? "中国省级足迹地图" : `${provinceName}城市节点地图`}
           onWheel={wheel}
           onDoubleClickCapture={doubleClickProvince}
           onPointerDown={pointerDown}
@@ -449,122 +476,32 @@ export default function ChinaMap({
           className={scale > 1 ? "is-pannable" : ""}
         >
           <g transform={transform}>
-            {level === "country" ? countryGeometry.paths.map((item) => {
-              const summary = summaryByCode.get(item.code);
-              const visited = Boolean(summary);
-              const selected = selectedProvinceCode === item.code;
-              const intensity = footprintVisitIntensity(summary?.visitCount ?? 0, maxProvinceVisits);
-              return (
-                <path
-                  key={item.code}
-                  d={item.d}
-                  data-admin-code={item.code}
-                  data-admin-name={item.name}
-                  data-admin-level="province"
-                  className={[
-                    "footprint-map-region",
-                    "footprint-map-province",
-                    visited ? "visited" : "",
-                    selected ? "selected" : "",
-                  ].filter(Boolean).join(" ")}
-                  style={{ "--footprint-intensity": String(intensity) } as CSSProperties}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={visited
-                    ? `${item.name}，${summary?.visitCount ?? 0} 次足迹，${summary?.photoCount ?? 0} 张照片`
-                    : `${item.name}，暂无足迹`}
-                  onPointerEnter={() => setHovered({
-                    level: "province",
-                    code: item.code,
-                    name: item.name,
-                    visits: summary?.visitCount ?? 0,
-                    photoCount: summary?.photoCount ?? 0,
-                    cityCount: summary?.cityCount ?? 0,
-                  })}
-                  onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (event.detail > 1) return;
-                    if (!allowRegionClick()) return;
-                    onSelectProvince(item.code, item.name);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onSelectProvince(item.code, item.name);
-                    }
-                  }}
-                >
-                  <title>{item.name}{visited ? ` · ${summary?.visitCount ?? 0} 次` : " · 未记录"}</title>
-                </path>
-              );
-            }) : provinceGeometry.map((item) => {
-              const summary = citySummaryByCode.get(item.code) || citySummaryByName.get(item.name);
-              const visited = Boolean(summary);
-              const selected = selectedCityCode === item.code || (!selectedCityCode && selectedCityName === item.name);
-              const intensity = footprintVisitIntensity(summary?.visitCount ?? 0, maxCityVisits);
-              return (
-                <path
-                  key={item.code}
-                  d={item.d}
-                  data-admin-code={item.code}
-                  data-admin-name={item.name}
-                  data-admin-level="city"
-                  className={[
-                    "footprint-map-region",
-                    "footprint-map-city",
-                    visited ? "visited" : "",
-                    selected ? "selected" : "",
-                  ].filter(Boolean).join(" ")}
-                  style={{ "--footprint-intensity": String(intensity) } as CSSProperties}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={visited
-                    ? `${item.name}，${summary?.visitCount ?? 0} 次足迹，${summary?.photoCount ?? 0} 张照片`
-                    : `${item.name}，暂无足迹`}
-                  onPointerEnter={() => setHovered({
-                    level: "city",
-                    code: item.code,
-                    name: item.name,
-                    visits: summary?.visitCount ?? 0,
-                    photoCount: summary?.photoCount ?? 0,
-                  })}
-                  onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (!allowRegionClick()) return;
-                    onSelectCity?.(item.code, item.name);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onSelectCity?.(item.code, item.name);
-                    }
-                  }}
-                >
-                  <title>{item.name}{visited ? ` · ${summary?.visitCount ?? 0} 次` : " · 未记录"}</title>
-                </path>
-              );
-            })}
-            {level === "country"
-              ? countryGeometry.paths
-                .filter((item) =>
-                  easyTapProvinceCodes.has(item.code)
-                  && item.x !== null
-                  && item.y !== null)
-                .map((item) => {
+            {level === "country" ? (
+              <>
+                {countryGeometry.paths.map((item) => {
                   const summary = summaryByCode.get(item.code);
+                  const visited = Boolean(summary);
+                  const selected = selectedProvinceCode === item.code;
+                  const intensity = footprintVisitIntensity(summary?.visitCount ?? 0, maxProvinceVisits);
                   return (
-                    <circle
-                      key={`${item.code}-hit-target`}
-                      cx={item.x ?? undefined}
-                      cy={item.y ?? undefined}
-                      r={item.code === "820000" ? 24 : 19}
+                    <path
+                      key={item.code}
+                      d={item.d}
                       data-admin-code={item.code}
                       data-admin-name={item.name}
                       data-admin-level="province"
-                      className="footprint-map-hit-target"
-                      aria-hidden="true"
+                      className={[
+                        "footprint-map-region",
+                        "footprint-map-province",
+                        visited ? "visited" : "",
+                        selected ? "selected" : "",
+                      ].filter(Boolean).join(" ")}
+                      style={{ "--footprint-intensity": String(intensity) } as CSSProperties}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={visited
+                        ? `${item.name}，${summary?.visitCount ?? 0} 次足迹，${summary?.photoCount ?? 0} 张照片`
+                        : `${item.name}，暂无足迹`}
                       onPointerEnter={() => setHovered({
                         level: "province",
                         code: item.code,
@@ -573,64 +510,179 @@ export default function ChinaMap({
                         photoCount: summary?.photoCount ?? 0,
                         cityCount: summary?.cityCount ?? 0,
                       })}
-                      onPointerLeave={() => setHovered((current) => current?.code === item.code ? null : current)}
+                      onPointerLeave={() => setHovered((current) =>
+                        current?.code === item.code ? null : current)}
                       onClick={(event) => {
                         event.stopPropagation();
                         if (event.detail > 1) return;
                         if (!allowRegionClick()) return;
                         onSelectProvince(item.code, item.name);
                       }}
-                    />
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectProvince(item.code, item.name);
+                        }
+                      }}
+                    >
+                      <title>{item.name}{visited ? ` · ${summary?.visitCount ?? 0} 次` : " · 未记录"}</title>
+                    </path>
                   );
-                })
-              : null}
-            {level === "country" && countryGeometry.dashPath
-              ? <path d={countryGeometry.dashPath} className="footprint-map-dashline" pointerEvents="none" />
-              : null}
+                })}
+                {countryGeometry.dashPath ? (
+                  <path className="footprint-map-dashline" d={countryGeometry.dashPath} />
+                ) : null}
+                {countryGeometry.paths
+                  .filter((item) =>
+                    easyTapProvinceCodes.has(item.code)
+                    && item.x !== null
+                    && item.y !== null)
+                  .map((item) => {
+                    const summary = summaryByCode.get(item.code);
+                    return (
+                      <circle
+                        key={`${item.code}-hit-target`}
+                        cx={item.x ?? undefined}
+                        cy={item.y ?? undefined}
+                        r={item.code === "820000" ? 24 : 19}
+                        data-admin-code={item.code}
+                        data-admin-name={item.name}
+                        data-admin-level="province"
+                        className="footprint-map-hit-target"
+                        aria-hidden="true"
+                        onPointerEnter={() => setHovered({
+                          level: "province",
+                          code: item.code,
+                          name: item.name,
+                          visits: summary?.visitCount ?? 0,
+                          photoCount: summary?.photoCount ?? 0,
+                          cityCount: summary?.cityCount ?? 0,
+                        })}
+                        onPointerLeave={() => setHovered((current) =>
+                          current?.code === item.code ? null : current)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (event.detail > 1) return;
+                          if (!allowRegionClick()) return;
+                          onSelectProvince(item.code, item.name);
+                        }}
+                      />
+                    );
+                  })}
+              </>
+            ) : (
+              <path
+                d={provinceGeometry.outline}
+                className="footprint-map-province-outline"
+                aria-hidden="true"
+              />
+            )}
           </g>
-          <g className="footprint-map-label-layer" pointerEvents="none">
-            {(level === "country" ? countryGeometry.paths : provinceGeometry).map((item) => {
-              const summary = level === "country"
-                ? summaryByCode.get(item.code)
-                : citySummaryByCode.get(item.code) || citySummaryByName.get(item.name);
-              const visited = Boolean(summary);
-              const selected = level === "country"
-                ? selectedProvinceCode === item.code
-                : selectedCityCode === item.code || (!selectedCityCode && selectedCityName === item.name);
-              const point = labelPosition(item.labelX, item.labelY);
-              const label = shortAdminName(item.name, level === "country" ? "province" : "city");
-              return (
-                <g
-                  key={`label-${item.code}`}
-                  className={[
-                    "footprint-map-admin-label",
-                    level === "country" ? "province" : "city",
-                    visited ? "visited" : "",
-                    selected ? "selected" : "",
-                  ].filter(Boolean).join(" ")}
-                  transform={`translate(${point.x} ${point.y})`}
-                >
-                  {visited ? <circle className="footprint-map-visit-marker" r={selected ? 7 : 5.5} /> : null}
-                  <text className="footprint-map-admin-name" y={visited ? -9 : 3}>{label}</text>
-                  {visited ? (
-                    <text className="footprint-map-visit-count" y={10}>
-                      {summary?.visitCount ?? 0}次
+
+          {level === "country" ? (
+            <g className="footprint-map-label-layer" pointerEvents="none">
+              {countryGeometry.paths.map((item) => {
+                const summary = summaryByCode.get(item.code);
+                const visited = Boolean(summary);
+                const selected = selectedProvinceCode === item.code;
+                const point = screenPoint(item.labelX, item.labelY);
+                return (
+                  <g
+                    key={`label-${item.code}`}
+                    className={[
+                      "footprint-map-admin-label",
+                      "province",
+                      visited ? "visited" : "",
+                      selected ? "selected" : "",
+                    ].filter(Boolean).join(" ")}
+                    transform={`translate(${point.x} ${point.y})`}
+                  >
+                    {visited ? <circle className="footprint-map-visit-marker" r={selected ? 7 : 5.5} /> : null}
+                    <text className="footprint-map-admin-name" y={visited ? -9 : 3}>
+                      {shortAdminName(item.name, "province")}
                     </text>
-                  ) : null}
-                </g>
-              );
-            })}
-          </g>
+                    {visited ? (
+                      <text className="footprint-map-visit-count" y={10}>
+                        {summary?.visitCount ?? 0}次
+                      </text>
+                    ) : null}
+                  </g>
+                );
+              })}
+            </g>
+          ) : (
+            <g className="footprint-map-city-node-layer">
+              {provinceGeometry.cities.map((city) => {
+                const summary = citySummaryForPoint(city);
+                const visited = Boolean(summary);
+                const selected = selectedCityCode
+                  ? Boolean(summary?.cityCode && summary.cityCode === selectedCityCode)
+                    || city.cityCode === selectedCityCode
+                  : Boolean(selectedCityName)
+                    && normalizeCityName(selectedCityName ?? "") === normalizeCityName(city.name);
+                const intensity = footprintVisitIntensity(summary?.visitCount ?? 0, maxCityVisits);
+                const point = screenPoint(city.x, city.y);
+                const selectCode = summary?.cityCode ?? city.cityCode;
+                const selectName = summary?.cityName ?? city.name;
+                return (
+                  <g
+                    key={city.id}
+                    transform={`translate(${point.x} ${point.y})`}
+                    className={[
+                      "footprint-map-city-node",
+                      visited ? "visited" : "",
+                      selected ? "selected" : "",
+                    ].filter(Boolean).join(" ")}
+                    style={{ "--footprint-intensity": String(intensity) } as CSSProperties}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={visited
+                      ? `${selectName}，${summary?.visitCount ?? 0} 次足迹，${summary?.photoCount ?? 0} 张照片`
+                      : `${selectName}，暂无足迹`}
+                    onPointerEnter={() => setHovered({
+                      level: "city",
+                      code: selectCode ?? city.id,
+                      name: selectName,
+                      visits: summary?.visitCount ?? 0,
+                      photoCount: summary?.photoCount ?? 0,
+                    })}
+                    onPointerLeave={() => setHovered((current) =>
+                      current?.code === (selectCode ?? city.id) ? null : current)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (!allowRegionClick()) return;
+                      onSelectCity?.(selectCode, selectName);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectCity?.(selectCode, selectName);
+                      }
+                    }}
+                  >
+                    <circle className="footprint-map-city-node-halo" r={visited ? 14 : 11} />
+                    <circle className="footprint-map-city-node-dot" r={visited ? 6.5 : 4.5} />
+                    <text className="footprint-map-city-node-name" y={-13}>
+                      {shortAdminName(selectName, "city")}
+                    </text>
+                    {visited ? (
+                      <text className="footprint-map-city-node-count" y={18}>
+                        {summary?.visitCount ?? 0}次
+                      </text>
+                    ) : null}
+                  </g>
+                );
+              })}
+            </g>
+          )}
         </svg>
 
         {hovered ? (
-          <div className="footprint-map-tooltip">
+          <div className="footprint-map-tooltip" aria-live="polite">
             <strong>{hovered.name}</strong>
             <span>
               {hovered.visits
-                ? hovered.level === "province"
-                  ? `${hovered.cityCount ?? 0} 城 · ${hovered.visits} 次 · ${hovered.photoCount} 张照片`
-                  : `${hovered.visits} 次 · ${hovered.photoCount} 张照片`
+                ? `${hovered.visits} 次 · ${hovered.photoCount} 张照片`
                 : "尚未记录"}
             </span>
           </div>
@@ -638,12 +690,12 @@ export default function ChinaMap({
       </div>
 
       <footer className="footprint-map-legend">
+        <span><i className="visited" />已记录</span>
         <span><i className="unvisited" />未记录</span>
-        <span><i className="visited" />已去过</span>
         <small>
           {level === "country"
-            ? "省级名称常驻显示 · 单击省份查看详情 · 双击进入省内地图"
-            : "市 / 地区名称常驻显示 · 滚轮 / +/- 仅缩放 · 点击城市筛选足迹"}
+            ? "单击省份查看详情 · 双击省份进入省内地图"
+            : "省份轮廓 + 城市节点 · 单击城市筛选足迹"}
         </small>
       </footer>
     </section>

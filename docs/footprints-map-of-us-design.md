@@ -285,8 +285,10 @@ D3 Geo + SVG
 `click → click → dblclick` 序列。单击选中省份时不得重置当前缩放和平移，只有真正切换
 全国 / 省内行政层级时才重置镜头。
 
-当前数据只到市 / 地区级，因此双击城市暂不继续下钻。地图层级由页面语义状态统一管理，
-`ChinaMap` 只维护缩放、平移、hover 和拖拽等镜头状态；退出省内地图时必须同步清理旧选择和临时交互状态。
+省内地图遵循 Map of Us 的 `ProvinceMap` 思路：只绘制当前省份轮廓，并把城市经纬度
+投影成城市节点；不再引入独立的市级行政区 Polygon 数据。当前数据只到城市节点，因此双击城市
+暂不继续下钻。地图层级由页面语义状态统一管理，`ChinaMap` 只维护缩放、平移、hover 和拖拽等
+镜头状态；退出省内地图时必须同步清理旧选择和临时交互状态。
 
 ### 5.3 第一版不建议使用地图瓦片
 
@@ -1242,44 +1244,31 @@ Map
 
 ## 27. 地图数据
 
-需要加入：
-
-```text
-中国省级行政区 GeoJSON / TopoJSON
-```
-
-建议路径：
+Footprints 地图数据统一参考 Map of Us：
 
 ```text
 src/assets/maps/china-provinces.json
+  ← Map of Us data/china-geo.json
+
+src/assets/maps/china-city-points.json
+  ← Map of Us data/cities.ts
 ```
 
-同时维护：
+全国层使用省级 GeoJSON 边界。进入省份后不再加载另一套市级 Polygon，而是：
 
 ```text
-provinceCode
-provinceName
-```
-
-映射。
-
-后续如果实现城市地图，再考虑：
-
-```text
-china-cities
-```
-
-第一阶段不要一次性引入全国区县级数据。
-
-第一阶段：
-
-```text
-省级 SVG
+当前省份轮廓
 +
-城市列表
+城市名称 / 所属省份 / 经纬度
++
+D3 投影后的城市节点
 ```
 
-即可。
+这样避免多套行政区几何数据的来源、winding、岛屿 MultiPolygon 和投影拟合差异。
+`china-prefectures.json` 不属于 Footprints 的数据模型，不应重新引入。
+
+第一阶段不要引入全国区县级边界。若未来需要区县下钻，再选择来源和许可证明确的数据集，
+并作为独立层级设计，而不是复用城市节点数据冒充区县边界。
 
 ---
 
