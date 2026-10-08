@@ -102,6 +102,9 @@ pub struct PhotoRecord {
     pub imported_at: String,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Unix seconds from the local library's last-modified time, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -540,6 +543,7 @@ pub fn list_entry_photos(connection: &Connection, entry_id: &str) -> Result<Vec<
                 imported_at: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                modified_at: None,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -699,11 +703,18 @@ pub fn list_photos(
         .map_err(|error| error.to_string())?;
     let mut statement = connection
         .prepare(
-            "SELECT id,original_file_name,media_type,captured_at,imported_at,latitude,longitude
+            "SELECT id,original_file_name,media_type,captured_at,imported_at,latitude,longitude,
+                    CASE WHEN storage_type='local' THEN local_modified_at / 1000000000 END
              FROM photos
              WHERE deleted_at IS NULL AND processing_status='completed' AND media_type='image'
                AND (?1='' OR original_file_name LIKE ?2)
-             ORDER BY COALESCE(captured_at,imported_at) DESC
+             ORDER BY COALESCE(
+                 CASE WHEN storage_type='local' THEN local_modified_at / 1000000000 END,
+                 CAST(strftime('%s',captured_at) AS INTEGER),
+                 CAST(strftime('%s',imported_at) AS INTEGER),
+                 0
+             ) DESC,
+             COALESCE(local_file_path,original_file_name) ASC,id ASC
              LIMIT ?3 OFFSET ?4",
         )
         .map_err(|error| error.to_string())?;
@@ -717,6 +728,7 @@ pub fn list_photos(
                 imported_at: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                modified_at: row.get(7)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -881,6 +893,7 @@ pub fn photo_suggestions(
                 imported_at: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                modified_at: None,
             })
         })
         .map_err(|error| error.to_string())?;
