@@ -596,13 +596,14 @@ mod tests {
         let (storage, name, width, height, gps): (String, String, Option<i64>, Option<i64>, Option<f64>) =
             db.query_row(
                 "SELECT storage_type,original_file_name,width,height,latitude FROM photos
-                 WHERE local_file_path=?1", [file.to_string_lossy().to_string()],
+                 WHERE local_file_path=?1", [fs::canonicalize(&file).unwrap().to_string_lossy().to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             ).unwrap();
         assert_eq!(storage, "local");
         assert_eq!(name, "sample.jpg");
         assert_eq!((width, height), (Some(4), Some(4)));
         assert!(gps.is_none());
+        drop(db);
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -657,6 +658,7 @@ mod tests {
              WHERE ep.entry_id='trip'", [], |row| row.get(0)
         ).unwrap();
         assert_eq!(linked_source, "local");
+        drop(db);
         fs::remove_dir_all(dir).unwrap();
     }
 
