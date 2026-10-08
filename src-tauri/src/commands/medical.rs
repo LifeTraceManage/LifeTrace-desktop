@@ -577,6 +577,14 @@ mod tests {
                 "SELECT name_raw,unit_raw,value_number FROM medical_observations LIMIT 1",
                 [],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
             assert_eq!(row,("ALT".to_owned(),"U/L".to_owned(),89.0));
+            let source_id:String=db.query_row("SELECT id FROM medical_report_assets LIMIT 1",[],|r|r.get(0)).unwrap();
+            let report_json:String=db.query_row("SELECT content_json FROM medical_reports LIMIT 1",[],|r|r.get(0)).unwrap();
+            let restored:Value=serde_json::from_str(&report_json).unwrap();
+            assert_eq!(restored["sourceAssetIds"][0].as_str(),Some(source_id.as_str()));
+            assert_eq!(restored["observations"][0]["sourceAssetId"].as_str(),Some(source_id.as_str()));
+            let obs_json:String=db.query_row("SELECT content_json FROM medical_observations LIMIT 1",[],|r|r.get(0)).unwrap();
+            let observation:Value=serde_json::from_str(&obs_json).unwrap();
+            assert_eq!(observation["sourceAssetId"].as_str(),Some(source_id.as_str()));
         }
         let asset_dir=dir.join("medical/originals");
         let stored=fs::read_dir(&asset_dir).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
