@@ -198,8 +198,9 @@ fn decode_assets(inputs: &[MedicalAssetInput]) -> Result<Vec<DecodedAsset>, Stri
 fn batch_report_ids(db: &rusqlite::Connection, batch_id: &str) -> Result<Vec<SavedMedicalReport>, String> {
     let mut stmt=db.prepare("SELECT id,title FROM medical_reports WHERE batch_id=?1 ORDER BY rowid")
         .map_err(|e|e.to_string())?;
-    stmt.query_map([batch_id],|row|Ok(SavedMedicalReport{id:row.get(0)?,title:row.get(1)?}))
-        .map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    let rows = stmt.query_map([batch_id],|row|Ok(SavedMedicalReport{id:row.get(0)?,title:row.get(1)?}))
+        .map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+    Ok(rows)
 }
 
 fn commit(root: &Path, input: MedicalCommitInput) -> Result<Vec<SavedMedicalReport>, String> {
@@ -297,11 +298,12 @@ pub async fn medical_list_reports(state:State<'_,DesktopState>) -> Result<Vec<Me
             (SELECT count(*) FROM medical_report_asset_links l WHERE l.report_id=r.id)
             FROM medical_reports r WHERE r.user_id=?1 ORDER BY COALESCE(r.exam_at,r.created_at) DESC LIMIT 500")
             .map_err(|e|e.to_string())?;
-        stmt.query_map([user],|r|Ok(MedicalListItem{
+        let rows = stmt.query_map([user],|r|Ok(MedicalListItem{
             id:r.get(0)?,title:r.get(1)?,report_type:r.get(2)?,exam_at:r.get(3)?,
             facility:r.get(4)?,created_at:r.get(5)?,observation_count:r.get(6)?,
             attachment_count:r.get(7)?
-        })).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+        })).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+        Ok(rows)
     }).await.map_err(|_|"医疗档案查询任务中断".to_owned())?
 }
 
@@ -317,7 +319,7 @@ pub async fn medical_get_report(state:State<'_,DesktopState>, id:String) -> Resu
             INNER JOIN medical_report_asset_links l ON a.id=l.asset_id
             WHERE l.report_id=?1 AND a.user_id=?2 ORDER BY a.rowid")
             .map_err(|e|e.to_string())?;
-        let assets=stmt.query_map(params![id,user],|r|Ok(MedicalAsset {
+        let assets = stmt.query_map(params![id,user],|r|Ok(MedicalAsset {
             id:r.get(0)?,original_name:r.get(1)?,mime_type:r.get(2)?,bytes_size:r.get(3)?
         })).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
         Ok(MedicalReportDetail{id,report:serde_json::from_str(&payload).map_err(|_|"检查报告数据格式错误")?,assets})
