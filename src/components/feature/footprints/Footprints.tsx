@@ -60,7 +60,6 @@ export default function Footprints() {
   } | null>(null);
   const [provinceLoading, setProvinceLoading] = useState(false);
   const provinceRequestRef = useRef(0);
-  const selectedProvinceCodeRef = useRef<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{
     entry: FootprintEntry | null;
@@ -110,7 +109,6 @@ export default function Footprints() {
     const requestId = provinceRequestRef.current + 1;
     provinceRequestRef.current = requestId;
 
-    selectedProvinceCodeRef.current = code;
     setSelectedProvince({ code, name });
     setSelectedCity(null);
     setProvinceDetail(null);
@@ -139,7 +137,6 @@ export default function Footprints() {
 
   const backToCountryMap = () => {
     provinceRequestRef.current += 1;
-    selectedProvinceCodeRef.current = null;
     setSelectedCity(null);
     setSelectedProvince(null);
     setProvinceDetail(null);
