@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Cloud, LockKeyhole } from "lucide-react";
+import { FolderOpen, Images, LockKeyhole } from "lucide-react";
+import LocalPhotoLibrary from "@/src/components/LocalPhotoLibrary";
 import PhotoSyncDashboard from "@/src/components/PhotoSyncDashboard";
 import LocalVaultModule from "@/src/components/LocalVaultModule";
 import { lockVaultBeforeLeave } from "@/src/lib/vaultAutoLock";
 import { desktopVault } from "@/src/desktop/vaultAdapter";
 
+type AlbumMode = "local" | "saved" | "vault";
+
 export default function PhotoSyncModule() {
-  const [mode, setMode] = useState<"sync" | "vault">("sync");
+  const [mode, setMode] = useState<AlbumMode>("local");
   const modeRef = useRef(mode);
 
   useEffect(() => {
@@ -20,27 +23,26 @@ export default function PhotoSyncModule() {
     void lockVaultBeforeLeave(desktopVault.available() ? desktopVault : undefined).catch(() => undefined);
   }, []);
 
-  const switchMode = async (nextMode: "sync" | "vault") => {
+  const switchMode = async (nextMode: AlbumMode) => {
     if (nextMode === mode) return;
-
-    if (mode === "vault" && nextMode === "sync") {
+    if (mode === "vault") {
       try {
         await lockVaultBeforeLeave(desktopVault.available() ? desktopVault : undefined);
       } catch (cause) {
-        console.error("Failed to lock the private vault before leaving its tab", cause);
-        window.alert("私密相册锁定失败，请重试后再离开此页签。");
+        console.error("Failed to lock private vault before switching tabs", cause);
+        window.alert("私密相册锁定失败，请重试后再切换页签。");
         return;
       }
     }
-
     setMode(nextMode);
   };
 
   return <div className="photo-album-shell">
     <div className="photo-album-tabs" role="tablist" aria-label="相册模式">
-      <button role="tab" aria-selected={mode === "sync"} className={mode === "sync" ? "active" : ""} onClick={() => void switchMode("sync")}><Cloud/>同步相册</button>
+      <button role="tab" aria-selected={mode === "local"} className={mode === "local" ? "active" : ""} onClick={() => void switchMode("local")}><FolderOpen/>本地图库</button>
+      <button role="tab" aria-selected={mode === "saved"} className={mode === "saved" ? "active" : ""} onClick={() => void switchMode("saved")}><Images/>已保存的照片</button>
       <button role="tab" aria-selected={mode === "vault"} className={mode === "vault" ? "active" : ""} onClick={() => void switchMode("vault")}><LockKeyhole/>私密相册</button>
     </div>
-    {mode === "sync" ? <PhotoSyncDashboard/> : <LocalVaultModule/>}
+    {mode === "local" ? <LocalPhotoLibrary/> : mode === "saved" ? <PhotoSyncDashboard/> : <LocalVaultModule/>}
   </div>;
 }
