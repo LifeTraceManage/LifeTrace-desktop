@@ -124,7 +124,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const [markdown,setMarkdown]=useState(()=>markdownSource(note));
-  const [editorMode,setEditorMode]=useState<"split"|"source"|"preview">("split");
+  const [editorMode,setEditorMode]=useState<"split"|"source"|"preview">("source");
+  const [showFormatting,setShowFormatting]=useState(false);
+  const [showInspector,setShowInspector]=useState(false);
   const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
   const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
   const editorRef=useRef<HTMLTextAreaElement>(null);
@@ -359,19 +361,17 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         <span>{wordCount} 字</span>
       </div>
       <div>
-        <button className={draft.isFavorite?"active":""} title="收藏" onClick={()=>patch({isFavorite:!draft.isFavorite})}><Star/></button>
-        <button className={draft.isPinned?"active":""} title="置顶" onClick={()=>patch({isPinned:!draft.isPinned})}><Pin/></button>
-        <button title="从笔记创建 Task" onClick={()=>void createTaskFromNote()}><CheckSquare2/></button>
-        <button title="版本历史" onClick={()=>void loadHistory()}><History/></button>
-        <button title="立即保存" onClick={()=>void save(true)}><Save/></button>
-        <MoreMenu actions={editorActions} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
+          <button title="格式工具栏" aria-pressed={showFormatting} className={showFormatting?"active":""} onClick={()=>setShowFormatting(value=>!value)}><Bold/></button>
+          <button title="切换编辑和阅读" onClick={()=>setEditorMode(value=>value==="preview"?"source":"preview")}><FileText/></button>
+          <button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>
+        <MoreMenu actions={[{id:"save",label:"保存版本",icon:Save,group:"primary",execute:()=>save(true)},{id:"favorite",label:draft.isFavorite?"取消收藏":"收藏笔记",icon:Star,group:"primary",execute:()=>patch({isFavorite:!draft.isFavorite})},{id:"pin",label:draft.isPinned?"取消置顶":"置顶笔记",icon:Pin,group:"primary",execute:()=>patch({isPinned:!draft.isPinned})},{id:"task",label:"创建 Task",icon:CheckSquare2,group:"related",execute:()=>createTaskFromNote()},{id:"history",label:"版本历史",icon:History,group:"related",execute:()=>loadHistory()},...editorActions]} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
       </div>
     </header>
-    <div className="nt-editor-body">
+    <div className={`nt-editor-body ${showInspector?"nt-inspector-open":""}`}>
       <main className="nt-editor-main">
         <div className="nt-editor-scroll">
           <input className="nt-title" value={draft.title??""} onChange={e=>patch({title:e.target.value||null})} placeholder={draft.noteType==="quick"?"快速记录无需标题":"无标题笔记"}/>
-          <div className="nt-formatbar">
+          {showFormatting&&<div className="nt-formatbar">
             <EditorButton title="一级标题" onClick={()=>prefixSelectionLines("# ")}><Heading1/></EditorButton>
             <EditorButton title="二级标题" onClick={()=>prefixSelectionLines("## ")}><Heading2/></EditorButton>
             <EditorButton title="加粗" onClick={()=>editSelection("**","**","粗体文本")}><Bold/></EditorButton>
@@ -386,9 +386,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址","https://");if(src?.startsWith("https://"))insertSnippet(`![图片](${src})`)}}><ImagePlus/></EditorButton>
             <EditorButton title="代码块" onClick={()=>editSelection("\`\`\`\n","\n\`\`\`","代码")}><Braces/></EditorButton>
             <EditorButton title="表格" onClick={()=>insertSnippet("\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")}><ListTree/></EditorButton>
-          </div>
+          </div>}
           <div className="nt-view-switch" role="group" aria-label="编辑显示模式">
-            {(["split","source","preview"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>setEditorMode(mode)}>{mode==="split"?"实时预览":mode==="source"?"源码编辑":"阅读模式"}</button>)}
+            {(["source","preview","split"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>setEditorMode(mode)}>{mode==="source"?"编辑":mode==="preview"?"阅读":"分屏"}</button>)}
           </div>
           <div className={`nt-edit-layout nt-mode-${editorMode}`}>
           {editorMode!=="preview"&&<textarea
@@ -418,7 +418,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
           </div>
         </div>
       </main>
-      <aside className="nt-inspector" data-testid="notes-inspector">
+      {showInspector&&<aside className="nt-inspector" data-testid="notes-inspector">
         <section className="nt-inspector-section">
           <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
           <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.index)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
@@ -453,7 +453,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
           {remoteOnlyAttachments.map(file=><article key={file.id}><Download/><div><strong>{file.originalName}</strong><small>{(file.sizeBytes/1024).toFixed(1)} KB · 云端</small></div><button onClick={()=>void downloadCloudAttachment(file)}>下载</button><button title="插入附件引用" onClick={()=>insertSnippet(attachmentMarkdown(file))}><Plus/></button><button className="danger" onClick={()=>void deleteAttachment({id:file.id},true)}><Trash2/></button></article>)}
           {!cloudAttachmentLoading&&!(draft.attachments?.length)&&!remoteOnlyAttachments.length&&<small>暂无附件</small>}
         </section>
-      </aside>
+      </aside>}
     </div>
     {historyOpen&&<aside className="nt-history"><header><div><History/><strong>版本历史</strong></div><button onClick={()=>setHistoryOpen(false)}><X/></button></header>{revisions.length===0?<p>手动保存后会在这里保留快照。</p>:revisions.map(revision=><article key={revision.id}><div><strong>版本 {revision.version}</strong><small>{formatTime(revision.createdAt)}</small></div><p>{revision.contentMarkdown.slice(0,120)||"空白版本"}</p><button onClick={async()=>{if(!confirm("恢复此版本？当前内容会先保存为快照。"))return;const restored=await noteApi.restoreRevision(revision.id);onSaved(restored);setDraft(restored);setMarkdown(markdownSource(restored));setProperties(readNoteProperties(restored.contentJson));setHistoryOpen(false);notify("历史版本已恢复")}}>恢复</button></article>)}</aside>}
   </section>;
