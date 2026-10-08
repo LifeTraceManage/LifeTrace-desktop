@@ -1,15 +1,19 @@
 # Map of Us attribution
 
-LifeTrace Footprints uses the China province boundary dataset from the open-source
-**Map of Us** project as a geographic rendering reference/data source.
+LifeTrace Footprints uses geographic data adapted from the open-source
+**Map of Us** project as its province-map rendering/data source.
 
 Source repository: `WuSuBuDuoMing/map`  
 Upstream copyright: Copyright (c) 2024-2026 WuSuBuDuoMing  
 License: MIT
 
-The copied dataset is stored at:
+The adapted datasets are stored at:
 
-- `src/assets/maps/china-provinces.json`
+- `src/assets/maps/china-provinces.json` — province boundaries derived from Map of Us `data/china-geo.json`
+- `src/assets/maps/china-city-points.json` — city names / province membership / coordinates derived from Map of Us `data/cities.ts`
+
+LifeTrace does not ship a separate prefecture-polygon dataset for Footprints. Province drill-down follows
+the Map of Us `ProvinceMap` model: render the selected province outline and project city nodes by longitude/latitude.
 
 MIT License
 
