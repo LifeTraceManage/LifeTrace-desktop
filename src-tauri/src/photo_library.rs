@@ -311,7 +311,7 @@ fn index_snapshot(data_dir: &Path, snapshot: &LibrarySnapshot) -> Result<(usize,
     let mut changed = 0;
     let mut cleaned = 0;
     let mut indexed = HashSet::new();
-    let allowed: Vec<PathBuf> = snapshot.roots.iter().map(|root| PathBuf::from(&root.path)).collect();
+    let allowed: Vec<PathBuf> = roots(data_dir)?.iter().map(|root| PathBuf::from(&root.path)).collect();
 
     for photo in &snapshot.photos {
         let original = Path::new(&photo.path);
@@ -566,4 +566,117 @@ mod tests {
         assert!(result.is_err());
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn indexes_local_metadata_without_copying_originals() {
+        let dir = std::env::temp_dir().join(format!("lifetrace-local-index-{}", uuid::Uuid::new_v4()));
+        let data = dir.join("data");
+        let photos = dir.join("Pictures");
+        fs::create_dir_all(&photos).unwrap();
+        let file = photos.join("sample.jpg");
+        image::RgbImage::from_pixel(4, 4, image::Rgb([20, 40, 60])).save(&file).unwrap();
+        let bytes = fs::read(&file).unwrap();
+        add_folder(&data, photos.to_string_lossy().to_string()).unwrap();
+        let snapshot = library_scan(&data).unwrap();
+        assert_eq!(index_snapshot(&data, &snapshot).unwrap(), (1, 0));
+        assert_eq!(index_snapshot(&data, &snapshot).unwrap(), (0, 0));
+        assert_eq!(fs::read(&file).unwrap(), bytes);
+
+        let db = crate::database::connection::open(&data.join("lifetrace.db")).unwrap();
+        let (storage, name, width, height, gps): (String, String, Option<i64>, Option<i64>, Option<f64>) =
+            db.query_row(
+                "SELECT storage_type,original_file_name,width,height,latitude FROM photos
+                 WHERE local_file_path=?1", [file.to_string_lossy().to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            ).unwrap();
+        assert_eq!(storage, "local");
+        assert_eq!(name, "sample.jpg");
+        assert_eq!((width, height), (Some(4), Some(4)));
+        assert!(gps.is_none());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn verified_import_duplicate_is_deleted_and_footprint_link_migrated() {
+        let dir = std::env::temp_dir().join(format!("lifetrace-dedup-{}", uuid::Uuid::new_v4()));
+        let data = dir.join("data");
+        let originals = data.join("photos").join("originals");
+        let pictures = dir.join("Pictures");
+        fs::create_dir_all(&originals).unwrap();
+        fs::create_dir_all(&pictures).unwrap();
+        let source = pictures.join("same.jpg");
+        image::RgbImage::from_pixel(4, 4, image::Rgb([100, 140, 180])).save(&source).unwrap();
+        let old = originals.join("old.jpg");
+        fs::copy(&source, &old).unwrap();
+        let hash = sha256_file(&source).unwrap();
+
+        let db = crate::database::connection::open(&data.join("lifetrace.db")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE footprint_entry_photos (
+                entry_id TEXT NOT NULL,photo_id TEXT NOT NULL,
+                sort_order INTEGER NOT NULL,is_cover INTEGER NOT NULL,
+                created_at TEXT NOT NULL,PRIMARY KEY(entry_id,photo_id)
+            );"
+        ).unwrap();
+        crate::server::photo::ensure_schema(&db).unwrap();
+        db.execute(
+            "INSERT INTO photos(id,content_hash,original_file_name,stored_file_name,original_path,
+                media_type,mime_type,file_size,imported_at,processing_status)
+              VALUES('old',?1,'same.jpg','old.jpg','originals/old.jpg','image','image/jpeg',?2,
+                '2026-01-01T00:00:00Z','completed')",
+            params![hash, fs::metadata(&old).unwrap().len() as i64],
+        ).unwrap();
+        db.execute(
+            "INSERT INTO footprint_entry_photos VALUES('trip','old',0,1,'2026-01-01')", [],
+        ).unwrap();
+        drop(db);
+
+        add_folder(&data, pictures.to_string_lossy().to_string()).unwrap();
+        let snapshot = library_scan(&data).unwrap();
+        assert_eq!(index_snapshot(&data, &snapshot).unwrap(), (1, 1));
+        assert!(source.is_file(), "the local original must remain intact");
+        assert!(!old.exists(), "only the verified imported copy is removed");
+
+        let db = crate::database::connection::open(&data.join("lifetrace.db")).unwrap();
+        let old_count: i64 = db.query_row(
+            "SELECT COUNT(*) FROM photos WHERE id='old'", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(old_count, 0);
+        let linked_source: String = db.query_row(
+            "SELECT p.storage_type FROM photos p JOIN footprint_entry_photos ep ON p.id=ep.photo_id
+             WHERE ep.entry_id='trip'", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(linked_source, "local");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unmatched_old_import_remains_untouched() {
+        let dir = std::env::temp_dir().join(format!("lifetrace-unmatched-{}", uuid::Uuid::new_v4()));
+        let data = dir.join("data");
+        let originals = data.join("photos").join("originals");
+        let pictures = dir.join("Pictures");
+        fs::create_dir_all(&originals).unwrap();
+        fs::create_dir_all(&pictures).unwrap();
+        let new_file = pictures.join("new.jpg");
+        image::RgbImage::from_pixel(2, 2, image::Rgb([0, 255, 0])).save(&new_file).unwrap();
+        let old = originals.join("unique.jpg");
+        fs::write(&old, b"an original without a matching local file").unwrap();
+        let hash = sha256_file(&old).unwrap();
+        let db = crate::database::connection::open(&data.join("lifetrace.db")).unwrap();
+        crate::server::photo::ensure_schema(&db).unwrap();
+        db.execute(
+            "INSERT INTO photos(id,content_hash,original_file_name,stored_file_name,original_path,
+                media_type,file_size,imported_at,processing_status)
+              VALUES('old',?1,'unique.jpg','unique.jpg','originals/unique.jpg','image',?2,
+                '2026-01-01T00:00:00Z','completed')",
+            params![hash, fs::metadata(&new_file).unwrap().len() as i64],
+        ).unwrap();
+        drop(db);
+        add_folder(&data, pictures.to_string_lossy().to_string()).unwrap();
+        let snap = library_scan(&data).unwrap();
+        assert_eq!(index_snapshot(&data, &snap).unwrap(), (1, 0));
+        assert!(old.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }
