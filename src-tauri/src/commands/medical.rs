@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn commits_original_image_report_and_numeric_results_once() {
         use crate::database::migration_runner::{Migration, MigrationContext};
-        use crate::database::migrations::M0022MedicalReports;
+        use crate::database::migrations::{M0022MedicalReports, M0023MedicalReportRevisions};
 
         let dir=std::env::temp_dir().join(format!("lifetrace-medical-test-{}",Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
@@ -631,6 +631,7 @@ mod tests {
                 INSERT INTO local_profiles VALUES('local');").unwrap();
             let tx=db.transaction().unwrap();
             M0022MedicalReports.up(&tx,&MigrationContext::new(dir.clone())).unwrap();
+            M0023MedicalReportRevisions.up(&tx,&MigrationContext::new(dir.clone())).unwrap();
             tx.commit().unwrap();
         }
         let image=vec![0xff,0xd8,0xff,0xe0,1,2,3,4];
@@ -693,6 +694,43 @@ mod tests {
         let stored=fs::read_dir(&asset_dir).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
         assert_eq!(stored.len(),1);
         assert_eq!(fs::read(stored[0].path()).unwrap(),image);
+        let persistent_id:String=open_db(&dir).unwrap().query_row(
+            "SELECT id FROM medical_report_assets LIMIT 1",[],|r|r.get(0)
+        ).unwrap();
+        let proposed = serde_json::json!({"reports":[{
+            "title":"血检（复核后）","reportType":"laboratory","examAt":"2026-10-08",
+            "facility":"测试医院","sourceAssetIds":[persistent_id],
+            "sections":[],
+            "observations":[{"nameRaw":"ALT","valueRaw":"36.0","valueNumber":36.0,
+                "kind":"numeric","unitRaw":"U/L","referenceRangeRaw":"9-60",
+                "sourceAssetId":persistent_id,"pageIndex":0}]
+        }]});
+        let change = || MedicalReplaceInput{
+            report_id:first[0].id.clone(),
+            idempotency_key:"reviewed-revision-123".into(),
+            draft:proposed.clone(),
+        };
+        let result=replace_report(&dir,change()).unwrap();
+        assert_eq!(result.id,first[0].id);
+        assert_eq!(result.title,"血检（复核后）");
+        assert_eq!(replace_report(&dir,change()).unwrap().id,first[0].id);
+        let db=open_db(&dir).unwrap();
+        let revision_count:i64=db.query_row(
+            "SELECT count(*) FROM medical_report_revisions",[],|r|r.get(0)
+        ).unwrap();
+        assert_eq!(revision_count,1);
+        let old:String=db.query_row(
+            "SELECT old_content_json FROM medical_report_revisions LIMIT 1",[],|r|r.get(0)
+        ).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&old).unwrap()["observations"][0]["valueRaw"],"89.0");
+        let updated:f64=db.query_row(
+            "SELECT value_number FROM medical_observations",[],|r|r.get(0)
+        ).unwrap();
+        assert_eq!(updated,36.0);
+        let count:i64=db.query_row("SELECT count(*) FROM medical_report_assets",[],|r|r.get(0)).unwrap();
+        assert_eq!(count,1);
+        assert_eq!(fs::read(stored[0].path()).unwrap(),image);
+        drop(db);
         fs::remove_dir_all(dir).unwrap();
     }
 
