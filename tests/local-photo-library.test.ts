@@ -73,3 +73,15 @@ test("local photo lightbox displays full portrait and landscape images inside th
   assert.match(modalStyles, /object-fit:contain;object-position:center/);
   assert.match(modalStyles, /@media\(max-width:620px\)/);
 });
+
+test("local gallery has no introduction banner and keeps folder management in the photo toolbar", () => {
+  const gallery = read("src/components/LocalPhotoLibrary.tsx");
+  assert.doesNotMatch(gallery, /photo-sync-hero|电脑本地图库|在这里查看电脑中的照片/);
+  const toolbar = gallery.slice(gallery.indexOf('className="photo-section-actions"'));
+  assert.match(toolbar, /addFolder\(\)/);
+  assert.match(toolbar, /添加照片文件夹/);
+  assert.match(toolbar, /folderBusy \|\| busy/);
+  assert.match(gallery, /className="local-photo-folders"/);
+  assert.match(toolbar, /搜索照片/);
+  assert.match(toolbar, /刷新/);
+});
