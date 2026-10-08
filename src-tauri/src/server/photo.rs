@@ -31,10 +31,10 @@ impl Runtime {
 }
 
 #[derive(Debug, Clone, Default)]
-struct PhotoExifMetadata {
-    captured_at: Option<String>,
-    latitude: Option<f64>,
-    longitude: Option<f64>,
+pub(crate) struct PhotoExifMetadata {
+    pub(crate) captured_at: Option<String>,
+    pub(crate) latitude: Option<f64>,
+    pub(crate) longitude: Option<f64>,
 }
 
 fn exif_ascii(value: &ExifValue) -> Option<String> {
@@ -117,7 +117,7 @@ fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
     photo_exif_metadata(&exif)
 }
 
-fn read_exif_metadata_from_path(path: &Path) -> PhotoExifMetadata {
+pub(crate) fn read_exif_metadata_from_path(path: &Path) -> PhotoExifMetadata {
     let Ok(file) = std::fs::File::open(path) else {
         return PhotoExifMetadata::default();
     };
@@ -247,7 +247,8 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
            stored_file_name TEXT NOT NULL,original_path TEXT NOT NULL,thumbnail_path TEXT,
            media_type TEXT NOT NULL,mime_type TEXT,file_size INTEGER NOT NULL,width INTEGER,
            height INTEGER,duration_ms INTEGER,captured_at TEXT,latitude REAL,longitude REAL,exif_scanned_at TEXT,imported_at TEXT NOT NULL,
-           processing_status TEXT NOT NULL,processing_error TEXT,source_device_id TEXT,deleted_at TEXT
+           processing_status TEXT NOT NULL,processing_error TEXT,source_device_id TEXT,deleted_at TEXT,
+           storage_type TEXT NOT NULL DEFAULT 'managed',local_file_path TEXT,local_modified_at INTEGER
          );
          CREATE TABLE IF NOT EXISTS photo_sync_devices(
            id TEXT PRIMARY KEY,device_name TEXT NOT NULL,device_type TEXT NOT NULL,
@@ -273,6 +274,9 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
         ("latitude", "ALTER TABLE photos ADD COLUMN latitude REAL"),
         ("longitude", "ALTER TABLE photos ADD COLUMN longitude REAL"),
         ("exif_scanned_at", "ALTER TABLE photos ADD COLUMN exif_scanned_at TEXT"),
+        ("storage_type", "ALTER TABLE photos ADD COLUMN storage_type TEXT NOT NULL DEFAULT 'managed'"),
+        ("local_file_path", "ALTER TABLE photos ADD COLUMN local_file_path TEXT"),
+        ("local_modified_at", "ALTER TABLE photos ADD COLUMN local_modified_at INTEGER"),
     ] {
         let exists: i64 = connection.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name=?1",
@@ -293,7 +297,9 @@ pub fn ensure_schema(connection: &Connection) -> rusqlite::Result<()> {
              AND media_type='image'
              AND processing_status='completed';
          CREATE INDEX IF NOT EXISTS photos_geo_idx ON photos(latitude,longitude,captured_at)
-           WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;"
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND deleted_at IS NULL;
+         CREATE UNIQUE INDEX IF NOT EXISTS photos_local_path_idx ON photos(local_file_path)
+           WHERE storage_type='local' AND local_file_path IS NOT NULL;"
     )?;
     let footprint_links_exist: i64 = connection.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='footprint_entry_photos'",
@@ -402,12 +408,12 @@ fn rows(
 
 fn dashboard(connection: &Connection, page: usize, page_size: usize) -> Result<Value, String> {
     let offset = (page - 1) * page_size;
-    let photos = rows(connection, "SELECT p.id,p.original_file_name,p.media_type,p.mime_type,p.file_size,p.width,p.height,p.duration_ms,p.captured_at,p.imported_at,p.processing_status,p.processing_error,d.device_name FROM photos p LEFT JOIN photo_sync_devices d ON d.id=p.source_device_id WHERE p.deleted_at IS NULL AND p.processing_status <> 'hiding' ORDER BY COALESCE(p.captured_at,p.imported_at) DESC LIMIT ?1 OFFSET ?2", &[&(page_size as i64), &(offset as i64)])?;
+    let photos = rows(connection, "SELECT p.id,p.original_file_name,p.media_type,p.mime_type,p.file_size,p.width,p.height,p.duration_ms,p.captured_at,p.imported_at,p.processing_status,p.processing_error,d.device_name FROM photos p LEFT JOIN photo_sync_devices d ON d.id=p.source_device_id WHERE p.deleted_at IS NULL AND p.storage_type <> 'local' AND p.processing_status <> 'hiding' ORDER BY COALESCE(p.captured_at,p.imported_at) DESC LIMIT ?1 OFFSET ?2", &[&(page_size as i64), &(offset as i64)])?;
     let devices = rows(connection, "SELECT id,device_name,device_type,status,paired_at,last_seen_at,revoked_at FROM photo_sync_devices ORDER BY paired_at DESC", &[])?;
     let tasks = rows(connection, "SELECT id,device_id,original_file_name,expected_file_size,received_file_size,status,photo_id,created_at,updated_at,error_code,error_message FROM photo_upload_tasks WHERE status NOT IN ('completed','expired') ORDER BY updated_at DESC LIMIT 100", &[])?;
     let total: i64 = connection
         .query_row(
-            "SELECT COUNT(*) FROM photos WHERE deleted_at IS NULL AND processing_status <> 'hiding'",
+            "SELECT COUNT(*) FROM photos WHERE deleted_at IS NULL AND storage_type <> 'local' AND processing_status <> 'hiding'",
             [],
             |row| row.get(0),
         )
@@ -468,51 +474,81 @@ pub async fn media(
     State(state): State<AppState>,
     AxumPath((photo_id, kind)): AxumPath<(String, String)>,
 ) -> Response {
+    if !matches!(kind.as_str(), "thumbnail" | "original") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let media = {
         let connection = match state.database.lock() {
             Ok(value) => value,
             Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
         connection.query_row(
-            "SELECT original_path,thumbnail_path,mime_type,original_file_name FROM photos WHERE id=?1 AND deleted_at IS NULL",
+            "SELECT original_path,thumbnail_path,mime_type,original_file_name,storage_type,local_file_path
+             FROM photos WHERE id=?1 AND deleted_at IS NULL AND processing_status='completed'",
             [&photo_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Option<String>>(2)?, row.get::<_, String>(3)?)),
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            )),
         ).optional()
     };
-    let Ok(Some((original, thumbnail, mime, file_name))) = media else {
+    let Ok(Some((original, thumbnail, mime, file_name, storage_type, local_path))) = media else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let relative = if kind == "thumbnail" {
-        thumbnail.unwrap_or(original)
+    let response = if storage_type == "local" {
+        let Some(local_path) = local_path else { return StatusCode::NOT_FOUND.into_response() };
+        let data_dir = state.data_dir.clone();
+        // Never expose a database path directly: re-check the authorized library roots
+        // at request time, including after a user removes a folder.
+        tokio::task::spawn_blocking(move || {
+            if kind == "thumbnail" {
+                crate::photo_library::preview_bytes_from_library(&data_dir, &local_path, "thumbnail")
+                    .map(|bytes| (bytes, "image/jpeg".to_owned()))
+            } else {
+                crate::photo_library::original_bytes_from_library(&data_dir, &local_path)
+            }
+        }).await
     } else {
-        original
+        let relative = if kind == "thumbnail" {
+            thumbnail.clone().unwrap_or_else(|| original.clone())
+        } else {
+            original
+        };
+        let path = state.data_dir.join("photos").join(relative);
+        let content_type = if kind == "thumbnail" && thumbnail.is_some() {
+            "image/jpeg".to_owned()
+        } else {
+            mime.unwrap_or_else(|| "application/octet-stream".to_owned())
+        };
+        return match fs::read(path).await {
+            Ok(bytes) => photo_response(bytes, content_type, &file_name),
+            Err(_) => StatusCode::NOT_FOUND.into_response(),
+        };
     };
-    let path = state.data_dir.join("photos").join(relative);
-    match fs::read(path).await {
-        Ok(bytes) => (
-            StatusCode::OK,
-            [
-                (
-                    header::CONTENT_TYPE,
-                    if kind == "thumbnail" {
-                        "image/jpeg".to_owned()
-                    } else {
-                        mime.unwrap_or_else(|| "application/octet-stream".to_owned())
-                    },
-                ),
-                (
-                    header::CONTENT_DISPOSITION,
-                    format!("inline; filename=\"{}\"", file_name.replace('"', "")),
-                ),
-                (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
-            ],
-            bytes,
-        )
-            .into_response(),
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    match response {
+        Ok(Ok((bytes, mime_type))) => photo_response(bytes, mime_type, &file_name),
+        _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
+fn photo_response(bytes: Vec<u8>, mime: String, file_name: &str) -> Response {
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{}\"", file_name.replace(['"', '\r', '\n'], "")),
+            ),
+            (header::CACHE_CONTROL, "private, max-age=3600".to_owned()),
+        ],
+        bytes,
+    ).into_response()
+}
 
 pub async fn serve_media(state: AppState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app = Router::new()
@@ -630,7 +666,7 @@ mod exif_tests {
 
         ensure_schema(&connection).unwrap();
 
-        for column in ["latitude", "longitude", "exif_scanned_at"] {
+        for column in ["latitude", "longitude", "exif_scanned_at", "storage_type", "local_file_path", "local_modified_at"] {
             let exists: i64 = connection.query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('photos') WHERE name=?1",
                 [column],
