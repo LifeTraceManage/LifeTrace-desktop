@@ -348,6 +348,52 @@ pub async fn medical_read_asset(state:State<'_,DesktopState>,id:String) -> Resul
     }).await.map_err(|_|"医疗附件读取任务中断".to_owned())?
 }
 
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MedicalMetricHistoryPoint {
+    pub report_id: String,
+    pub report_title: String,
+    pub exam_at: String,
+    pub value_number: f64,
+    pub unit_raw: String,
+}
+
+#[tauri::command]
+pub async fn medical_metric_history(
+    state: State<'_, DesktopState>,
+    name_raw: String,
+    unit_raw: String,
+) -> Result<Vec<MedicalMetricHistoryPoint>, String> {
+    if name_raw.trim().is_empty() || name_raw.len() > 200 || unit_raw.len() > 80 {
+        return Err("检查指标名称或单位无效".to_owned());
+    }
+    let dir = state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = open_db(&dir)?;
+        let user = profile_id(&db)?;
+        let mut stmt = db.prepare(
+            "SELECT r.id, r.title, r.exam_at, o.value_number, COALESCE(o.unit_raw,'')
+             FROM medical_observations o
+             JOIN medical_reports r ON o.report_id=r.id
+             WHERE r.user_id=?1 AND o.name_raw=?2 AND COALESCE(o.unit_raw,'')=?3
+               AND r.exam_at IS NOT NULL AND o.value_number IS NOT NULL
+             ORDER BY r.exam_at ASC, r.created_at ASC LIMIT 200"
+        ).map_err(|e|e.to_string())?;
+        let points = stmt.query_map(params![user, name_raw, unit_raw], |row| {
+            Ok(MedicalMetricHistoryPoint {
+                report_id: row.get(0)?,
+                report_title: row.get(1)?,
+                exam_at: row.get(2)?,
+                value_number: row.get(3)?,
+                unit_raw: row.get(4)?,
+            })
+        }).map_err(|e|e.to_string())?.collect::<Result<Vec<_>, _>>()
+            .map_err(|e|e.to_string())?;
+        Ok(points)
+    }).await.map_err(|_|"医疗指标趋势读取失败".to_owned())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
