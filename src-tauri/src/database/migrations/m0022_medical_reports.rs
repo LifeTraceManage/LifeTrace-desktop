@@ -41,6 +41,7 @@ impl Migration for M0022MedicalReports {
             relative_path TEXT NOT NULL,
             UNIQUE(batch_id,source_asset_id)
           );
+          CREATE UNIQUE INDEX IF NOT EXISTS medical_assets_user_sha256 ON medical_report_assets(user_id,sha256);
           CREATE TABLE IF NOT EXISTS medical_report_asset_links(
             report_id TEXT NOT NULL REFERENCES medical_reports(id) ON DELETE CASCADE,
             asset_id TEXT NOT NULL REFERENCES medical_report_assets(id) ON DELETE CASCADE,
