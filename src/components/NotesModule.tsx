@@ -2,6 +2,8 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
@@ -122,6 +124,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const [markdown,setMarkdown]=useState(()=>markdownSource(note));
+  const [editorMode,setEditorMode]=useState<"split"|"source"|"preview">("split");
   const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
   const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
   const editorRef=useRef<HTMLTextAreaElement>(null);
@@ -382,7 +385,11 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editSelection("[",`](${href})`,"链接文字")}}><LinkIcon/></EditorButton>
             <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址","https://");if(src?.startsWith("https://"))insertSnippet(`![图片](${src})`)}}><ImagePlus/></EditorButton>
           </div>
-          <textarea
+          <div className="nt-view-switch" role="group" aria-label="编辑显示模式">
+            {(["split","source","preview"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>setEditorMode(mode)}>{mode==="split"?"实时预览":mode==="source"?"源码编辑":"阅读模式"}</button>)}
+          </div>
+          <div className={`nt-edit-layout nt-mode-${editorMode}`}>
+          {editorMode!=="preview"&&<textarea
             ref={editorRef}
             className="nt-markdown-editor"
             data-testid="markdown-editor"
@@ -390,7 +397,23 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             onChange={event=>updateMarkdown(event.target.value)}
             placeholder="开始写下你的想法…支持 Markdown 与 [[Wiki Link]]"
             spellCheck
-          />
+            onKeyDown={event=>{
+              if(event.key==="Tab"){
+                event.preventDefault();
+                const field=event.currentTarget;
+                const start=field.selectionStart,end=field.selectionEnd;
+                updateMarkdown(markdown.slice(0,start)+"  "+markdown.slice(end));
+                requestAnimationFrame(()=>{field.focus();field.setSelectionRange(start+2,start+2)});
+              }
+            }}
+          />}
+          {editorMode!=="source"&&<div className="nt-markdown-preview" data-testid="markdown-live-preview" aria-label="Markdown 实时渲染预览">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={url=>/^(https?:|mailto:|attachment:|#|\/)/i.test(url)?url:""} components={{
+              a:({href,children})=>href?.startsWith("attachment:")?<span title={href}>{children}</span>:<a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+              img:({src,alt})=>src?.startsWith("attachment:")?<span className="nt-preview-attachment">{alt||"附件图片"}（在附件列表查看）</span>:<img src={src} alt={alt||""} loading="lazy" />,
+            }}>{markdown}</ReactMarkdown>
+          </div>}
+          </div>
         </div>
       </main>
       <aside className="nt-inspector" data-testid="notes-inspector">
