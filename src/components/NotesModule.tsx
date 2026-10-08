@@ -127,6 +127,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [editorMode,setEditorMode]=useState<"split"|"source"|"preview">("source");
   const [showFormatting,setShowFormatting]=useState(false);
   const [showInspector,setShowInspector]=useState(false);
+  const [inspectorTab,setInspectorTab]=useState<"outline"|"properties"|"links"|"relations"|"attachments">("outline");
   const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
   const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
   const editorRef=useRef<HTMLTextAreaElement>(null);
@@ -419,11 +420,12 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         </div>
       </main>
       {showInspector&&<aside className="nt-inspector" data-testid="notes-inspector">
-        <section className="nt-inspector-section">
+         <nav className="nt-inspector-tabs" aria-label="侧栏视图">{(["outline","properties","links","relations","attachments"] as const).map(tab=><button type="button" key={tab} className={inspectorTab===tab?"active":""} aria-pressed={inspectorTab===tab} onClick={()=>setInspectorTab(tab)}>{({outline:"大纲",properties:"属性",links:"链接",relations:"关联",attachments:"附件"} as const)[tab]}</button>)}</nav>
+        {inspectorTab==="outline"&&<section className="nt-inspector-section">
           <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
           <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.index)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
         </section>
-        <section className="nt-inspector-section">
+        {inspectorTab==="properties"&&<section className="nt-inspector-section">
           <header><Braces/><strong>属性</strong></header>
           <div className="nt-meta">
             <label><Folder/><span>文件夹</span><select value={draft.folderId??""} onChange={e=>patch({folderId:e.target.value||null})}><option value="">Inbox</option>{flattenFolders(folders).map(({folder,depth})=><option key={folder.id} value={folder.id}>{`${"— ".repeat(depth)}${folder.name}`}</option>)}</select></label>
@@ -435,24 +437,24 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <footer>创建 {formatTime(draft.createdAt)}<br/>更新 {formatTime(draft.updatedAt)} · v{draft.version}</footer>
           </div>
         </section>
-        <section className="nt-inspector-section">
+        {inspectorTab==="links"&&<section className="nt-inspector-section">
           <header><LinkIcon/><strong>知识链接</strong><span>{wikiLinks.length+backlinks.length}</span></header>
           <label className="nt-inspector-select"><span>插入 Wiki Link</span><select value="" onChange={e=>insertWikiLink(e.target.value)}><option value="">选择笔记…</option>{linkCandidates.map(item=><option key={item.id} value={item.id}>{titleOf(item)}</option>)}</select></label>
           <div className="nt-link-list"><strong>Links</strong>{wikiLinks.length?wikiLinks.map(link=><button key={link.id} disabled={!link.targetNoteId} onClick={()=>{if(link.targetNoteId)void onOpenNote(link.targetNoteId)}}>{link.resolved?"↗":"×"} {link.alias?link.alias:link.displayTitle}</button>):<small>正文输入 [[笔记标题]] 建立链接。</small>}</div>
           <div className="nt-link-list"><strong>Backlinks</strong>{backlinks.length?backlinks.map(link=><button key={link.id} onClick={()=>void onOpenNote(link.sourceNoteId)}>↩ {link.sourceTitle}</button>):<small>暂无反向链接</small>}</div>
         </section>
-        <section className="nt-inspector-section">
+        {inspectorTab==="relations"&&<section className="nt-inspector-section">
           <header><LinkIcon/><strong>关联数据</strong></header>
           <label className="nt-inspector-select"><select value="" onChange={e=>addRelation(e.target.value)}><option value="">添加习惯、训练或账单…</option>{relationOptions.map(x=><option key={`${x.type}:${x.id}`} value={`${x.type}:${x.id}`}>{x.label}</option>)}</select></label>
           {draft.relations.length>0&&<div className="nt-relations">{draft.relations.map(rel=><span key={rel.id}>{rel.entityType} · {rel.entityId.slice(0,8)}<button onClick={()=>patch({relations:draft.relations.filter(x=>x.id!==rel.id)})}><X/></button></span>)}</div>}
         </section>
-        <section className="nt-inspector-section nt-attachments">
+        {inspectorTab==="attachments"&&<section className="nt-inspector-section nt-attachments">
           <header><span><Paperclip/><strong>附件</strong></span><button onClick={()=>void attach()}><Plus/>添加</button></header>
           {cloudAttachmentLoading&&<small>正在读取云附件…</small>}
           {(draft.attachments??[]).map(file=>{const cloud=cloudAttachments.some(item=>item.id===file.id);return <article key={file.id}><File/><div><strong>{file.originalName}</strong><small>{(file.fileSize/1024).toFixed(1)} KB · {cloud?"云端 + 本机":"仅本机"}</small></div><button onClick={()=>void desktopNotes.openAttachment(note.id,file.fileName)}>打开</button>{cloud&&<button title="插入附件引用" onClick={()=>{const remote=cloudAttachments.find(item=>item.id===file.id);if(remote)insertSnippet(attachmentMarkdown(remote))}}><Plus/></button>}<button className="danger" onClick={()=>void deleteAttachment(file,cloud)}><Trash2/></button></article>})}
           {remoteOnlyAttachments.map(file=><article key={file.id}><Download/><div><strong>{file.originalName}</strong><small>{(file.sizeBytes/1024).toFixed(1)} KB · 云端</small></div><button onClick={()=>void downloadCloudAttachment(file)}>下载</button><button title="插入附件引用" onClick={()=>insertSnippet(attachmentMarkdown(file))}><Plus/></button><button className="danger" onClick={()=>void deleteAttachment({id:file.id},true)}><Trash2/></button></article>)}
           {!cloudAttachmentLoading&&!(draft.attachments?.length)&&!remoteOnlyAttachments.length&&<small>暂无附件</small>}
-        </section>
+        </section>}
       </aside>}
     </div>
     {historyOpen&&<aside className="nt-history"><header><div><History/><strong>版本历史</strong></div><button onClick={()=>setHistoryOpen(false)}><X/></button></header>{revisions.length===0?<p>手动保存后会在这里保留快照。</p>:revisions.map(revision=><article key={revision.id}><div><strong>版本 {revision.version}</strong><small>{formatTime(revision.createdAt)}</small></div><p>{revision.contentMarkdown.slice(0,120)||"空白版本"}</p><button onClick={async()=>{if(!confirm("恢复此版本？当前内容会先保存为快照。"))return;const restored=await noteApi.restoreRevision(revision.id);onSaved(restored);setDraft(restored);setMarkdown(markdownSource(restored));setProperties(readNoteProperties(restored.contentJson));setHistoryOpen(false);notify("历史版本已恢复")}}>恢复</button></article>)}</aside>}
