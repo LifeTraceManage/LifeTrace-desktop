@@ -62,7 +62,7 @@ export default function RichMarkdownEditor({ value, onChange }: Props) {
       Image.configure({ allowBase64: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Placeholder.configure({ placeholder: "开始写下你的想法… 输入 / 可以快速插入内容" }),
+      Placeholder.configure({ placeholder: "开始写下你的想法… 支持 Markdown 快捷输入" }),
     ],
     editorProps: {
       attributes: { class: "nt-rich-content", "aria-label": "笔记实时编辑区", spellcheck: "true" },
