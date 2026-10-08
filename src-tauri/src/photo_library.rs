@@ -269,7 +269,7 @@ fn remove_matching_managed_copy(
     };
     // Check the old managed file is still the same content. A stale DB hash must
     // never make us remove an unrelated edited copy.
-    if !old_original.is_file() || sha256_file(&old_original).ok().as_deref() != Some(&hash) {
+    if !old_original.is_file() || sha256_file(&old_original).ok().as_deref() != Some(hash.as_str()) {
         return Ok(0);
     }
     let txn = connection.transaction().map_err(|error| error.to_string())?;
