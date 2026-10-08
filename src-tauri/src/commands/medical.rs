@@ -279,9 +279,7 @@ fn commit(root: &Path, input: MedicalCommitInput) -> Result<Vec<SavedMedicalRepo
         validate_report(report,&sources)?;
         for id in report["sourceAssetIds"].as_array().ok_or("缺少报告源文件")? {
             let id = id.as_str().ok_or("附件来源格式不正确")?;
-            if !linked_sources.insert(id) {
-                // The same source may legitimately be included in more than one report.
-            }
+            linked_sources.insert(id);
         }
     }
     if linked_sources != sources {
