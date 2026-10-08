@@ -95,6 +95,9 @@ const easyTapProvinceCodes = new Set([
   "820000",
 ]);
 
+const chinaSource = rawChina as unknown as { type: string; features: AdminFeature[] };
+const cityPointData = rawCityPoints as { cities: CityPoint[] };
+
 function normalizeCityName(name: string) {
   return name
     .trim()
@@ -220,9 +223,8 @@ export default function ChinaMap({
   const maxProvinceVisits = Math.max(1, ...provinces.map((province) => province.visitCount));
   const maxCityVisits = Math.max(1, ...cities.map((city) => city.visitCount));
 
-  const source = rawChina as unknown as { type: string; features: AdminFeature[] };
   const provinceFeatures = useMemo(
-    () => source.features
+    () => chinaSource.features
       .filter((feature) =>
         feature.geometry
         && (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon")
@@ -233,7 +235,7 @@ export default function ChinaMap({
   );
 
   const countryGeometry = useMemo(() => {
-    const dash = source.features.find((feature) => String(feature.properties.adcode) === "100000_JD");
+    const dash = chinaSource.features.find((feature) => String(feature.properties.adcode) === "100000_JD");
     const projection = geoMercator().fitExtent(
       [[32, 24], [width - 32, height - 34]],
       featureCollection(provinceFeatures),
@@ -276,7 +278,7 @@ export default function ChinaMap({
       feature,
     );
     const path = geoPath(projection);
-    const points = (rawCityPoints as { cities: CityPoint[] }).cities
+    const points = cityPointData.cities
       .filter((city) => city.provinceCode === selectedProvinceCode)
       .map((city) => {
         const projected = projection([city.longitude, city.latitude]);
