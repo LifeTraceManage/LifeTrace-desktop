@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { renderToStaticMarkup } from "react-dom/server";
 import remarkGfm from "remark-gfm";
@@ -10,6 +10,11 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+
+export type RichMarkdownEditorHandle = {
+  insertText: (text: string) => void;
+  selectedText: () => string;
+};
 
 type Props = {
   value: string;
@@ -48,7 +53,7 @@ function toMarkdown(html: string): string {
 }
 
 /** Rich editing never touches contentMarkdown outside onChange. */
-export default function RichMarkdownEditor({ value, onChange }: Props) {
+const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, Props>(function RichMarkdownEditor({ value, onChange }, ref) {
   const onChangeRef = useRef(onChange);
   const lastEmitted = useRef<string | null>(null);
   onChangeRef.current = onChange;
@@ -74,6 +79,17 @@ export default function RichMarkdownEditor({ value, onChange }: Props) {
     },
   });
 
+  useImperativeHandle(ref, () => ({
+    insertText(text: string) {
+      editor?.chain().focus().insertContent(text).run();
+    },
+    selectedText() {
+      if (!editor) return "";
+      const { from, to } = editor.state.selection;
+      return editor.state.doc.textBetween(from, to, "\n").trim();
+    },
+  }), [editor]);
+
   useEffect(() => {
     if (!editor || value === lastEmitted.current) return;
     const nextHtml = toHtml(value);
@@ -96,4 +112,6 @@ export default function RichMarkdownEditor({ value, onChange }: Props) {
     </div>
     <EditorContent editor={editor} />
   </div>;
-}
+});
+
+export default RichMarkdownEditor;
