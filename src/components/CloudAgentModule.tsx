@@ -6,6 +6,7 @@ import {
   Cloud,
   LoaderCircle,
   MessageSquarePlus,
+  Paperclip,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -19,6 +20,42 @@ import {
   type CloudAgentMessage,
   type CloudAgentSession,
 } from "@/src/services/cloudAgentApi";
+import MedicalImportReview from "@/src/components/MedicalImportReview";
+import {
+  medicalReportApi, type MedicalImageInput, type MedicalExtractReply,
+} from "@/src/services/medicalReportApi";
+
+type PendingMedicalDraft = {
+  result: MedicalExtractReply;
+  images: MedicalImageInput[];
+  idempotencyKey: string;
+};
+const ACCEPTED_MEDICAL_IMAGES = new Set(["image/jpeg", "image/png", "image/webp"]);
+function fileData(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = reader.result;
+      if (typeof value !== "string" || !value.includes(",")) {
+        reject(new Error("图片读取失败"));
+      } else {
+        resolve(value.slice(value.indexOf(",") + 1));
+      }
+    };
+    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+function validateFiles(files: File[]): void {
+  if (!files.length || files.length > 8) throw new Error("一次最多上传 8 张报告图片");
+  if (files.some((file) => !ACCEPTED_MEDICAL_IMAGES.has(file.type))) {
+    throw new Error("目前支持 JPG、PNG 和 WebP 图片，PDF 将在后续版本支持");
+  }
+  if (files.some((file) => file.size > 5 * 1024 * 1024) ||
+      files.reduce((sum, file) => sum + file.size, 0) > 12 * 1024 * 1024) {
+    throw new Error("单张图片最大 5 MiB，每批不超过 12 MiB");
+  }
+}
 
 type VisibleMessage = Pick<CloudAgentMessage, "id" | "role" | "content" | "provider">;
 
@@ -44,6 +81,8 @@ export default function CloudAgentModule() {
   const [messages, setMessages] = useState<VisibleMessage[]>([]);
   const [approvals, setApprovals] = useState<CloudAgentApproval[]>([]);
   const [input, setInput] = useState("");
+  const [reportFiles, setReportFiles] = useState<File[]>([]);
+  const [medicalDraft, setMedicalDraft] = useState<PendingMedicalDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState("");
@@ -74,7 +113,7 @@ export default function CloudAgentModule() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, medicalDraft]);
 
   const openSession = async (id: string) => {
     if (loading) return;
@@ -101,6 +140,8 @@ export default function CloudAgentModule() {
     setMessages([]);
     setApprovals([]);
     setInput("");
+    setReportFiles([]);
+    setMedicalDraft(null);
     setError("");
   };
 
@@ -126,7 +167,40 @@ export default function CloudAgentModule() {
 
   const send = async () => {
     const prompt = input.trim();
-    if (!prompt || loading) return;
+    if (loading || medicalDraft || (!prompt && !reportFiles.length)) return;
+    if (reportFiles.length) {
+      const imagesToSend = reportFiles;
+      try {
+        validateFiles(imagesToSend);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "检查报告附件不符合限制");
+        return;
+      }
+      if (!window.confirm("医疗报告包含隐私信息。是否允许将这些图片临时发送给 LifeTrace-cloud 和配置的视觉模型服务进行识别？识别后将以未加密的形式保存在本机。")) return;
+      setError("");
+      setLoading(true);
+      try {
+        const images = await Promise.all(imagesToSend.map(async (file) => ({
+          assetId: crypto.randomUUID(),
+          originalName: file.name,
+          mimeType: file.type,
+          base64: await fileData(file),
+        })));
+        const result = await cloudAgentApi.extractMedicalReports(images);
+        setReportFiles([]);
+        setInput("");
+        setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID() });
+        setMessages((current) => [...current, {
+          id: crypto.randomUUID(), role: "user",
+          content: `提交了 ${images.length} 张医疗报告图片进行识别（图片内容不保存到云端会话）。`,
+        }]);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "医疗检查报告识别失败");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     setInput("");
     setError("");
     setMessages((current) => [
@@ -154,6 +228,26 @@ export default function CloudAgentModule() {
       setApprovals(nextApprovals);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "云端 Agent 暂时无法回答");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmMedical = async () => {
+    if (!medicalDraft || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const saved = await medicalReportApi.commitDraft(
+        medicalDraft.result, medicalDraft.images, medicalDraft.idempotencyKey,
+      );
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(), role: "assistant",
+        content: `已在本机归档 ${saved.length} 份医疗检查报告。请到「健康」查看原图和结构化结果。`,
+      }]);
+      setMedicalDraft(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "本机归档失败，可再次点击确认重试");
     } finally {
       setLoading(false);
     }
@@ -226,6 +320,13 @@ export default function CloudAgentModule() {
           <div ref={bottomRef}/>
         </div>
 
+        {medicalDraft ? <MedicalImportReview
+          draft={medicalDraft.result}
+          disabled={loading}
+          onConfirm={() => void confirmMedical()}
+          onDiscard={() => setMedicalDraft(null)}
+        /> : null}
+
         {approvals.some((item) => item.status === "pending") ? (
           <section className="lt-cloud-agent-approvals">
             <header><ShieldCheck/><strong>等待你的确认</strong></header>
@@ -243,7 +344,16 @@ export default function CloudAgentModule() {
 
         {error ? <div className="lt-cloud-agent-error" role="alert">{error}<button type="button" onClick={() => setError("")}><X/></button></div> : null}
 
-        <form className="lt-cloud-agent-composer" onSubmit={(event) => { event.preventDefault(); void send(); }}>
+        <form className="lt-cloud-agent-composer"
+          onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (loading || medicalDraft) return;
+            const files = Array.from(event.dataTransfer.files);
+            try { validateFiles(files); setReportFiles(files); setError(""); }
+            catch (cause) { setError(cause instanceof Error ? cause.message : "无法添加医疗附件"); }
+          }}
+          onSubmit={(event) => { event.preventDefault(); void send(); }}>
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -257,8 +367,24 @@ export default function CloudAgentModule() {
             placeholder="给云端 Agent 一个任务…"
             disabled={loading}
           />
+          <label title="选择医疗报告图片" style={{ cursor: loading || medicalDraft ? "not-allowed" : "pointer" }}>
+            <Paperclip/>
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple
+              aria-label="选择医疗报告图片" style={{ display: "none" }} disabled={loading || !!medicalDraft}
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                try { validateFiles(files); setReportFiles(files); setError(""); }
+                catch (cause) { setError(cause instanceof Error ? cause.message : "无法添加医疗附件"); }
+              }}
+            />
+          </label>
+          {reportFiles.length ? <span title={reportFiles.map((f) => f.name).join("、")} style={{ fontSize: 12 }}>
+            {reportFiles.length} 张报告
+            <button type="button" title="清除待上传报告" disabled={loading} onClick={() => setReportFiles([])}>×</button>
+          </span> : null}
           <button type="button" title="刷新会话" disabled={loading} onClick={() => void refreshSessions().catch((cause) => setError(cause instanceof Error ? cause.message : "刷新失败"))}><RefreshCw/></button>
-          <button type="submit" className="primary" disabled={loading || !input.trim()}><ArrowUp/></button>
+          <button type="submit" className="primary" disabled={loading || !!medicalDraft || (!input.trim() && !reportFiles.length)}><ArrowUp/></button>
         </form>
       </div>
     </section>
