@@ -1,15 +1,17 @@
 import type { MedicalExtractReply } from "@/src/services/medicalReportApi";
-import { AlertTriangle, Check, FileText, X } from "lucide-react";
+import { AlertTriangle, Check, FileText, RefreshCw, X } from "lucide-react";
 
 type Props = {
   draft: MedicalExtractReply;
   disabled: boolean;
   onConfirm: () => void;
   onDiscard: () => void;
+  onReextract: () => void;
+  correction: string;
 };
 
 /** Review happens locally, never in persistent cloud Agent messages. */
-export default function MedicalImportReview({ draft, disabled, onConfirm, onDiscard }: Props) {
+export default function MedicalImportReview({ draft, disabled, onConfirm, onDiscard, onReextract, correction }: Props) {
   return <section className="lt-cloud-agent-approvals" aria-label="医疗检查报告归档预览">
     <header><FileText/><strong>检查报告识别结果 · 待确认归档</strong></header>
     <p>以下内容由视觉模型直接从图片提取，可能存在遗漏或识别错误。请对照原报告核对后再保存。</p>
@@ -40,9 +42,10 @@ export default function MedicalImportReview({ draft, disabled, onConfirm, onDisc
       </div>
     </article>)}
     <div style={{ display: "flex", justifyContent: "end", gap: 10 }}>
+      <button type="button" className="secondary" disabled={disabled || !correction.trim()} onClick={onReextract}><RefreshCw/>按说明重新识别</button>
       <button type="button" className="secondary" disabled={disabled} onClick={onDiscard}><X/>丢弃草稿</button>
       <button type="button" className="primary" disabled={disabled} onClick={onConfirm}><Check/>确认归档到本机</button>
     </div>
-    <small>医疗数据和原始图片将直接保存到本机普通文件与 SQLite，不加密、不进行常规云同步。</small>
+    <small>识别有误时，在下方对话输入更正说明，再点击“按说明重新识别”；会重新发送本批报告图片。确认后医疗数据和原图保存在本机普通文件与 SQLite，不加密、不进行常规云同步。</small>
   </section>;
 }
