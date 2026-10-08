@@ -1,0 +1,48 @@
+import type { MedicalExtractReply } from "@/src/services/medicalReportApi";
+import { AlertTriangle, Check, FileText, X } from "lucide-react";
+
+type Props = {
+  draft: MedicalExtractReply;
+  disabled: boolean;
+  onConfirm: () => void;
+  onDiscard: () => void;
+};
+
+/** Review happens locally, never in persistent cloud Agent messages. */
+export default function MedicalImportReview({ draft, disabled, onConfirm, onDiscard }: Props) {
+  return <section className="lt-cloud-agent-approvals" aria-label="医疗检查报告归档预览">
+    <header><FileText/><strong>检查报告识别结果 · 待确认归档</strong></header>
+    <p>以下内容由视觉模型直接从图片提取，可能存在遗漏或识别错误。请对照原报告核对后再保存。</p>
+    {draft.groupingWarnings.length ? <div role="alert">
+      <AlertTriangle/> {draft.groupingWarnings.join("；")}
+    </div> : null}
+    {draft.reports.map((report, index) => <article key={index}>
+      <div style={{ width: "100%", minWidth: 0 }}>
+        <strong>{report.title}</strong>
+        <small>{report.examAt || report.issuedAt || "日期未识别"} · {report.facility || "医疗机构未知"} · {report.reportType} · {report.sourceAssetIds.length} 张原图</small>
+        {report.reviewReasons?.length ? <p role="alert">待核对：{report.reviewReasons.join("；")}</p> : null}
+        {report.sections.map((section, j) => <details key={j} open={j === 0}>
+          <summary>{section.titleRaw || section.kind}</summary>
+          <p style={{ whiteSpace: "pre-wrap" }}>{section.textRaw}</p>
+        </details>)}
+        {report.observations.length ? <details open>
+          <summary>结构化检查结果（{report.observations.length} 项）</summary>
+          <div style={{ overflowX: "auto", maxHeight: "260px", overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr><th>项目</th><th>结果</th><th>单位</th><th>参考范围</th><th>标记</th></tr></thead>
+              <tbody>{report.observations.map((row, j) => <tr key={j}>
+                <td>{row.nameRaw}</td><td>{row.valueRaw}</td>
+                <td>{row.unitRaw || "—"}</td><td>{row.referenceRangeRaw || "—"}</td><td>{row.sourceFlag || "—"}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+        </details> : null}
+      </div>
+    </article>)}
+    <div style={{ display: "flex", justifyContent: "end", gap: 10 }}>
+      <button type="button" className="secondary" disabled={disabled} onClick={onDiscard}><X/>丢弃草稿</button>
+      <button type="button" className="primary" disabled={disabled} onClick={onConfirm}><Check/>确认归档到本机</button>
+    </div>
+    <small>医疗数据和原始图片将直接保存到本机普通文件与 SQLite，不加密、不进行常规云同步。</small>
+  </section>;
+}
