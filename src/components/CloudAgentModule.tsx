@@ -167,7 +167,11 @@ export default function CloudAgentModule() {
 
   const send = async () => {
     const prompt = input.trim();
-    if (loading || medicalDraft || (!prompt && !reportFiles.length)) return;
+    if (loading || (!prompt && !reportFiles.length)) return;
+    if (medicalDraft) {
+      await reextractMedical(prompt);
+      return;
+    }
     if (reportFiles.length) {
       const imagesToSend = reportFiles;
       try {
@@ -228,6 +232,25 @@ export default function CloudAgentModule() {
       setApprovals(nextApprovals);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "云端 Agent 暂时无法回答");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reextractMedical = async (instruction: string) => {
+    if (!medicalDraft || loading || !instruction.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await cloudAgentApi.extractMedicalReports(medicalDraft.images, instruction);
+      setMedicalDraft((current) => current ? { ...current, result } : current);
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(), role: "user",
+        content: "报告识别修正说明：" + instruction,
+      }]);
+      setInput("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "重新识别失败，原有草稿已保留");
     } finally {
       setLoading(false);
     }
@@ -325,6 +348,8 @@ export default function CloudAgentModule() {
           disabled={loading}
           onConfirm={() => void confirmMedical()}
           onDiscard={() => setMedicalDraft(null)}
+          onReextract={() => void reextractMedical(input)}
+          correction={input}
         /> : null}
 
         {approvals.some((item) => item.status === "pending") ? (
@@ -364,7 +389,7 @@ export default function CloudAgentModule() {
               }
             }}
             maxLength={4000}
-            placeholder="给云端 Agent 一个任务…"
+            placeholder={medicalDraft ? "输入识别更正说明，例如：第二张是第一页的续页" : "给云端 Agent 一个任务…"}
             disabled={loading}
           />
           <label title="选择医疗报告图片" style={{ cursor: loading || medicalDraft ? "not-allowed" : "pointer" }}>
@@ -384,7 +409,7 @@ export default function CloudAgentModule() {
             <button type="button" title="清除待上传报告" disabled={loading} onClick={() => setReportFiles([])}>×</button>
           </span> : null}
           <button type="button" title="刷新会话" disabled={loading} onClick={() => void refreshSessions().catch((cause) => setError(cause instanceof Error ? cause.message : "刷新失败"))}><RefreshCw/></button>
-          <button type="submit" className="primary" disabled={loading || !!medicalDraft || (!input.trim() && !reportFiles.length)}><ArrowUp/></button>
+          <button type="submit" className="primary" disabled={loading || (medicalDraft ? !input.trim() : (!input.trim() && !reportFiles.length))}><ArrowUp/></button>
         </form>
       </div>
     </section>
