@@ -384,6 +384,8 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <EditorButton title="待办列表" onClick={()=>prefixSelectionLines("- [ ] ")}><ListChecks/></EditorButton>
             <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editSelection("[",`](${href})`,"链接文字")}}><LinkIcon/></EditorButton>
             <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址","https://");if(src?.startsWith("https://"))insertSnippet(`![图片](${src})`)}}><ImagePlus/></EditorButton>
+            <EditorButton title="代码块" onClick={()=>editSelection("\`\`\`\n","\n\`\`\`","代码")}><Braces/></EditorButton>
+            <EditorButton title="表格" onClick={()=>insertSnippet("\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")}><ListTree/></EditorButton>
           </div>
           <div className="nt-view-switch" role="group" aria-label="编辑显示模式">
             {(["split","source","preview"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>setEditorMode(mode)}>{mode==="split"?"实时预览":mode==="source"?"源码编辑":"阅读模式"}</button>)}
