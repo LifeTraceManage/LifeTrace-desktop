@@ -1049,6 +1049,56 @@ mod tests {
     }
 
     #[test]
+    fn photo_picker_matches_local_library_modified_time_and_keeps_legacy_fallback() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::server::photo::ensure_schema(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO photos(
+                id,content_hash,original_file_name,stored_file_name,original_path,
+                media_type,file_size,captured_at,imported_at,processing_status,
+                storage_type,local_file_path,local_modified_at
+             ) VALUES
+               ('local-new','hash-local-new','new.jpg','new.jpg','',
+                'image',100,'2020-01-01T10:00:00','2026-10-08T00:00:00Z','completed',
+                'local','C:/Pictures/B.jpg',1800000000000000000),
+               ('local-tie','hash-local-tie','tie.jpg','tie.jpg','',
+                'image',100,NULL,'2026-10-08T00:00:00Z','completed',
+                'local','C:/Pictures/A.jpg',1800000000000000000),
+               ('managed','hash-managed','managed.jpg','managed.jpg','originals/managed.jpg',
+                'image',100,'2025-05-05T12:00:00','2026-10-08T00:00:00Z','completed',
+                'managed',NULL,NULL),
+               ('fallback-imported','hash-fallback','imported.jpg','imported.jpg','originals/imported.jpg',
+                'image',100,NULL,'2024-02-03T12:00:00Z','completed',
+                'managed',NULL,NULL),
+               ('local-old','hash-local-old','old.jpg','old.jpg','',
+                'image',100,'2030-01-01T00:00:00','2026-10-08T00:00:00Z','completed',
+                'local','C:/Pictures/old.jpg',1500000000000000000);
+            "
+        ).unwrap();
+
+        let (photos, total) = list_photos(&db, 1, 100, None).unwrap();
+        assert_eq!(total, 5);
+        assert_eq!(
+            photos.iter().map(|photo| photo.id.as_str()).collect::<Vec<_>>(),
+            ["local-tie", "local-new", "managed", "fallback-imported", "local-old"]
+        );
+        assert_eq!(photos[0].modified_at, Some(1_800_000_000));
+        assert_eq!(photos[1].modified_at, Some(1_800_000_000));
+        assert_eq!(photos[2].modified_at, None);
+        assert_eq!(photos[4].modified_at, Some(1_500_000_000));
+
+        // Pagination must not reshuffle ties; filtering must preserve the same order.
+        let first = list_photos(&db, 1, 2, None).unwrap().0;
+        let second = list_photos(&db, 2, 2, None).unwrap().0;
+        assert_eq!(first[0].id, "local-tie");
+        assert_eq!(first[1].id, "local-new");
+        assert_eq!(second[0].id, "managed");
+        let filtered = list_photos(&db, 1, 10, Some("new.jpg")).unwrap();
+        assert_eq!(filtered.1, 1);
+        assert_eq!(filtered.0[0].id, "local-new");
+    }
+
+    #[test]
     fn photo_suggestions_prefer_date_and_nearby_gps() {
         let connection = connection();
         let user = active_profile_id(&connection).unwrap();
