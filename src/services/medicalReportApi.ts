@@ -61,6 +61,12 @@ export type MedicalListItem = {
   attachmentCount: number;
 };
 export type SavedMedicalReport = { id: string; title: string };
+export type MedicalReportRevision = {
+  id: string;
+  changedAt: string;
+  previous: MedicalReportDraft;
+  updated: MedicalReportDraft;
+};
 export type MedicalDuplicateMatch = {
   sourceAssetId: string;
   existingReportId: string | null;
