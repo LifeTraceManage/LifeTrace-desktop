@@ -190,6 +190,12 @@ export default function CloudAgentModule() {
           mimeType: file.type,
           base64: await fileData(file),
         })));
+        const duplicates = await medicalReportApi.checkDuplicates(images);
+        if (duplicates.length) {
+          const existing = duplicates.map((item) => item.existingTitle || "已有归档文件")
+            .filter((item, index, all) => all.indexOf(item) === index);
+          throw new Error(`检测到 ${duplicates.length} 张已归档的相同原始图片（${existing.join("、")}），请勿重复导入。需要更正时请使用原记录。`);
+        }
         const result = await cloudAgentApi.extractMedicalReports(images, prompt);
         setReportFiles([]);
         setInput("");
