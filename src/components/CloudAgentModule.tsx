@@ -22,13 +22,14 @@ import {
 } from "@/src/services/cloudAgentApi";
 import MedicalImportReview from "@/src/components/MedicalImportReview";
 import {
-  medicalReportApi, type MedicalImageInput, type MedicalExtractReply,
+  medicalReportApi, type MedicalImageInput, type MedicalExtractReply, type MedicalListItem,
 } from "@/src/services/medicalReportApi";
 
 type PendingMedicalDraft = {
   result: MedicalExtractReply;
   images: MedicalImageInput[];
   idempotencyKey: string;
+  replaceReportId?: string;
 };
 const ACCEPTED_MEDICAL_IMAGES = new Set(["image/jpeg", "image/png", "image/webp"]);
 function fileData(file: File): Promise<string> {
@@ -83,6 +84,7 @@ export default function CloudAgentModule() {
   const [input, setInput] = useState("");
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [medicalDraft, setMedicalDraft] = useState<PendingMedicalDraft | null>(null);
+  const [archivedReports, setArchivedReports] = useState<MedicalListItem[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState("");
@@ -142,6 +144,7 @@ export default function CloudAgentModule() {
     setInput("");
     setReportFiles([]);
     setMedicalDraft(null);
+    setArchivedReports(null);
     setError("");
   };
 
@@ -262,17 +265,67 @@ export default function CloudAgentModule() {
     }
   };
 
+  const chooseArchivedMedical = async () => {
+    if (loading || medicalDraft) return;
+    setError("");
+    setLoading(true);
+    try {
+      setArchivedReports((await medicalReportApi.list()).slice(0, 40));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法列出已归档检查");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reviewArchivedMedical = async (id: string) => {
+    if (loading || medicalDraft) return;
+    if (!window.confirm("重新识别会将该报告原图再次发送给云端模型。更新后的结构化数据仅在你确认后保存，原始图片不会改变。是否继续？")) return;
+    setLoading(true);
+    setError("");
+    try {
+      const detail = await medicalReportApi.detail(id);
+      if (!detail.assets.length || detail.assets.length > 8) {
+        throw new Error("该记录的原图数量超出当前视觉模型支持范围");
+      }
+      const images: MedicalImageInput[] = await Promise.all(detail.assets.map(async (asset) => {
+        const raw = await medicalReportApi.readAsset(asset.id);
+        return { assetId: asset.id, originalName: raw.originalName, mimeType: raw.mimeType, base64: raw.base64 };
+      }));
+      const result = await cloudAgentApi.extractMedicalReports(images, input.trim() || "完整重新识别本报告，保留所有原文与检验指标");
+      if (result.reports.length !== 1) {
+        throw new Error("模型将图片识别成多份报告，不能直接覆盖原记录。请调整说明后重新尝试");
+      }
+      setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID(), replaceReportId: id });
+      setArchivedReports(null);
+      setInput("");
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(), role: "user",
+        content: "请求重新识别已归档报告：" + detail.report.title + "（源图仅用于这次识别，不写入聊天历史）",
+      }]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "重新识别已归档报告失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const confirmMedical = async () => {
     if (!medicalDraft || loading) return;
     setLoading(true);
     setError("");
     try {
-      const saved = await medicalReportApi.commitDraft(
-        medicalDraft.result, medicalDraft.images, medicalDraft.idempotencyKey,
-      );
+      const replacement = medicalDraft.replaceReportId;
+      const saved = replacement
+        ? [await medicalReportApi.replaceReport(replacement, medicalDraft.result, medicalDraft.idempotencyKey)]
+        : await medicalReportApi.commitDraft(
+            medicalDraft.result, medicalDraft.images, medicalDraft.idempotencyKey,
+          );
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), role: "assistant",
-        content: `已在本机归档 ${saved.length} 份医疗检查报告。请到「健康」查看原图和结构化结果。`,
+        content: replacement
+          ? "已更新原医疗检查记录的结构化结果，并保存修订历史；原始图片保持不变。"
+          : `已在本机归档 ${saved.length} 份医疗检查报告。请到「健康」查看原图和结构化结果。`,
       }]);
       setMedicalDraft(null);
     } catch (cause) {
@@ -349,6 +402,20 @@ export default function CloudAgentModule() {
           <div ref={bottomRef}/>
         </div>
 
+        {archivedReports ? <section className="lt-cloud-agent-approvals" aria-label="选择已归档报告重新识别">
+          <header><RefreshCw/><strong>选择要由 Agent 重新识别的报告</strong></header>
+          <p>选择记录后，Agent 将重新读取其原图。你可以先在下方输入更正说明，再选择报告。</p>
+          <div style={{ display: "flex", flexDirection: "column", maxHeight: 240, overflow: "auto", gap: 6 }}>
+            {archivedReports.length === 0 ? <p>还没有可重新识别的检查记录。</p> : null}
+            {archivedReports.map((item) => <button key={item.id} type="button" disabled={loading}
+              onClick={() => void reviewArchivedMedical(item.id)}
+              style={{ textAlign: "left", padding: 9, borderRadius: 6 }}>
+              {item.title} · {item.examAt || "日期未知"} · {item.attachmentCount} 张原图
+            </button>)}
+          </div>
+          <button type="button" disabled={loading} onClick={() => setArchivedReports(null)}>取消</button>
+        </section> : null}
+
         {medicalDraft ? <MedicalImportReview
           images={medicalDraft.images}
           draft={medicalDraft.result}
@@ -357,6 +424,7 @@ export default function CloudAgentModule() {
           onDiscard={() => setMedicalDraft(null)}
           onReextract={() => void reextractMedical(input)}
           correction={input}
+          replaceMode={!!medicalDraft.replaceReportId}
         /> : null}
 
         {approvals.some((item) => item.status === "pending") ? (
@@ -415,6 +483,10 @@ export default function CloudAgentModule() {
             {reportFiles.length} 张报告
             <button type="button" title="清除待上传报告" disabled={loading} onClick={() => setReportFiles([])}>×</button>
           </span> : null}
+          <button type="button" title="重新识别已有检查报告" disabled={loading || !!medicalDraft}
+            onClick={() => { if (archivedReports) setArchivedReports(null); else void chooseArchivedMedical(); }}>
+            <RefreshCw/>已存报告
+          </button>
           <button type="button" title="刷新会话" disabled={loading} onClick={() => void refreshSessions().catch((cause) => setError(cause instanceof Error ? cause.message : "刷新失败"))}><RefreshCw/></button>
           <button type="submit" className="primary" disabled={loading || (medicalDraft ? !input.trim() : (!input.trim() && !reportFiles.length))}><ArrowUp/></button>
         </form>
