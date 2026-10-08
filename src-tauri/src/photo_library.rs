@@ -235,7 +235,10 @@ fn managed_file(data_dir: &Path, relative: &str) -> Option<PathBuf> {
         return None;
     }
     if parts.next().is_none() { return None; }
-    Some(data_dir.join("photos").join(relative))
+    let root = fs::canonicalize(data_dir.join("photos")).ok()?;
+    let candidate = fs::canonicalize(data_dir.join("photos").join(relative)).ok()?;
+    if !candidate.starts_with(&root) || candidate == root { return None; }
+    Some(candidate)
 }
 
 /// Migrate existing footprint links and remove an old imported copy only after
@@ -269,7 +272,10 @@ fn remove_matching_managed_copy(
     };
     // Check the old managed file is still the same content. A stale DB hash must
     // never make us remove an unrelated edited copy.
-    if !old_original.is_file() || sha256_file(&old_original).ok().as_deref() != Some(hash.as_str()) {
+    if old_original == path ||
+        !old_original.is_file() ||
+        sha256_file(&old_original).ok().as_deref() != Some(hash.as_str())
+    {
         return Ok(0);
     }
     let txn = connection.transaction().map_err(|error| error.to_string())?;
