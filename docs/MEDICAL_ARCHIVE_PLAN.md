@@ -1,5 +1,7 @@
 # LifeTrace Desktop · Agent 驱动医疗检查报告归档方案
 
+> **存储决策更新（2026-10-08）**：用户明确不使用加密。原始图片作为普通本地文件保存，检查结果作为普通 SQLite 数据保存；无需 Medical Vault/密码/解锁。其他与此冲突的旧设计均由 [实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md) 取代。
+
 > **工程实施清单**：参见 [Agent 医疗报告归档实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md)。接口、安全、数据表、阶段任务及验收以实施方案为准。
 
 > 状态：方案更新（Agent-first；尚未实现）  
@@ -239,14 +241,14 @@ created_at
 1. Agent 生成经过 schema 校验的 `medical_exam.commit` 候选动作；
 2. Cloud 将一次性 `draft_token` / `draft_id` 和脱敏状态返回桌面端；
 3. 用户在桌面 Agent 对话界面确认；
-4. 桌面端从本机加密草稿读取结构化数据，调用 Tauri IPC `medical_exam_commit_draft`；
+4. 桌面端从会话内存中的识别草稿读取结构化数据，调用 Tauri IPC `medical_exam_commit_draft`；
 5. Rust 校验当前登录 profile、草稿所属会话、附件归属、重复提交 key；
-6. Rust 在事务中创建检查与结果，管理附件加密对象并反馈；
+6. Rust 在事务中创建检查与结果，管理原始本地文件并反馈；
 7. Desktop 仅在收到成功回执后显示“已归档”。
 
 草稿结构化数据需通过一次性安全响应交付并存入**本机受保护草稿存储**，不要长久塞在 Cloud 的 Agent 对话历史/审批 JSON 中。不能从 Cloud 向客户端 localhost 打开未经认证的反向写入通道，也不能相信模型可自行完成本机写入。
 
-未来如果确实要求跨设备共享，可另行设计 opt-in 的医疗专用加密同步；它不是本次 MVP 必须项。
+医疗数据默认 local-only，不使用普通云同步，未来跨设备同步另行规划。
 
 ### 5.1 运行时能力探测与纯视觉模型策略
 
@@ -306,11 +308,11 @@ Cloud Agent 应增加受策略约束的医疗场景能力；不得直接给通�
 
 ### 6.2 本地保存
 
-- 当前主 `lifetrace.db` 未加密；医疗正文/指标/原图需要独立安全存储设计；
-- 原图建议用 Vault 通用 AES-GCM encrypted object store（抽离图片专属语义）；
-- 敏感结构化内容使用字段级加密或独立加密 medical DB，不明文塞普通全局查询表；
-- 当用户锁定医疗数据时，禁止通过 Agent 历史、普通搜索或缓存泄漏已提取内容；
-- 允许本机加密备份和恢复；备份时包含数据与附件，验证 hash 与可读取性。
+- 按用户要求不加密：检查结果以普通数据写入 `lifetrace.db`，原图原样保存到 `data_dir/medical/originals/`；
+- 不需要 Medical Vault、SQLCipher、照片 Vault 密钥或医疗数据解锁；
+- 本机具备文件访问权限的程序和备份可能直接读取医疗数据，用户需知晓这一隐私取舍；
+- 不将医疗记录写入 Agent 通用聊天历史、普通云同步和普通全局索引；
+- 备份同时包含 SQLite 和原图目录，验证 SHA-256 与关联关系。
 
 ### 6.3 医疗准确性
 
@@ -375,7 +377,7 @@ type MedicalExamExtractionDraft = {
 - `src-tauri/src/commands/medical_exam.rs`：本机事务写入与查询；
 - `src-tauri/src/application/medical_exam.rs`：归档动作策略和幂等；
 - `src-tauri/src/database/repositories/medical_exam.rs`：数据持久化；
-- 数据库 migration、Medical Vault 扩展、备份和测试。
+- 数据库 migration、原始文件目录、备份和测试。
 
 **不再设计 `ExamForm.tsx` 一类手工创建界面作为入口。**
 
@@ -415,7 +417,7 @@ type MedicalExamExtractionDraft = {
 - [ ] 对话式修正与修订历史；
 - [ ] 血检/生化指标趋势；
 - [ ] PDF（原生多模态支持或按页渲染为图片）处理；
-- [ ] 加密备份与恢复；
+- [ ] 普通文件备份与恢复；
 - [ ] 权限、过期、取消、恢复及中断重试。
 
 ### P2 — 非必需增强
