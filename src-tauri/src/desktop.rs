@@ -52,52 +52,6 @@ pub fn desktop_open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn photo_status(state: State<'_, DesktopState>) -> Value {
-    json!({ "ok": true, "status": state.photo_runtime.status() })
-}
-
-#[tauri::command]
-pub fn photo_create_pairing(state: State<'_, DesktopState>) -> Value {
-    match state.photo_runtime.create_pairing() {
-        Ok(status) => json!({ "ok": true, "status": status }),
-        Err(error) => json!({ "ok": false, "error": error }),
-    }
-}
-
-#[tauri::command]
-pub fn photo_cancel_pairing(state: State<'_, DesktopState>, pair_code: String) -> Value {
-    state.photo_runtime.cancel_pairing(&pair_code);
-    json!({ "ok": true, "status": state.photo_runtime.status() })
-}
-
-#[tauri::command]
-pub fn photo_recover(state: State<'_, DesktopState>) -> Value {
-    json!({ "ok": true, "status": state.photo_runtime.status() })
-}
-
-#[tauri::command]
-pub fn photo_set_compatibility(state: State<'_, DesktopState>, enabled: bool) -> Value {
-    state.photo_runtime.set_compatibility(enabled);
-    json!({ "ok": true, "status": state.photo_runtime.status() })
-}
-
-#[tauri::command]
-pub async fn photo_export_certificate(
-    state: State<'_, DesktopState>,
-    destination: String,
-) -> Result<Value, String> {
-    fs::copy(state.photo_runtime.certificate_path(), &destination)
-        .await
-        .map_err(|value| value.to_string())?;
-    let mut status = state.photo_runtime.status();
-    if let Some(object) = status.as_object_mut() {
-        object.insert("certificateExported".to_owned(), json!(true));
-        object.insert("certificateExportPath".to_owned(), json!(destination));
-    }
-    Ok(json!({ "ok": true, "status": status }))
-}
-
-#[tauri::command]
 pub async fn note_copy_attachment(
     state: State<'_, DesktopState>,
     note_id: String,

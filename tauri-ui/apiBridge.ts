@@ -73,25 +73,20 @@ export function installTauriApiBridge() {
     },
     restart: () => relaunch(),
   };
-  const photoStatus = () => invoke<PhotoSyncDesktopResponse>("photo_status");
-  window.photoSyncApi = {
-    status: photoStatus,
-    createPairing: () => invoke<PhotoSyncDesktopResponse>("photo_create_pairing"),
-    cancelPairing: (pairCode) => invoke<PhotoSyncDesktopResponse>("photo_cancel_pairing", { pairCode }),
-    recover: () => invoke<PhotoSyncDesktopResponse>("photo_recover"),
-    async exportCertificate() {
-      const destination = await save({
-        defaultPath: "LifeTrace-Local-CA.cer",
-        filters: [{ name: "Certificate", extensions: ["cer"] }],
+  window.photoLibraryApi = {
+    scan: () => invoke("photo_library_scan"),
+    async addFolder() {
+      const path = await open({
+        directory: true,
+        multiple: false,
+        title: "选择要加入相册的照片文件夹",
       });
-      if (!destination) return { ok: false, error: "已取消导出" };
-      try {
-        return await invoke<PhotoSyncDesktopResponse>("photo_export_certificate", { destination });
-      } catch (error) {
-        return { ok: false, error: String(error) };
-      }
+      if (!path) return { canceled: true };
+      await invoke<void>("photo_library_add_folder", { path });
+      return { canceled: false };
     },
-    setCompatibilityMode: (enabled) => invoke<PhotoSyncDesktopResponse>("photo_set_compatibility", { enabled }),
+    removeFolder: (path) => invoke<void>("photo_library_remove_folder", { path }),
+    image: (path, kind) => invoke("photo_library_image", { path, kind }),
   };
   window.noteApi = {
     async selectAttachment(noteId) {

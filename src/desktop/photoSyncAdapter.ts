@@ -1,17 +1,41 @@
 import { desktopBridgeError } from "@/src/desktop/bridgeError";
 
+export type LibraryPhoto = {
+  path: string;
+  name: string;
+  size: number;
+  modifiedAt: number;
+};
+
+export type LibraryRoot = {
+  path: string;
+  name: string;
+  removable: boolean;
+};
+
+export type LibrarySnapshot = {
+  roots: LibraryRoot[];
+  photos: LibraryPhoto[];
+  truncated: boolean;
+};
+
+export type LibraryImage = {
+  mimeType: string;
+  dataBase64: string;
+};
+
 function api() {
-  if (typeof window === "undefined" || !window.photoSyncApi) throw desktopBridgeError("照片同步");
-  return window.photoSyncApi;
+  if (typeof window === "undefined" || !window.photoLibraryApi) {
+    throw desktopBridgeError("电脑图库");
+  }
+  return window.photoLibraryApi;
 }
 
-export const desktopPhotoSync = {
-  available: () => typeof window !== "undefined" && Boolean(window.photoSyncApi),
-  status: (): Promise<PhotoSyncDesktopResponse> => api().status(),
-  createPairing: (): Promise<PhotoSyncDesktopResponse> => api().createPairing(),
-  cancelPairing: (pairCode: string): Promise<PhotoSyncDesktopResponse> => api().cancelPairing(pairCode),
-  recover: (): Promise<PhotoSyncDesktopResponse> => api().recover(),
-  exportCertificate: (): Promise<PhotoSyncDesktopResponse> => api().exportCertificate(),
-  setCompatibilityMode: (enabled: boolean, confirmed?: boolean): Promise<PhotoSyncDesktopResponse> =>
-    api().setCompatibilityMode(enabled, confirmed),
+export const desktopPhotoLibrary = {
+  available: () => typeof window !== "undefined" && Boolean(window.photoLibraryApi),
+  scan: (): Promise<LibrarySnapshot> => api().scan(),
+  addFolder: (): Promise<{ canceled: boolean }> => api().addFolder(),
+  removeFolder: (path: string): Promise<void> => api().removeFolder(path),
+  image: (path: string, kind: "thumbnail" | "preview"): Promise<LibraryImage> =>
+    api().image(path, kind),
 };

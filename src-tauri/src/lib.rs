@@ -16,13 +16,13 @@ mod execution_reminder;
 mod execution_structure;
 mod execution_waiting;
 mod observability;
+mod photo_library;
 mod server;
 mod storage;
 mod sync;
 mod vault;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use tauri::Manager;
 
@@ -56,12 +56,10 @@ pub fn run() {
             observability::client_log_read_recent,
             storage::storage_status,
             storage::storage_migrate,
-            desktop::photo_status,
-            desktop::photo_create_pairing,
-            desktop::photo_cancel_pairing,
-            desktop::photo_recover,
-            desktop::photo_set_compatibility,
-            desktop::photo_export_certificate,
+            photo_library::photo_library_scan,
+            photo_library::photo_library_add_folder,
+            photo_library::photo_library_remove_folder,
+            photo_library::photo_library_image,
             desktop::note_copy_attachment,
             desktop::note_delete_attachment,
             desktop::note_open_attachment,
@@ -134,24 +132,6 @@ pub fn run() {
             let scheduler_state = sync_state.clone();
             tauri::async_runtime::spawn(async move {
                 scheduler_state.scheduler().await;
-            });
-            let photo_relay_state = sync_state.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(30));
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-                loop {
-                    interval.tick().await;
-                    let authenticated = {
-                        let auth = photo_relay_state.auth.read().await;
-                        auth.access_token.is_some() && auth.cloud_user_id.is_some()
-                    };
-                    if !authenticated {
-                        continue;
-                    }
-                    if let Err(error) = sync::photo_staging::drain(&photo_relay_state).await {
-                        eprintln!("LifeTrace cloud photo staging drain skipped: {error}");
-                    }
-                }
             });
             tauri::async_runtime::spawn(async move {
                 if let Err(error) =

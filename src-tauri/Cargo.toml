@@ -21,7 +21,7 @@ axum-server = { version = "0.8", features = ["tls-rustls"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff"] }
 kamadak-exif = "0.6.1"
 lifetrace-contracts = { path = "../vendor/shared/crates/lifetrace-contracts" }
 lifetrace-sync-client = { path = "../vendor/shared/crates/lifetrace-sync-client" }
