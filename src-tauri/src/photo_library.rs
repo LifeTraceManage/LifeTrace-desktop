@@ -2,7 +2,6 @@
 use std::{
     collections::HashSet,
     fs,
-    io,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -224,7 +223,7 @@ fn image_from_library(data_dir: &Path, path: &str, kind: &str) -> Result<Library
         return Err("照片不可读取，或文件超过 160MB".to_owned());
     }
     let canonical = fs::canonicalize(original).map_err(|error| error.to_string())?;
-    let allowed = roots(data_dir)?.iter().any(|root| canonical.starts_with(&root.path));
+    let allowed = roots(data_dir)?.iter().any(|root| canonical.starts_with(Path::new(&root.path)));
     if !allowed { return Err("照片不属于已经授权的本地图库".to_owned()); }
 
     let width = if kind == "thumbnail" { 360 } else { 1920 };
@@ -248,7 +247,7 @@ fn image_from_library(data_dir: &Path, path: &str, kind: &str) -> Result<Library
         let image = image::open(&canonical)
             .map_err(|error| format!("无法解码原图: {error}"))?;
         fs::create_dir_all(&cache_dir).map_err(|error| error.to_string())?;
-        let temporary = cache_dir.join(format!("{digest:x}-{}.tmp", std::process::id()));
+        let temporary = cache_dir.join(format!("{digest:x}-{}.tmp", uuid::Uuid::new_v4()));
         image.thumbnail(width, width)
             .save_with_format(&temporary, ImageFormat::Jpeg)
             .map_err(|error| error.to_string())?;
