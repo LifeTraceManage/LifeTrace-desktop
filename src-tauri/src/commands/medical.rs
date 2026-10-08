@@ -203,6 +203,59 @@ fn batch_report_ids(db: &rusqlite::Connection, batch_id: &str) -> Result<Vec<Sav
     Ok(rows)
 }
 
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct MedicalDuplicateMatch {
+    pub source_asset_id: String,
+    pub existing_report_id: Option<String>,
+    pub existing_title: Option<String>,
+}
+
+fn find_duplicate_assets(
+    db: &rusqlite::Connection,
+    user: &str,
+    images: &[DecodedAsset],
+) -> Result<Vec<MedicalDuplicateMatch>, String> {
+    let mut seen = HashSet::<&str>::new();
+    let mut duplicates = Vec::new();
+    for image in images {
+        if !seen.insert(image.hash.as_str()) {
+            return Err("同一次上传包含完全相同的图片，请移除重复文件后重试".to_owned());
+        }
+        let existing = db.query_row(
+            "SELECT r.id, r.title FROM medical_report_assets a
+             LEFT JOIN medical_report_asset_links l ON l.asset_id=a.id
+             LEFT JOIN medical_reports r ON r.id=l.report_id AND r.user_id=a.user_id
+             WHERE a.user_id=?1 AND a.sha256=?2 LIMIT 1",
+            params![user, image.hash],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+        ).optional().map_err(|e|e.to_string())?;
+        if let Some((report_id, title)) = existing {
+            duplicates.push(MedicalDuplicateMatch {
+                source_asset_id: image.source_id.clone(),
+                existing_report_id: report_id,
+                existing_title: title,
+            });
+        }
+    }
+    Ok(duplicates)
+}
+
+#[tauri::command]
+pub async fn medical_check_duplicates(
+    state: State<'_, DesktopState>,
+    images: Vec<MedicalAssetInput>,
+) -> Result<Vec<MedicalDuplicateMatch>, String> {
+    let root = state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let decoded = decode_assets(&images)?;
+        let db = open_db(&root)?;
+        let user = profile_id(&db)?;
+        find_duplicate_assets(&db, &user, &decoded)
+    }).await.map_err(|_|"医疗报告重复检查失败".to_owned())?
+}
+
 fn commit(root: &Path, input: MedicalCommitInput) -> Result<Vec<SavedMedicalReport>, String> {
     if input.idempotency_key.trim().len()<8 || input.idempotency_key.len()>128 {
         return Err("提交标识无效".into());
@@ -214,10 +267,26 @@ fn commit(root: &Path, input: MedicalCommitInput) -> Result<Vec<SavedMedicalRepo
         params![user,input.idempotency_key],|row|row.get(0)).optional().map_err(|e|e.to_string())?;
     if let Some(id)=existing {return batch_report_ids(&db,&id);}
     let decoded=decode_assets(&input.assets)?;
+    let duplicate_matches = find_duplicate_assets(&db, &user, &decoded)?;
+    if !duplicate_matches.is_empty() {
+        return Err(format!("已有 {} 张相同原始图片归档，请不要重复添加；如需更正可重新识别原报告", duplicate_matches.len()));
+    }
     let sources=decoded.iter().map(|x|x.source_id.as_str()).collect::<HashSet<_>>();
     let reports=input.draft.get("reports").and_then(Value::as_array).ok_or("识别草稿没有报告")?;
     if reports.is_empty() || reports.len()>16 {return Err("报告数量不正确".into());}
-    for report in reports {validate_report(report,&sources)?;}
+    let mut linked_sources = HashSet::new();
+    for report in reports {
+        validate_report(report,&sources)?;
+        for id in report["sourceAssetIds"].as_array().ok_or("缺少报告源文件")? {
+            let id = id.as_str().ok_or("附件来源格式不正确")?;
+            if !linked_sources.insert(id) {
+                // The same source may legitimately be included in more than one report.
+            }
+        }
+    }
+    if linked_sources != sources {
+        return Err("有原始图片未关联到任何识别报告，请先重新识别确认".into());
+    }
     let dir=root.join("medical").join("originals");
     fs::create_dir_all(&dir).map_err(|_|"无法创建医疗档案目录".to_owned())?;
     let mut created=Vec::<PathBuf>::new();
