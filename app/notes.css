@@ -163,3 +163,26 @@
 .nt-markdown-preview hr{border:0;border-top:1px solid var(--hx-line,var(--lt-color-border,#dfe5e1));margin:1.5em 0}
 .nt-preview-attachment{color:var(--hx-muted,#738079)}
 @media(max-width:1050px){.nt-edit-layout.nt-mode-split{grid-template-columns:1fr}.nt-edit-layout.nt-mode-split .nt-markdown-editor{border-right:0;border-bottom:1px solid var(--hx-line,var(--lt-color-border,#dfe5e1));min-height:270px}}
+
+
+/* Obsidian-inspired, distraction-free desktop note workspace */
+.nt-editor-body{grid-template-columns:minmax(0,1fr)}
+.nt-editor-body.nt-inspector-open{grid-template-columns:minmax(0,1fr) 300px}
+.nt-editor-head{height:42px;flex:none}
+.nt-editor-scroll{max-width:100%;padding:0 clamp(24px,7vw,110px) 60px}
+.nt-title{padding:35px 0 18px;font-size:30px}
+.nt-view-switch{justify-content:flex-start;border-bottom:0;padding:2px 0;gap:1px}
+.nt-view-switch button{font-size:10px;padding:5px 9px}
+.nt-view-switch button:not(.active){opacity:.65}
+.nt-formatbar{position:relative;border-top:0;backdrop-filter:none}
+.nt-edit-layout.nt-mode-source{max-width:900px}
+.nt-edit-layout.nt-mode-preview{max-width:900px}
+.nt-edit-layout.nt-mode-split{grid-template-columns:minmax(0,1fr) minmax(0,1fr);max-width:none}
+.nt-markdown-editor{min-height:calc(100vh - 315px);padding-top:14px;font-size:15px;line-height:1.85}
+.nt-edit-layout .nt-markdown-editor{min-height:calc(100vh - 315px)}
+.nt-markdown-preview{padding-top:14px;font-size:15px;line-height:1.85}
+.nt-inspector-tabs{display:flex;gap:2px;padding:8px 6px;overflow-x:auto;border-bottom:1px solid var(--hx-line,var(--lt-color-border,#dfe5e1))}
+.nt-inspector-tabs button{flex:none;border:0;border-radius:5px;background:transparent;padding:7px 8px;font-size:9px;color:var(--hx-muted,#738079)}
+.nt-inspector-tabs button.active,.nt-inspector-tabs button:hover{background:var(--hx-soft,#edf1ed);color:var(--hx-accent2,#176b54)}
+.nt-inspector-section{border-bottom:0}
+@media(max-width:1050px){.nt-editor-body.nt-inspector-open{grid-template-columns:minmax(0,1fr)}.nt-editor-body.nt-inspector-open .nt-inspector{display:block;position:absolute;z-index:12;right:0;top:42px;bottom:0;width:min(320px,85%);box-shadow:-10px 0 25px #0001;background:var(--lt-color-surface,#fff)}}
