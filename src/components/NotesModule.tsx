@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import RichMarkdownEditor from "./RichMarkdownEditor";
 import remarkGfm from "remark-gfm";
 import {
   Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
@@ -124,7 +125,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const [markdown,setMarkdown]=useState(()=>markdownSource(note));
-  const [editorMode,setEditorMode]=useState<"split"|"source"|"preview">("source");
+  const [editorMode,setEditorMode]=useState<"rich"|"split"|"source"|"preview">("rich");
   const [showFormatting,setShowFormatting]=useState(false);
   const [showInspector,setShowInspector]=useState(false);
   const [inspectorTab,setInspectorTab]=useState<"outline"|"properties"|"links"|"relations"|"attachments">("outline");
@@ -346,6 +347,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const remoteOnlyAttachments=cloudAttachments.filter(file=>!localAttachmentIds.has(file.id));
   const headings=noteHeadings(markdown);
   const wordCount=plainTextFromMarkdown(markdown).replace(/\s+/g,"").length;
+  const hasMarkdownTable=/(?:^|\n)\s*\|[^\n]+\|\s*\n\s*\|\s*:?-{3,}/.test(markdown);
   const focusHeading=(lineIndex:number)=>{
     const textarea=editorRef.current;if(!textarea)return;
     const lines=markdown.split(/\r?\n/);
@@ -363,7 +365,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
       </div>
       <div>
           <button title="格式工具栏" aria-pressed={showFormatting} className={showFormatting?"active":""} onClick={()=>setShowFormatting(value=>!value)}><Bold/></button>
-          <button title="切换编辑和阅读" onClick={()=>setEditorMode(value=>value==="preview"?"source":"preview")}><FileText/></button>
+          <button title="切换编辑和阅读" onClick={()=>setEditorMode(value=>value==="preview"?"rich":"preview")}><FileText/></button>
           <button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>
         <MoreMenu actions={[{id:"save",label:"保存版本",icon:Save,group:"primary",execute:async()=>{await save(true)}},{id:"favorite",label:draft.isFavorite?"取消收藏":"收藏笔记",icon:Star,group:"primary",execute:()=>patch({isFavorite:!draft.isFavorite})},{id:"pin",label:draft.isPinned?"取消置顶":"置顶笔记",icon:Pin,group:"primary",execute:()=>patch({isPinned:!draft.isPinned})},{id:"task",label:"创建 Task",icon:CheckSquare2,group:"related",execute:()=>createTaskFromNote()},{id:"history",label:"版本历史",icon:History,group:"related",execute:()=>loadHistory()},...editorActions]} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
       </div>
@@ -389,10 +391,11 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <EditorButton title="表格" onClick={()=>insertSnippet("\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")}><ListTree/></EditorButton>
           </div>}
           <div className="nt-view-switch" role="group" aria-label="编辑显示模式">
-            {(["source","preview","split"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>setEditorMode(mode)}>{mode==="source"?"编辑":mode==="preview"?"阅读":"分屏"}</button>)}
+            {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>{if(mode==="rich"&&hasMarkdownTable){notify("当前笔记含表格，请使用源码编辑以保留表格格式");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
           </div>
-          <div className={`nt-edit-layout nt-mode-${editorMode}`}>
-          {editorMode!=="preview"&&<textarea
+          <div className={`nt-edit-layout nt-mode-${hasMarkdownTable&&editorMode==="rich"?"source":editorMode}`}>
+          {editorMode==="rich"&&!hasMarkdownTable&&<RichMarkdownEditor key={note.id} value={markdown} onChange={updateMarkdown}/>}
+          {(editorMode==="source"||editorMode==="split"||(editorMode==="rich"&&hasMarkdownTable))&&<textarea
             ref={editorRef}
             className="nt-markdown-editor"
             data-testid="markdown-editor"
@@ -410,7 +413,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
               }
             }}
           />}
-          {editorMode!=="source"&&<div className="nt-markdown-preview" data-testid="markdown-live-preview" aria-label="Markdown 实时渲染预览">
+          {(editorMode==="split"||editorMode==="preview")&&<div className="nt-markdown-preview" data-testid="markdown-live-preview" aria-label="Markdown 实时渲染预览">
             <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={url=>/^(https?:|mailto:|attachment:|#|\/)/i.test(url)?url:""} components={{
               a:({href,children})=>href?.startsWith("attachment:")?<span title={href}>{children}</span>:<a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
               img:({src,alt})=>src?.startsWith("attachment:")?<span className="nt-preview-attachment">{alt||"附件图片"}（在附件列表查看）</span>:<img src={src} alt={alt||""} loading="lazy" />,
