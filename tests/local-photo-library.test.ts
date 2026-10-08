@@ -4,12 +4,12 @@ import test from "node:test";
 
 const read = (file: string) => readFileSync(file, "utf8");
 
-test("album opens the native Pictures library by default and keeps historical photos", () => {
+test("album opens the native Pictures library by default without a legacy imported-album tab", () => {
   const tabs = read("src/components/PhotoSyncModule.tsx");
   const gallery = read("src/components/LocalPhotoLibrary.tsx");
   assert.match(tabs, /useState<AlbumMode>\("local"\)/);
   assert.match(tabs, /<LocalPhotoLibrary\/>/);
-  assert.match(tabs, /<PhotoSyncDashboard\/>/);
+  assert.doesNotMatch(tabs, /<PhotoSyncDashboard\/>/);
   assert.match(tabs, /<LocalVaultModule\/>/);
   assert.match(gallery, /desktopPhotoLibrary\.scan\(\)/);
   assert.match(gallery, /desktopPhotoLibrary\.addFolder\(\)/);
@@ -25,7 +25,13 @@ test("native Pictures scanner is read-only and restricts preview paths to config
   assert.match(rust, /fn library_scan\(/);
   assert.match(rust, /fn image_from_library\(/);
   assert.match(rust, /canonical\.starts_with\(Path::new\(&root\.path\)\)/);
-  assert.doesNotMatch(rust, /fs::copy|INSERT INTO photos|UPDATE photos/);
+  assert.match(rust, /fn index_snapshot\(/);
+  assert.match(rust, /read_exif_metadata_from_path/);
+  assert.match(rust, /storage_type=\x27local\x27/);
+  assert.match(rust, /sha256_file/);
+  assert.match(rust, /remove_matching_managed_copy/);
+  assert.match(rust, /footprint_entry_photos/);
+  assert.doesNotMatch(rust, /fs::copy\(/);
   assert.match(lib, /photo_library::photo_library_scan/);
   assert.match(lib, /photo_library::photo_library_image/);
   assert.match(bridge, /photo_library_scan/);
@@ -43,4 +49,13 @@ test("the album has no LAN upload, pairing or QR workflow", () => {
   assert.doesNotMatch(savedAlbum, /QRCode|createPairing|cancelPairing|扫描二维码/);
   assert.doesNotMatch(bridge, /photo_create_pairing|photo_set_compatibility/);
   assert.equal(existsSync("src-tauri/src/server/photo-upload.html"), false);
+});
+
+test("photo database retains local metadata and serves authorized local files", () => {
+  const backend = read("src-tauri/src/server/photo.rs");
+  assert.match(backend, /local_file_path TEXT/);
+  assert.match(backend, /local_modified_at/);
+  assert.match(backend, /storage_type/);
+  assert.match(backend, /original_bytes_from_library/);
+  assert.match(backend, /preview_bytes_from_library/);
 });
