@@ -278,6 +278,11 @@ fn remove_matching_managed_copy(
     {
         return Ok(0);
     }
+    let have_footprint_links: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='footprint_entry_photos'",
+        [], |row| row.get(0)
+    ).map_err(|error| error.to_string())?;
+    if have_footprint_links == 0 { return Ok(0); }
     let txn = connection.transaction().map_err(|error| error.to_string())?;
     txn.execute(
         "INSERT OR IGNORE INTO footprint_entry_photos(entry_id,photo_id,sort_order,is_cover,created_at)
