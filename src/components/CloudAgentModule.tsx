@@ -203,6 +203,7 @@ export default function CloudAgentModule() {
         setReportFiles([]);
         setInput("");
         setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID() });
+        setArchivedReports(null);
         setMessages((current) => [...current, {
           id: crypto.randomUUID(), role: "user",
           content: `提交了 ${images.length} 张医疗报告图片进行识别${prompt ? `；附带说明：${prompt}` : ""}（图片内容不保存到云端会话）。`,
@@ -252,7 +253,7 @@ export default function CloudAgentModule() {
     setError("");
     try {
       const result = await cloudAgentApi.extractMedicalReports(medicalDraft.images, instruction);
-      setMedicalDraft((current) => current ? { ...current, result } : current);
+      setMedicalDraft((current) => current ? { ...current, result, idempotencyKey: crypto.randomUUID() } : current);
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), role: "user",
         content: "报告识别修正说明：" + instruction,
@@ -270,6 +271,7 @@ export default function CloudAgentModule() {
     setError("");
     setLoading(true);
     try {
+      setReportFiles([]);
       setArchivedReports((await medicalReportApi.list()).slice(0, 40));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "无法列出已归档检查");
@@ -297,6 +299,7 @@ export default function CloudAgentModule() {
         throw new Error("模型将图片识别成多份报告，不能直接覆盖原记录。请调整说明后重新尝试");
       }
       setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID(), replaceReportId: id });
+      setReportFiles([]);
       setArchivedReports(null);
       setInput("");
       setMessages((current) => [...current, {
