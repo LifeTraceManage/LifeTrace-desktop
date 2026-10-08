@@ -62,6 +62,8 @@ export type FootprintPhoto = {
   mediaType: string;
   capturedAt: string | null;
   importedAt: string;
+  /** Last-modified time in Unix seconds, available for indexed local-library photos. */
+  modifiedAt?: number | null;
   latitude: number | null;
   longitude: number | null;
 };
