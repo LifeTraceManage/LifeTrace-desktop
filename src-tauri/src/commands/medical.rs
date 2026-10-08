@@ -485,6 +485,46 @@ pub async fn medical_replace_report(
         .await.map_err(|_|"医疗报告修订任务中断".to_owned())?
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct MedicalReportRevision {
+    pub id: String,
+    pub changed_at: String,
+    pub previous: Value,
+    pub updated: Value,
+}
+
+#[tauri::command]
+pub async fn medical_list_revisions(
+    state: State<'_,DesktopState>,
+    report_id: String,
+) -> Result<Vec<MedicalReportRevision>, String> {
+    let root=state.data_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let db=open_db(&root)?;
+        let owner=profile_id(&db)?;
+        let mut stmt=db.prepare(
+            "SELECT rev.id, rev.created_at, rev.old_content_json, rev.new_content_json
+             FROM medical_report_revisions rev
+             JOIN medical_reports report ON report.id=rev.report_id
+             WHERE rev.report_id=?1 AND report.user_id=?2
+             ORDER BY rev.created_at DESC LIMIT 30"
+        ).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(params![report_id,owner],|r|{
+            let original:String=r.get(2)?;
+            let updated:String=r.get(3)?;
+            Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,original,updated))
+        }).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+        rows.into_iter().map(|(id,changed_at,old_json,new_json)|{
+            Ok(MedicalReportRevision{
+                id,changed_at,
+                previous:serde_json::from_str(&old_json).map_err(|_|"旧版报告数据格式错误")?,
+                updated:serde_json::from_str(&new_json).map_err(|_|"新版报告数据格式错误")?,
+            })
+        }).collect()
+    }).await.map_err(|_|"医疗报告修订历史查询失败".to_owned())?
+}
+
 #[tauri::command]
 pub async fn medical_list_reports(state:State<'_,DesktopState>) -> Result<Vec<MedicalListItem>,String> {
     let dir=state.data_dir.clone();
