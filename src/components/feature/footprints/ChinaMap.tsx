@@ -275,7 +275,7 @@ export default function ChinaMap({
 
     const projection = geoMercator().fitExtent(
       [[76, 62], [width - 76, height - 72]],
-      feature,
+      featureCollection([feature]),
     );
     const path = geoPath(projection);
     const points = cityPointData.cities
