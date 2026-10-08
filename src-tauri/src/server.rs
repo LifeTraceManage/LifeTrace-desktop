@@ -349,9 +349,7 @@ fn local_json_routes() -> Router<AppState> {
         .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
 }
 
-pub(crate) fn local_json_ipc_router(
-    data_dir: PathBuf,
-) -> Result<Router, String> {
+pub(crate) fn local_json_ipc_router(data_dir: PathBuf) -> Result<Router, String> {
     let connection = database::connection::open(&data_dir.join("lifetrace.db"))
         .map_err(|error| format!("无法打开本机 JSON 数据库: {error}"))?;
     let state = AppState {
@@ -361,9 +359,7 @@ pub(crate) fn local_json_ipc_router(
     Ok(local_json_routes().with_state(state))
 }
 
-pub(crate) fn execution_ipc_router(
-    data_dir: PathBuf,
-) -> Result<Router, String> {
+pub(crate) fn execution_ipc_router(data_dir: PathBuf) -> Result<Router, String> {
     let connection = database::connection::open(&data_dir.join("lifetrace.db"))
         .map_err(|error| format!("无法打开本机执行数据库: {error}"))?;
     let state = AppState {
