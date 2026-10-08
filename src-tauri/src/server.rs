@@ -40,7 +40,6 @@ use crate::database;
 pub(crate) struct AppState {
     data_dir: PathBuf,
     database: Arc<Mutex<Connection>>,
-    photo_runtime: Arc<photo::Runtime>,
 }
 
 #[derive(Serialize)]
@@ -352,35 +351,30 @@ fn local_json_routes() -> Router<AppState> {
 
 pub(crate) fn local_json_ipc_router(
     data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
 ) -> Result<Router, String> {
     let connection = database::connection::open(&data_dir.join("lifetrace.db"))
         .map_err(|error| format!("无法打开本机 JSON 数据库: {error}"))?;
     let state = AppState {
         data_dir,
         database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
     };
     Ok(local_json_routes().with_state(state))
 }
 
 pub(crate) fn execution_ipc_router(
     data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
 ) -> Result<Router, String> {
     let connection = database::connection::open(&data_dir.join("lifetrace.db"))
         .map_err(|error| format!("无法打开本机执行数据库: {error}"))?;
     let state = AppState {
         data_dir,
         database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
     };
     Ok(execution_routes().with_state(state))
 }
 
 pub async fn serve(
     data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
     sync_state: crate::sync::SyncDesktopState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::fs::create_dir_all(&data_dir).await?;
@@ -421,7 +415,6 @@ pub async fn serve(
     let state = AppState {
         data_dir,
         database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
     };
     let exif_state = state.clone();
     tokio::spawn(async move {
