@@ -36,6 +36,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cloud_api::cloud_api_http_request,
             commands::analytics::analytics_query,
+            commands::medical::medical_commit_draft,
+            commands::medical::medical_list_reports,
+            commands::medical::medical_get_report,
+            commands::medical::medical_read_asset,
             commands::execution::execution_api_request,
             commands::local_api::local_json_api_request,
             commands::notes::notes_query,
