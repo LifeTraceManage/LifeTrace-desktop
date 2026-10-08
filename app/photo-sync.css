@@ -35,3 +35,6 @@
 .local-photo-preview-nav:disabled{opacity:.3;cursor:default}
 .local-photo-library .photo-preview>article>footer{gap:10px}
 @media(max-width:720px){.local-photo-library .photo-section-head{flex-wrap:wrap}.local-photo-library .photo-section-actions{flex-wrap:wrap;width:100%}.local-photo-search{flex:1}.local-photo-search input{max-width:none;width:100%}}
+
+.photo-preview>article>header button{width:44px;height:44px;border:0;border-radius:11px;background:transparent;display:grid;place-items:center}
+.photo-preview>article>header svg{width:18px;height:18px}
