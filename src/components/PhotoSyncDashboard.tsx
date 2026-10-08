@@ -2,13 +2,11 @@
 /* eslint-disable @next/next/no-img-element -- local authenticated media URLs are not compatible with the image optimizer */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import QRCode from "qrcode";
 import {
-  AlertTriangle, CheckCircle2, Copy, EyeOff, Film, Image as ImageIcon, LockKeyhole,
-  LoaderCircle, RefreshCw, Smartphone, X,
+  AlertTriangle, CheckCircle2, EyeOff, Film, Image as ImageIcon, LockKeyhole,
+  LoaderCircle, RefreshCw, X,
 } from "lucide-react";
 import Toast from "@/src/components/Toast";
-import { desktopPhotoSync } from "@/src/desktop/photoSyncAdapter";
 import { desktopVault } from "@/src/desktop/vaultAdapter";
 import { loadPhotoSyncDashboard, photoMediaUrl } from "@/src/services/photoSyncApi";
 
@@ -30,7 +28,6 @@ type Dashboard = {
   photos:Photo[]; total:number; page:number; pageSize:number; devices:Device[];
   tasks:UploadTask[]; summary:{success_count?:number;duplicate_count?:number;failed_count?:number;processing_count?:number;last_sync_at?:string};
 };
-type Pairing = { pairCode:string; expiresAt:string; entryUrl:string };
 
 const formatBytes = (value:number) => new Intl.NumberFormat("zh-CN", {
   style:"unit", unit:value >= 1024 ** 2 ? "megabyte" : "kilobyte", maximumFractionDigits:1,
@@ -52,9 +49,6 @@ export default function PhotoSyncModule() {
   const [page,setPage]=useState(1);
   const [loading,setLoading]=useState(true);
   const [message,setMessage]=useState("");
-  const [pairing,setPairing]=useState<Pairing|null>(null);
-  const [qr,setQr]=useState("");
-  const [remaining,setRemaining]=useState(0);
   const [selected,setSelected]=useState<Photo|null>(null);
   const [selectMode,setSelectMode]=useState(false);
   const [selectedIds,setSelectedIds]=useState<Set<string>>(new Set());
@@ -80,18 +74,6 @@ export default function PhotoSyncModule() {
     return()=>window.clearTimeout(timer);
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
-    if(!pairing)return;
-    void QRCode.toDataURL(pairing.entryUrl,{width:240,margin:1,errorCorrectionLevel:"M"}).then(setQr);
-    const update=()=>{
-      const next=Math.max(0,Math.ceil((Date.parse(pairing.expiresAt)-Date.now())/1000));
-      setRemaining(next);
-      if(next===0)setPairing(current=>current?.pairCode===pairing.pairCode?null:current);
-    };
-    const initial=window.setTimeout(update,0);
-    const timer=window.setInterval(update,1000);
-    return()=>{window.clearTimeout(initial);window.clearInterval(timer)};
-  },[pairing]);
-  useEffect(()=>{
     if(!selected)return;
     closeRef.current?.focus();
     const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setSelected(null)};
@@ -108,18 +90,6 @@ export default function PhotoSyncModule() {
     return [...result.entries()];
   },[data?.photos]);
 
-  const createPairing=async()=>{
-    if(!desktopPhotoSync.available()){setMessage("请在 LifeTrace Electron 桌面应用中创建配对二维码");return}
-    setMessage("");
-    const response=await desktopPhotoSync.createPairing();
-    const status=response.status as {pairing?:Pairing}|undefined;
-    if(!response.ok||!status?.pairing){setMessage(response.error||"无法创建配对码");return}
-    setPairing(status.pairing);
-  };
-  const cancelPairing=async()=>{
-    if(pairing&&desktopPhotoSync.available())await desktopPhotoSync.cancelPairing(pairing.pairCode);
-    setPairing(null);setQr("");
-  };
   const enterSelectMode=()=>{
     if(!data?.photos.length){setMessage("当前没有可隐藏的照片");return}
     setSelectMode(true);setSelectedIds(new Set());setMessage("");
@@ -195,19 +165,9 @@ export default function PhotoSyncModule() {
       setVaultBusy(false);
     }
   };
-  const summary=data?.summary??{};
-  const recentDevice=[...(data?.devices??[])].sort((a,b)=>Date.parse(b.last_seen_at||"0")-Date.parse(a.last_seen_at||"0"))[0];
   return <div className="hx-view photo-sync">
     <section className="photo-sync-hero">
-      <div><span className="hx-pill">手机局域网</span><h2>把相册原文件，安静地收回本机</h2><p>同一局域网内用手机浏览器同步，不使用 iCloud 或 iOS 原生应用。</p></div>
-      <button className="hx-btn primary" onClick={createPairing}><Smartphone/>添加 iPhone</button>
-    </section>
-
-    <section className="hx-metrics photo-sync-metrics" aria-label="最近同步概览">
-      <div className="hx-metric"><span>最近同步</span><strong>{summary.last_sync_at?new Date(summary.last_sync_at).toLocaleDateString("zh-CN"):"暂无"}</strong><small>{formatDateTime(summary.last_sync_at)}</small></div>
-      <div className="hx-metric"><span>最近设备</span><strong>{recentDevice?.device_name||"暂无"}</strong><small>{recentDevice?.status==="active"?"授权有效":"等待配对"}</small></div>
-      <div className="hx-metric"><span>成功 / 重复</span><strong>{Number(summary.success_count||0)} / {Number(summary.duplicate_count||0)}</strong><small className="positive">重复原文件不会再次保存</small></div>
-      <div className="hx-metric"><span>处理 / 失败</span><strong>{Number(summary.processing_count||0)} / {Number(summary.failed_count||0)}</strong><small>失败时仍保留原图记录</small></div>
+      <div><span className="hx-pill">历史本机照片</span><h2>已保存到 LifeTrace 的原件</h2><p>这里保留之前已经存储在 LifeTrace 的照片。电脑本地图库请切换至“本地图库”页签。</p></div>
     </section>
 
     <section className="photo-sync-layout">
@@ -229,9 +189,9 @@ export default function PhotoSyncModule() {
                   :<span className={`photo-placeholder ${photo.processing_status}`}><StateIcon status={photo.processing_status}/><small>{statusLabel[photo.processing_status]||photo.processing_status}</small></span>}
                 {photo.media_type==="video"&&<i><Film/>视频</i>}
               </span>
-              <span className="photo-card-copy"><strong>{new Date(photo.captured_at||photo.imported_at).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"})}</strong><small>{photo.device_name||"iPhone"} · {formatBytes(photo.file_size)}</small></span>
+              <span className="photo-card-copy"><strong>{new Date(photo.captured_at||photo.imported_at).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"})}</strong><small>{photo.device_name||"本机"} · {formatBytes(photo.file_size)}</small></span>
             </button>)}</div>
-          </section>):<div className="photo-empty"><ImageIcon/><h3>还没有同步照片</h3><p>添加手机后，通过浏览器上传成功的照片会按拍摄日期出现在这里。</p></div>}
+          </section>):<div className="photo-empty"><ImageIcon/><h3>还没有保存的照片</h3><p>在“本地图库”中可直接浏览电脑里的照片，无需上传或导入。</p></div>}
         {(data?.total??0)>30&&<footer className="photo-pagination">
           <button className="hx-btn secondary" disabled={page<=1||loading} onClick={()=>load(page-1)}>上一页</button>
           <span>第 {page} / {Math.ceil((data?.total??0)/30)} 页</span>
@@ -256,24 +216,14 @@ export default function PhotoSyncModule() {
       </article>
     </div>}
 
-    {pairing&&<div className="hx-overlay photo-pair-overlay" role="dialog" aria-modal="true" aria-labelledby="pair-title" onMouseDown={event=>{if(event.target===event.currentTarget)void cancelPairing()}}>
-      <article className="photo-pair-modal"><header><div><span>一次性配对</span><h2 id="pair-title">扫描二维码添加 iPhone</h2></div><button aria-label="取消配对" onClick={cancelPairing}><X/></button></header>
-        <div className="photo-pair-body">{qr?<img src={qr} alt="打开 LifeTrace 照片同步配对页面的二维码"/>:<LoaderCircle className="spin"/>}
-          <div><span>配对码</span><strong>{pairing.pairCode}</strong><button onClick={()=>navigator.clipboard.writeText(pairing.pairCode)}><Copy/>复制</button></div>
-          <p>二维码只包含一次性配对码和局域网地址，不包含长期设备令牌。</p>
-          <b className={remaining<60?"urgent":""}>{remaining>0?`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,"0")} 后失效`:"配对码已失效"}</b>
-        </div>
-      </article>
-    </div>}
-
     {selected&&<div className="hx-overlay photo-preview" role="dialog" aria-modal="true" aria-label={selected.original_file_name} onMouseDown={event=>{if(event.target===event.currentTarget)setSelected(null)}}>
-      <article><header><div><strong>{selected.original_file_name}</strong><small>{formatDateTime(selected.captured_at)} · {selected.device_name||"iPhone"} · {formatBytes(selected.file_size)}</small></div><button ref={closeRef} aria-label="关闭预览" onClick={()=>setSelected(null)}><X/></button></header>
+      <article><header><div><strong>{selected.original_file_name}</strong><small>{formatDateTime(selected.captured_at)} · {selected.device_name||"本机"} · {formatBytes(selected.file_size)}</small></div><button ref={closeRef} aria-label="关闭预览" onClick={()=>setSelected(null)}><X/></button></header>
         <div className="photo-preview-media">{selected.processing_status==="completed"
           ?selected.media_type==="video"
             ?<video controls preload="metadata" poster={photoMediaUrl(selected.id,"thumbnail")} src={photoMediaUrl(selected.id,"original")}/>
             :<img src={photoMediaUrl(selected.id,"original")} alt={selected.original_file_name}/>
           :<div className="photo-preview-error"><StateIcon status={selected.processing_status}/><h3>{statusLabel[selected.processing_status]||selected.processing_status}</h3><p>{selected.processing_error||"原文件已保存，缩略图仍在处理中。"}</p></div>}</div>
-        <footer><span>{selected.width&&selected.height?`${selected.width} × ${selected.height}`:"尺寸待提取"}{selected.duration_ms?` · ${Math.round(selected.duration_ms/1000)} 秒`:""}</span><span>同步于 {formatDateTime(selected.imported_at)}</span></footer>
+        <footer><span>{selected.width&&selected.height?`${selected.width} × ${selected.height}`:"尺寸待提取"}{selected.duration_ms?` · ${Math.round(selected.duration_ms/1000)} 秒`:""}</span><span>保存于 {formatDateTime(selected.imported_at)}</span></footer>
       </article>
     </div>}
   </div>;
