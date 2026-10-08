@@ -1,0 +1,95 @@
+import { invoke } from "@tauri-apps/api/core";
+
+export type MedicalImageInput = {
+  assetId: string;
+  originalName: string;
+  mimeType: string;
+  base64: string;
+};
+export type MedicalEvidence = {
+  sourceAssetId: string;
+  pageIndex: number;
+};
+export type MedicalSection = MedicalEvidence & {
+  kind: string;
+  titleRaw: string;
+  textRaw: string;
+};
+export type MedicalObservation = MedicalEvidence & {
+  nameRaw: string;
+  kind: string;
+  valueRaw: string;
+  valueNumber?: number | null;
+  metricKey?: string | null;
+  comparator?: string | null;
+  unitRaw?: string | null;
+  referenceRangeRaw?: string | null;
+  sourceFlag?: string | null;
+  bodySite?: string | null;
+  laterality?: string | null;
+};
+export type MedicalReportDraft = {
+  title: string;
+  reportType: string;
+  examAt?: string | null;
+  collectionAt?: string | null;
+  issuedAt?: string | null;
+  facility?: string | null;
+  department?: string | null;
+  reportNo?: string | null;
+  bodySite?: string | null;
+  sourceAssetIds: string[];
+  sections: MedicalSection[];
+  observations: MedicalObservation[];
+  needsReview?: boolean;
+  reviewReasons?: string[];
+};
+export type MedicalExtractReply = {
+  schemaVersion: number;
+  reports: MedicalReportDraft[];
+  groupingWarnings: string[];
+  requiresConfirmation: boolean;
+};
+export type MedicalListItem = {
+  id: string;
+  title: string;
+  reportType: string;
+  examAt: string | null;
+  facility: string | null;
+  createdAt: string;
+  observationCount: number;
+  attachmentCount: number;
+};
+export type SavedMedicalReport = { id: string; title: string };
+export type MedicalAssetInfo = {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  bytesSize: number;
+};
+export type MedicalReportDetail = {
+  id: string;
+  report: MedicalReportDraft;
+  assets: MedicalAssetInfo[];
+};
+export type MedicalAssetData = {
+  originalName: string;
+  mimeType: string;
+  base64: string;
+};
+export const medicalReportApi = {
+  commitDraft(draft: MedicalExtractReply, assets: MedicalImageInput[], idempotencyKey: string) {
+    return invoke<SavedMedicalReport[]>("medical_commit_draft", {
+      input: { idempotencyKey, draft, assets },
+    });
+  },
+  list() {
+    return invoke<MedicalListItem[]>("medical_list_reports");
+  },
+  detail(id: string) {
+    return invoke<MedicalReportDetail>("medical_get_report", { id });
+  },
+  readAsset(id: string) {
+    return invoke<MedicalAssetData>("medical_read_asset", { id });
+  },
+};
