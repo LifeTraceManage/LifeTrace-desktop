@@ -64,10 +64,7 @@ pub async fn local_json_api_request(
         .body(Body::from(request.body.unwrap_or_default()))
         .map_err(|error| format!("无法构造本机 JSON IPC 请求: {error}"))?;
 
-    let response = server::local_json_ipc_router(
-        state.data_dir.clone(),
-        state.photo_runtime.clone(),
-    )?
+    let response = server::local_json_ipc_router(state.data_dir.clone())?
     .oneshot(http_request)
     .await
     .map_err(|error| format!("本机 JSON IPC 路由失败: {error}"))?;

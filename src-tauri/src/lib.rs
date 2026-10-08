@@ -122,10 +122,8 @@ pub fn run() {
 
             let vault_state = Arc::new(vault::VaultState::new(data_dir.join("vault"))?);
             app.manage(vault_state);
-            let photo_runtime = server::photo::Runtime::new(data_dir.clone());
             app.manage(desktop::DesktopState {
                 data_dir: data_dir.clone(),
-                photo_runtime: photo_runtime.clone(),
             });
             let sync_state = sync::SyncDesktopState::new(data_dir.clone());
             app.manage(sync_state.clone());
@@ -135,7 +133,7 @@ pub fn run() {
             });
             tauri::async_runtime::spawn(async move {
                 if let Err(error) =
-                    server::serve(data_dir, photo_runtime, sync_state).await
+                    server::serve(data_dir, sync_state).await
                 {
                     eprintln!("LifeTrace local service stopped: {error}");
                 }

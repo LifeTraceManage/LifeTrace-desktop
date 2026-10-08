@@ -15,6 +15,15 @@ import {
 } from "@/src/services/footprintApi";
 import type { FootprintPhoto } from "./types";
 
+function photoDisplayTime(photo: FootprintPhoto): string {
+  if (photo.modifiedAt != null) {
+    // Use the same local-time format as the computer photo library.
+    return new Date(photo.modifiedAt * 1000).toLocaleString("zh-CN", { hour12: false });
+  }
+  // Existing managed photos have no local modification time.
+  return (photo.capturedAt || photo.importedAt).replace("T", " ").slice(0, 19);
+}
+
 export default function FootprintPhotoPicker({
   selectedIds,
   onChange,
@@ -113,7 +122,7 @@ export default function FootprintPhotoPicker({
                 />
                 <span>{selected.has(photo.id) ? "✓" : ""}</span>
                 <small>
-                  {photo.capturedAt?.slice(0, 10) || photo.importedAt.slice(0, 10)}
+                  {photoDisplayTime(photo)}
                 </small>
               </button>
             ))}

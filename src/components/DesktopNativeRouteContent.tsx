@@ -1,28 +1,30 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import Dashboard from "@/src/components/feature/dashboard/Dashboard";
-import Habits from "@/src/components/feature/habits/Habits";
-import Fitness from "@/src/components/feature/fitness/Fitness";
-import Finance from "@/src/components/feature/finance/Finance";
-import Transactions from "@/src/components/feature/finance/Transactions";
-import Accounts from "@/src/components/feature/finance/Accounts";
-import ImportBills from "@/src/components/feature/finance/ImportBills";
-import CalendarView from "@/src/components/feature/life/CalendarView";
-import ReviewView from "@/src/components/feature/life/ReviewView";
-import ExecutionModule from "@/src/components/feature/execution/ExecutionModule";
-import SettingsView from "@/src/components/feature/settings/SettingsView";
-import EditorModal, { type EditorModalState } from "@/src/components/feature/forms/EditorModal";
-import NotesModule from "@/src/components/NotesModule";
-import PhotoSyncModule from "@/src/components/PhotoSyncModule";
-import Footprints from "@/src/components/feature/footprints/Footprints";
-import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
-import CloudAgentModule from "@/src/components/CloudAgentModule";
-import DesktopSearchModule from "@/src/components/DesktopSearchModule";
-import DesktopHealthModule from "@/src/components/DesktopHealthModule";
+import type { EditorModalState } from "@/src/components/feature/forms/EditorModal";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import { noteApi } from "@/src/services/noteApi";
 import { dayKey, escapeHtml } from "@/src/utils/format";
 import type { Activity, Transaction, WorkoutHistory } from "@/src/types";
+
+const Dashboard = lazy(() => import("@/src/components/feature/dashboard/Dashboard"));
+const Habits = lazy(() => import("@/src/components/feature/habits/Habits"));
+const Fitness = lazy(() => import("@/src/components/feature/fitness/Fitness"));
+const Finance = lazy(() => import("@/src/components/feature/finance/Finance"));
+const Transactions = lazy(() => import("@/src/components/feature/finance/Transactions"));
+const Accounts = lazy(() => import("@/src/components/feature/finance/Accounts"));
+const ImportBills = lazy(() => import("@/src/components/feature/finance/ImportBills"));
+const CalendarView = lazy(() => import("@/src/components/feature/life/CalendarView"));
+const ReviewView = lazy(() => import("@/src/components/feature/life/ReviewView"));
+const ExecutionModule = lazy(() => import("@/src/components/feature/execution/ExecutionModule"));
+const SettingsView = lazy(() => import("@/src/components/feature/settings/SettingsView"));
+const NotesModule = lazy(() => import("@/src/components/NotesModule"));
+const PhotoSyncModule = lazy(() => import("@/src/components/PhotoSyncModule"));
+const Footprints = lazy(() => import("@/src/components/feature/footprints/Footprints"));
+const MailActionCenter = lazy(() => import("@/src/components/feature/mail/MailActionCenter"));
+const CloudAgentModule = lazy(() => import("@/src/components/CloudAgentModule"));
+const DesktopSearchModule = lazy(() => import("@/src/components/DesktopSearchModule"));
+const DesktopHealthModule = lazy(() => import("@/src/components/DesktopHealthModule"));
+const EditorModal = lazy(() => import("@/src/components/feature/forms/EditorModal"));
 
 type Props = {
   route: string;
@@ -227,8 +229,12 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
       <button className={route === "/app/finance/accounts" ? "active" : ""} onClick={() => navigate("/app/finance/accounts")}>账户</button>
       <button className={route === "/app/finance/import" ? "active" : ""} onClick={() => navigate("/app/finance/import")}>导入</button>
     </nav> : null}
-    {content}
-    {modal ? <EditorModal modal={modal} close={() => setModal(null)} /> : null}
+    <Suspense fallback={<div role="status" className="hx-view">正在加载模块…</div>}>
+      {content}
+    </Suspense>
+    <Suspense fallback={null}>
+      {modal ? <EditorModal modal={modal} close={() => setModal(null)} /> : null}
+    </Suspense>
     {toast ? <div className="hx-toast" role="status"><Check aria-hidden="true"/>{toast}</div> : null}
     <ConfirmDialogHost />
   </>;

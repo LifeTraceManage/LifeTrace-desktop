@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import {
   Camera,
   Heart,
@@ -8,7 +8,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import rawChina from "@/src/assets/maps/china-provinces.json";
+import { loadChinaProvinces } from "@/src/services/chinaMapAssets";
 import { footprintApi } from "@/src/services/footprintApi";
 import type {
   FootprintEntry,
@@ -17,20 +17,11 @@ import type {
 import FootprintPhotoPicker from "./FootprintPhotoPicker";
 
 type Province = { code: string; name: string };
-
-const provinces: Province[] = (
-  rawChina as unknown as {
-    features: Array<{
-      properties: { adcode: number | string; name: string };
-    }>;
-  }
-).features
-  .map((feature) => ({
-    code: String(feature.properties.adcode),
-    name: feature.properties.name,
-  }))
-  .filter((province) => /^\d{6}$/.test(province.code))
-  .sort((left, right) => left.code.localeCompare(right.code));
+type ChinaProvinceSource = {
+  features: Array<{
+    properties: { adcode: number | string; name: string };
+  }>;
+};
 
 export default function FootprintEditor({
   entry,
@@ -45,11 +36,20 @@ export default function FootprintEditor({
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const chinaSource = use(loadChinaProvinces()) as ChinaProvinceSource;
+  const provinces = useMemo<Province[]>(() => chinaSource.features
+    .map((feature) => ({
+      code: String(feature.properties.adcode),
+      name: feature.properties.name,
+    }))
+    .filter((province) => /^\d{6}$/.test(province.code))
+    .sort((left, right) => left.code.localeCompare(right.code)), [chinaSource]);
+
   const initialProvince = useMemo(() => {
     if (entry) return { code: entry.provinceCode, name: entry.provinceName };
     if (preferredProvince) return preferredProvince;
     return provinces[0] ?? { code: "110000", name: "北京市" };
-  }, [entry, preferredProvince]);
+  }, [entry, preferredProvince, provinces]);
 
   const [title, setTitle] = useState(entry?.title ?? "");
   const [provinceCode, setProvinceCode] = useState(initialProvince.code);

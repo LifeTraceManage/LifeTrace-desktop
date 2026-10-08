@@ -1,9 +1,7 @@
 use std::{
     collections::HashMap,
-    io::Cursor,
     net::{Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::Path,
 };
 
 use axum::{
@@ -20,15 +18,6 @@ use serde_json::{json, Value};
 use tokio::{fs, net::TcpListener};
 
 use super::AppState;
-
-// Retained for local IPC callers. LAN pairing and upload services were removed.
-pub struct Runtime;
-
-impl Runtime {
-    pub fn new(_data_dir: PathBuf) -> Arc<Self> {
-        Arc::new(Self)
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PhotoExifMetadata {
@@ -107,14 +96,6 @@ fn photo_exif_metadata(exif: &exif::Exif) -> PhotoExifMetadata {
         latitude,
         longitude,
     }
-}
-
-fn read_exif_metadata(bytes: &[u8]) -> PhotoExifMetadata {
-    let mut cursor = Cursor::new(bytes);
-    let Ok(exif) = ExifReader::new().read_from_container(&mut cursor) else {
-        return PhotoExifMetadata::default();
-    };
-    photo_exif_metadata(&exif)
 }
 
 pub(crate) fn read_exif_metadata_from_path(path: &Path) -> PhotoExifMetadata {

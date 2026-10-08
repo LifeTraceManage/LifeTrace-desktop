@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ArrowLeft, Database, FileUp, NotebookPen, ShieldCheck } from "lucide-react";
-import NotesModule from "@/src/components/NotesModule";
-import ImportBills from "@/src/components/feature/finance/ImportBills";
 import { useLifeStore } from "@/src/stores/useLifeStore";
+
+const NotesModule = lazy(() => import("@/src/components/NotesModule"));
+const ImportBills = lazy(() => import("@/src/components/feature/finance/ImportBills"));
 
 type LocalTool = "bills" | "notes";
 
@@ -67,8 +68,10 @@ export default function DesktopLocalToolsCenter({ onClose }: { onClose: () => vo
         </nav>
 
         <div className="lt-local-tools-content">
-          {tool === "bills" ? <ImportBills/> : null}
-          {tool === "notes" ? <NotesModule/> : null}
+          <Suspense fallback={<div role="status" className="lt-local-tools-loading">正在加载本机工具…</div>}>
+            {tool === "bills" ? <ImportBills/> : null}
+            {tool === "notes" ? <NotesModule/> : null}
+          </Suspense>
         </div>
       </div>
     </section>

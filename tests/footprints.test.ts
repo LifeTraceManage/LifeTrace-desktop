@@ -212,3 +212,23 @@ test("Footprints hierarchy navigation is double-click driven without a dedicated
   assert.doesNotMatch(drawer, /先选择省份/);
   assert.doesNotMatch(page, /onEnterProvinceMap/);
 });
+
+test("Footprints photo picker uses the gallery's local file time without changing GPS suggestion rank", () => {
+  const repository = read("src-tauri/src/database/repositories/footprints.rs");
+  const picker = read("src/components/feature/footprints/FootprintPhotoPicker.tsx");
+  const types = read("src/components/feature/footprints/types.ts");
+  const library = read("src-tauri/src/photo_library.rs");
+
+  assert.match(library, /photos\.sort_by\(\|a, b\| b\.modified_at\.cmp\(&a\.modified_at\)/);
+  assert.match(repository, /local_modified_at \/ 1000000000/);
+  assert.match(repository, /COALESCE\(local_file_path,original_file_name\) ASC,id ASC/);
+  assert.match(repository, /photo_picker_matches_local_library_modified_time_and_keeps_legacy_fallback/);
+  assert.match(picker, /photo\.modifiedAt != null/);
+  assert.match(picker, /photo\.modifiedAt \* 1000/);
+  assert.match(picker, /toLocaleString\("zh-CN", \{ hour12: false \}\)/);
+  assert.match(types, /modifiedAt\?: number \| null/);
+
+  // Existing suggestion ranking and linked-photo manual ordering are unchanged.
+  assert.match(repository, /suggestions\.sort_by\(\|left, right\|/);
+  assert.match(repository, /ORDER BY ep\.is_cover DESC,ep\.sort_order ASC,ep\.photo_id ASC/);
+});

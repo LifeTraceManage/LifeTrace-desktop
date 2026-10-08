@@ -58,10 +58,7 @@ pub async fn execution_api_request(
         .body(Body::from(request.body.unwrap_or_default()))
         .map_err(|error| format!("无法构造执行 IPC 请求: {error}"))?;
 
-    let router = server::execution_ipc_router(
-        state.data_dir.clone(),
-        state.photo_runtime.clone(),
-    )?;
+    let router = server::execution_ipc_router(state.data_dir.clone())?;
     let response = router
         .oneshot(http_request)
         .await
