@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import RichMarkdownEditor from "./RichMarkdownEditor";
+import RichMarkdownEditor, { type RichMarkdownEditorHandle } from "./RichMarkdownEditor";
 import remarkGfm from "remark-gfm";
 import {
   Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
@@ -132,6 +132,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
   const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
   const editorRef=useRef<HTMLTextAreaElement>(null);
+  const richEditorRef=useRef<RichMarkdownEditorHandle>(null);
   const saveLock=useRef(false);
 
   const updateMarkdown=useCallback((value:string)=>{
@@ -215,7 +216,13 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+prefix.length,start+inserted.length)});
   };
   const insertSnippet=(snippet:string)=>{
-    const textarea=editorRef.current;if(!textarea)return;
+    const textarea=editorRef.current;
+    if(!textarea){
+      if(editorMode==="rich"&&richEditorRef.current){richEditorRef.current.insertText(snippet);return}
+      setEditorMode("source");
+      updateMarkdown(markdown+(markdown&&!markdown.endsWith("\n")?"\n":"")+snippet);
+      return;
+    }
     const start=textarea.selectionStart;const end=textarea.selectionEnd;
     const next=markdown.slice(0,start)+snippet+markdown.slice(end);
     updateMarkdown(next);
@@ -312,7 +319,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const createTaskFromNote=async()=>{
     const sourceText=markdown.trim()||draft.contentText.trim();
     const textarea=editorRef.current;
-    const selection=textarea?markdown.slice(textarea.selectionStart,textarea.selectionEnd).trim():"";
+    const selection=textarea?markdown.slice(textarea.selectionStart,textarea.selectionEnd).trim():richEditorRef.current?.selectedText()??"";
     const selectedText=selection||sourceText;
     const title=(selection?cleanSummary(selection).split("\n")[0]:titleOf(draft)).slice(0,160)||"处理笔记";
     const saved=dirty?await save(false):draft;
@@ -402,7 +409,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>{if(mode==="rich"&&hasUnsupportedRichSyntax){notify("当前笔记包含扩展 Markdown，请使用源码模式以完整保留原文");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
           </div>
           <div className={`nt-edit-layout nt-mode-${hasUnsupportedRichSyntax&&editorMode==="rich"?"source":editorMode}`}>
-          {editorMode==="rich"&&!hasUnsupportedRichSyntax&&<RichMarkdownEditor key={note.id} value={markdown} onChange={updateMarkdown}/>}
+          {editorMode==="rich"&&!hasUnsupportedRichSyntax&&<RichMarkdownEditor key={note.id} ref={richEditorRef} value={markdown} onChange={updateMarkdown}/>}
           {(editorMode==="source"||editorMode==="split"||(editorMode==="rich"&&hasUnsupportedRichSyntax))&&<textarea
             ref={editorRef}
             className="nt-markdown-editor"
