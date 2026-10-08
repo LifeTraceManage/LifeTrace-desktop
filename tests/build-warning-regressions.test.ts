@@ -40,9 +40,12 @@ test("local tools share lazy-loaded feature chunks with the native navigation", 
 
 test("offline China map GeoJSON stays out of JavaScript chunks", () => {
   const map = read("src/components/feature/footprints/ChinaMap.tsx");
+  const editor = read("src/components/feature/footprints/FootprintEditor.tsx");
   const assets = read("src/services/chinaMapAssets.ts");
   assert.match(assets, /china-provinces\.json\?url/);
   assert.doesNotMatch(map, /import rawChina from/);
+  assert.doesNotMatch(editor, /import rawChina from/);
+  assert.match(editor, /use\(loadChinaProvinces\(\)\)/);
   assert.doesNotMatch(map, /\bfetch\s*\(/);
   assert.match(assets, /fetch\(chinaProvincesUrl\)/);
   assert.match(map, /const chinaSource = use\(loadChinaProvinces\(\)\) as ChinaSource/);
