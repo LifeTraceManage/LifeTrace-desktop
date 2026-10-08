@@ -87,7 +87,7 @@ test("footprint map navigation is explicit rather than wheel-driven", () => {
   assert.doesNotMatch(map, /\}, \[level, selectedProvinceCode\]\);/);
   assert.match(footprints, /const \[mapLevel, setMapLevel\]/);
   assert.match(footprints, /selected=\{Boolean\(selectedProvince\)\}/);
-  assert.match(footprints, /selectedProvinceCodeRef/);
+  assert.doesNotMatch(footprints, /selectedProvinceCodeRef/);
   assert.doesNotMatch(footprints, /onEnterProvinceMap/);
   assert.doesNotMatch(footprints, /enterProvinceMap/);
   assert.match(footprints, /setSelectedProvince\(null\)/);
@@ -117,4 +117,23 @@ test("footprint map delays pointer capture until a real drag starts", () => {
   assert.match(pointerMove, /isDragGesture/);
   assert.match(pointerMove, /drag\.moved = true/);
   assert.match(pointerMove, /setPointerCapture\(event\.pointerId\)/);
+});
+
+
+test("province double-click entry selects and enters atomically without prior selection", () => {
+  const footprints = read("src/components/feature/footprints/Footprints.tsx");
+  const selectProvince = footprints.slice(
+    footprints.indexOf("const selectProvince"),
+    footprints.indexOf("const chooseProvince"),
+  );
+  const enterProvince = footprints.slice(
+    footprints.indexOf("const enterProvinceByCode"),
+    footprints.indexOf("const filtered"),
+  );
+
+  assert.match(selectProvince, /setSelectedProvince\(\{ code, name \}\)/);
+  assert.match(selectProvince, /if \(enterMap\) \{\s*setMapLevel\("province"\)/);
+  assert.match(enterProvince, /selectProvince\(code, name, true\)/);
+  assert.doesNotMatch(enterProvince, /selectedProvinceCodeRef/);
+  assert.doesNotMatch(enterProvince, /chooseProvince/);
 });
