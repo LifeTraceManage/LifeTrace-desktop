@@ -118,6 +118,9 @@ export const medicalReportApi = {
   detail(id: string) {
     return invoke<MedicalReportDetail>("medical_get_report", { id });
   },
+  listRevisions(reportId: string) {
+    return invoke<MedicalReportRevision[]>("medical_list_revisions", { reportId });
+  },
   readAsset(id: string) {
     return invoke<MedicalAssetData>("medical_read_asset", { id });
   },
