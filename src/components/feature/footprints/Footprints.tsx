@@ -102,7 +102,11 @@ export default function Footprints() {
     void load(null);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const chooseProvince = async (code: string, name: string) => {
+  const selectProvince = async (
+    code: string,
+    name: string,
+    enterMap: boolean,
+  ) => {
     const requestId = provinceRequestRef.current + 1;
     provinceRequestRef.current = requestId;
 
@@ -112,6 +116,9 @@ export default function Footprints() {
     setProvinceDetail(null);
     setProvinceLoading(true);
     setError("");
+    if (enterMap) {
+      setMapLevel("province");
+    }
 
     try {
       const detail = await footprintApi.province(code);
@@ -127,6 +134,9 @@ export default function Footprints() {
     }
   };
 
+  const chooseProvince = (code: string, name: string) =>
+    selectProvince(code, name, false);
+
   const backToCountryMap = () => {
     provinceRequestRef.current += 1;
     selectedProvinceCodeRef.current = null;
@@ -138,11 +148,7 @@ export default function Footprints() {
   };
 
   const enterProvinceByCode = (code: string, name: string) => {
-    if (selectedProvinceCodeRef.current !== code) {
-      void chooseProvince(code, name);
-    }
-    setSelectedCity(null);
-    setMapLevel("province");
+    void selectProvince(code, name, true);
   };
 
   const filtered = useMemo(
