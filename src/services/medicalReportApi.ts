@@ -61,6 +61,11 @@ export type MedicalListItem = {
   attachmentCount: number;
 };
 export type SavedMedicalReport = { id: string; title: string };
+export type MedicalDuplicateMatch = {
+  sourceAssetId: string;
+  existingReportId: string | null;
+  existingTitle: string | null;
+};
 export type MedicalMetricHistoryPoint = {
   reportId: string;
   reportTitle: string;
