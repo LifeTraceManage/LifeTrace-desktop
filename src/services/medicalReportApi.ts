@@ -93,6 +93,9 @@ export const medicalReportApi = {
   list() {
     return invoke<MedicalListItem[]>("medical_list_reports");
   },
+  metricHistory(nameRaw: string, unitRaw: string) {
+    return invoke<MedicalMetricHistoryPoint[]>("medical_metric_history", { nameRaw, unitRaw });
+  },
   detail(id: string) {
     return invoke<MedicalReportDetail>("medical_get_report", { id });
   },
