@@ -30,3 +30,18 @@ test("desktop feature screens load on navigation instead of a single enormous en
   assert.match(source, /lazy\(\(\) => import\("@\/src\/components\/NotesModule"\)\)/);
   assert.match(source, /<Suspense fallback=/);
 });
+ 
+test("local tools share lazy-loaded feature chunks with the native navigation", () => {
+  const tools = read("src/components/DesktopLocalToolsCenter.tsx");
+  assert.match(tools, /lazy\(\(\) => import\("@\/src\/components\/NotesModule"\)\)/);
+  assert.match(tools, /lazy\(\(\) => import\("@\/src\/components\/feature\/finance\/ImportBills"\)\)/);
+  assert.match(tools, /<Suspense fallback=/);
+});
+
+test("offline China map GeoJSON stays out of JavaScript chunks", () => {
+  const map = read("src/components/feature/footprints/ChinaMap.tsx");
+  assert.match(map, /china-provinces\.json\?url/);
+  assert.doesNotMatch(map, /import rawChina from/);
+  assert.match(map, /fetch\(chinaProvincesUrl\)/);
+  assert.match(map, /const chinaSource = use\(loadChinaSource\(\)\)/);
+});
