@@ -38,11 +38,11 @@ export type CloudAgentReply = {
 };
 
 export const cloudAgentApi = {
-  async extractMedicalReports(images: MedicalImageInput[]): Promise<MedicalExtractReply> {
+  async extractMedicalReports(images: MedicalImageInput[], instruction?: string): Promise<MedicalExtractReply> {
     return desktopApiClient.request<MedicalExtractReply>("/api/v1/medical/extract", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ images }),
+      body: JSON.stringify({ images, instruction: instruction?.trim() || null }),
     }, { timeoutMs: 120_000 });
   },
   async ask(prompt: string, sessionId?: string | null): Promise<CloudAgentReply> {
