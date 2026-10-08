@@ -90,6 +90,11 @@ export type MedicalAssetData = {
   base64: string;
 };
 export const medicalReportApi = {
+  replaceReport(reportId: string, draft: MedicalExtractReply, idempotencyKey: string) {
+    return invoke<SavedMedicalReport>("medical_replace_report", {
+      input: { reportId, draft, idempotencyKey },
+    });
+  },
   checkDuplicates(images: MedicalImageInput[]) {
     return invoke<MedicalDuplicateMatch[]>("medical_check_duplicates", { images });
   },
