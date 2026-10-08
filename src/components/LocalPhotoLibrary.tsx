@@ -166,17 +166,6 @@ export default function LocalPhotoLibrary() {
   };
 
   return <section className="hx-view photo-sync local-photo-library">
-    <header className="photo-sync-hero">
-      <div>
-        <span className="hx-pill">电脑本地图库</span>
-        <h2>在这里查看电脑中的照片</h2>
-        <p>自动读取系统“图片”文件夹，也可添加其他文件夹。原文件保留在原位置，不上传、不复制。</p>
-      </div>
-      <button className="hx-btn primary" type="button" onClick={() => void addFolder()} disabled={folderBusy || busy}>
-        <FolderOpen aria-hidden="true" />添加照片文件夹
-      </button>
-    </header>
-
     <div className="local-photo-folders" aria-label="当前图库文件夹">
       {(snapshot?.roots ?? []).map((root) =>
         <span className="local-photo-folder" key={root.path} title={root.path}>
@@ -191,6 +180,9 @@ export default function LocalPhotoLibrary() {
       <header className="photo-section-head">
         <div><span>本地图片</span><h2>{snapshot?.photos.length ?? 0} 张照片</h2></div>
         <div className="photo-section-actions">
+          <button className="hx-btn primary" type="button" onClick={() => void addFolder()} disabled={folderBusy || busy}>
+            <FolderOpen aria-hidden="true" />添加照片文件夹
+          </button>
           <label className="local-photo-search"><Search aria-hidden="true" /><input aria-label="搜索照片文件名" placeholder="搜索照片" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }}/></label>
           <button type="button" className="hx-btn secondary" onClick={() => void refresh()} disabled={busy}><RefreshCw className={busy ? "spin" : ""} aria-hidden="true" />刷新</button>
         </div>
