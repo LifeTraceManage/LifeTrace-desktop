@@ -347,7 +347,15 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const remoteOnlyAttachments=cloudAttachments.filter(file=>!localAttachmentIds.has(file.id));
   const headings=noteHeadings(markdown);
   const wordCount=plainTextFromMarkdown(markdown).replace(/\s+/g,"").length;
-  const hasMarkdownTable=/(?:^|\n)\s*\|[^\n]+\|\s*\n\s*\|\s*:?-{3,}/.test(markdown);
+  // Unsupported extensions must stay in the source editor, never be silently
+  // discarded by the rich-text schema on the first edit.
+  const hasUnsupportedRichSyntax =
+    /(?:^|\n)\s*\|[^\n]+\|\s*\n\s*\|\s*:?-{3,}/.test(markdown) ||
+    /attachment:\/\//i.test(markdown) ||
+    /(?:^|\n)\s*\[\^[^\]]+\]:/.test(markdown) ||
+    /(?:^|\n)\s*\$\$/.test(markdown) ||
+    /^---\s*\n[\s\S]*?\n---(?:\n|$)/.test(markdown) ||
+    /(?:^|\n)\s*<\/?[a-z][^>]*>/i.test(markdown);
   const focusHeading=(lineIndex:number)=>{
     const textarea=editorRef.current;if(!textarea)return;
     const lines=markdown.split(/\r?\n/);
@@ -391,11 +399,11 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <EditorButton title="表格" onClick={()=>insertSnippet("\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")}><ListTree/></EditorButton>
           </div>}
           <div className="nt-view-switch" role="group" aria-label="编辑显示模式">
-            {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>{if(mode==="rich"&&hasMarkdownTable){notify("当前笔记含表格，请使用源码编辑以保留表格格式");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
+            {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={editorMode===mode?"active":""} aria-pressed={editorMode===mode} onClick={()=>{if(mode==="rich"&&hasUnsupportedRichSyntax){notify("当前笔记包含扩展 Markdown，请使用源码模式以完整保留原文");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
           </div>
-          <div className={`nt-edit-layout nt-mode-${hasMarkdownTable&&editorMode==="rich"?"source":editorMode}`}>
-          {editorMode==="rich"&&!hasMarkdownTable&&<RichMarkdownEditor key={note.id} value={markdown} onChange={updateMarkdown}/>}
-          {(editorMode==="source"||editorMode==="split"||(editorMode==="rich"&&hasMarkdownTable))&&<textarea
+          <div className={`nt-edit-layout nt-mode-${hasUnsupportedRichSyntax&&editorMode==="rich"?"source":editorMode}`}>
+          {editorMode==="rich"&&!hasUnsupportedRichSyntax&&<RichMarkdownEditor key={note.id} value={markdown} onChange={updateMarkdown}/>}
+          {(editorMode==="source"||editorMode==="split"||(editorMode==="rich"&&hasUnsupportedRichSyntax))&&<textarea
             ref={editorRef}
             className="nt-markdown-editor"
             data-testid="markdown-editor"
