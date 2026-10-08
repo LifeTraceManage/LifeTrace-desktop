@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- native IPC returns the user's local image thumbnail */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, FolderOpen, Images, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { desktopPhotoLibrary, type LibraryPhoto, type LibrarySnapshot } from "@/src/desktop/photoSyncAdapter";
 
@@ -211,11 +212,14 @@ export default function LocalPhotoLibrary() {
         </> : <div className="photo-empty"><Images aria-hidden="true" /><h3>{query ? "没有找到匹配的照片" : "图库里还没有照片"}</h3><p>{query ? "试试其他文件名" : "会自动显示系统“图片”文件夹中的照片，也可点击“添加照片文件夹”选择其他位置。"}</p></div>}
     </section>
 
-    {selected && <div className="hx-overlay photo-preview" role="dialog" aria-modal="true" aria-label={selected.name} onMouseDown={(event) => { if (event.currentTarget === event.target) setSelected(null); }}>
+    {selected && typeof document !== "undefined" && createPortal(
+      <div className="hx-overlay photo-preview local-photo-preview" role="dialog" aria-modal="true" aria-label={selected.name} onMouseDown={(event) => { if (event.currentTarget === event.target) setSelected(null); }}>
       <article><header><div><strong>{selected.name}</strong><small>{formatTime(selected.modifiedAt)} · {formatSize(selected.size)}</small></div><button type="button" aria-label="关闭预览" onClick={() => setSelected(null)}><X /></button></header>
         <div className="photo-preview-media">{preview ? <img alt={selected.name} src={preview}/> : previewError ? <p>暂不支持预览此照片格式或文件已损坏</p> : <LoaderCircle className="spin" aria-label="正在加载照片" />}</div>
         <footer><button className="local-photo-preview-nav" disabled={index <= 0} onClick={() => navigatePhoto(-1)}><ArrowLeft />上一张</button><span>{index + 1} / {filtered.length} · 本地文件，仅浏览</span><button className="local-photo-preview-nav" disabled={index >= filtered.length - 1} onClick={() => navigatePhoto(1)}>下一张<ArrowRight /></button></footer>
       </article>
-    </div>}
+      </div>,
+      document.body,
+    )}
   </section>;
 }
