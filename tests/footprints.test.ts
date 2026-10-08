@@ -101,16 +101,24 @@ test("Footprints uses the shared photo catalog and local API instead of duplicat
   assert.match(photo, /photos_geo_idx/);
 });
 
-test("Footprints ships offline province and prefecture datasets with explicit hierarchical navigation", () => {
+test("Footprints uses Map of Us province boundaries and city points for hierarchical navigation", () => {
   const map = JSON.parse(read("src/assets/maps/china-provinces.json")) as {
     features: Array<{ properties: { adcode: number | string; name?: string } }>;
   };
-  const prefectures = JSON.parse(read("src/assets/maps/china-prefectures.json")) as {
-    features: Array<{ properties: { adcode: number | string; name?: string } }>;
+  const cityPoints = JSON.parse(read("src/assets/maps/china-city-points.json")) as {
+    source: string;
+    license: string;
+    cities: Array<{
+      id: string;
+      name: string;
+      provinceCode: string;
+      cityCode: string | null;
+      longitude: number;
+      latitude: number;
+    }>;
   };
   const mapComponent = read("src/components/feature/footprints/ChinaMap.tsx");
   const codes = new Set(map.features.map((feature) => String(feature.properties.adcode)));
-  const prefectureCodes = new Set(prefectures.features.map((feature) => String(feature.properties.adcode)));
   const packageJson = JSON.parse(read("package.json")) as {
     dependencies: Record<string, string>;
   };
@@ -118,38 +126,55 @@ test("Footprints ships offline province and prefecture datasets with explicit hi
   const entrypoint = read("tauri-ui/main.tsx");
 
   assert.ok(codes.has("110000"));
+  assert.ok(codes.has("330000"));
+  assert.ok(codes.has("360000"));
   assert.ok(codes.has("510000"));
   assert.ok(codes.has("810000"));
   assert.ok(codes.has("820000"));
   assert.ok(codes.has("100000_JD"));
-  assert.ok(prefectureCodes.has("510100"), "成都 should have an offline city boundary");
-  assert.ok(prefectureCodes.has("440100"), "广州 should have an offline city boundary");
+
+  assert.equal(cityPoints.source, "WuSuBuDuoMing/map data/cities.ts");
+  assert.equal(cityPoints.license, "MIT");
+  assert.ok(cityPoints.cities.length >= 390);
+
+  const zhejiang = cityPoints.cities.filter((city) => city.provinceCode === "330000");
+  const jiangxi = cityPoints.cities.filter((city) => city.provinceCode === "360000");
+  assert.equal(zhejiang.length, 11);
+  assert.equal(jiangxi.length, 11);
+  assert.ok(zhejiang.some((city) => city.name === "杭州"));
+  assert.ok(zhejiang.some((city) => city.name === "舟山"));
+  assert.ok(jiangxi.some((city) => city.name === "南昌"));
+  assert.ok(jiangxi.some((city) => city.name === "赣州"));
+
+  assert.match(mapComponent, /china-city-points\.json/);
+  assert.doesNotMatch(mapComponent, /china-prefectures\.json/);
+  assert.doesNotMatch(mapComponent, /rawPrefectures/);
+  assert.match(mapComponent, /footprint-map-province-outline/);
+  assert.match(mapComponent, /footprint-map-city-node/);
+  assert.match(mapComponent, /projection\(\[city\.longitude, city\.latitude\]\)/);
   assert.match(mapComponent, /onWheel=\{wheel\}/);
   assert.match(mapComponent, /event\.preventDefault\(\)/);
   assert.doesNotMatch(mapComponent, /countryDrillScale/);
-  assert.doesNotMatch(mapComponent, /enterProvince\(/);
   assert.match(mapComponent, /level: FootprintMapLevel/);
   assert.match(mapComponent, /onBackToCountry/);
   assert.match(mapComponent, /onEnterProvince/);
   assert.match(mapComponent, /event\.detail > 1/);
   assert.match(mapComponent, /onDoubleClickCapture=\{doubleClickProvince\}/);
-  assert.doesNotMatch(mapComponent, /event\.detail >= 2/);
-  assert.doesNotMatch(mapComponent, /isDoubleRegionActivation/);
-  assert.match(mapComponent, /双击进入省内地图/);
+  assert.match(mapComponent, /双击省份进入省内地图/);
   assert.match(mapComponent, /onSelectCity/);
   assert.match(mapComponent, /shortAdminName/);
-  assert.match(mapComponent, /labelPoint/);
   assert.match(mapComponent, /footprint-map-admin-label/);
   assert.match(mapComponent, /footprint-map-visit-marker/);
-  assert.match(mapComponent, /省级名称常驻显示/);
-  assert.match(mapComponent, /市 \/ 地区名称常驻显示/);
   assert.equal(packageJson.dependencies["d3-geo"], "^3.1.1");
   assert.match(attribution, /Map of Us/);
+  assert.match(attribution, /china-city-points\.json/);
+  assert.match(attribution, /ProvinceMap/);
   assert.match(attribution, /MIT License/);
   assert.match(entrypoint, /app\/footprints\.css/);
+
   const mapStyles = read("app/footprints.css");
-  assert.match(mapStyles, /\.footprint-map-admin-name/);
-  assert.match(mapStyles, /\.footprint-map-visit-count/);
+  assert.match(mapStyles, /\.footprint-map-city-node/);
+  assert.match(mapStyles, /\.footprint-map-province-outline/);
 });
 
 test("Footprints keeps creation compact instead of rendering the oversized hero panel", () => {
