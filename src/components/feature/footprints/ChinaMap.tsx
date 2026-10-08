@@ -13,7 +13,7 @@ import {
 } from "react";
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
 import { geoArea, geoMercator, geoPath } from "d3-geo";
-import chinaProvincesUrl from "@/src/assets/maps/china-provinces.json?url";
+import { loadChinaProvinces } from "@/src/services/chinaMapAssets";
 import rawCityPoints from "@/src/assets/maps/china-city-points.json";
 import type { CityFootprintSummary, ProvinceFootprintSummary } from "./types";
 import { footprintVisitIntensity } from "./footprintViewModel";
@@ -97,17 +97,6 @@ const easyTapProvinceCodes = new Set([
 ]);
 
 type ChinaSource = { type: string; features: AdminFeature[] };
-let chinaSourcePromise: Promise<ChinaSource> | null = null;
-
-function loadChinaSource(): Promise<ChinaSource> {
-  // The 580 KB GeoJSON is a bundled local asset, not a JS module. Fetching it
-  // on map view avoids embedding all coordinates into the application's code.
-  chinaSourcePromise ??= fetch(chinaProvincesUrl).then((response) => {
-    if (!response.ok) throw new Error("无法读取本地中国地图数据");
-    return response.json() as Promise<ChinaSource>;
-  });
-  return chinaSourcePromise;
-}
 
 const cityPointData = rawCityPoints as { cities: CityPoint[] };
 
@@ -213,7 +202,7 @@ export default function ChinaMap({
   onSelectCity,
   onBackToCountry,
 }: ChinaMapProps) {
-  const chinaSource = use(loadChinaSource());
+  const chinaSource = use(loadChinaProvinces()) as ChinaSource;
   const [hovered, setHovered] = useState<HoveredRegion | null>(null);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState<MapPoint>({ x: 0, y: 0 });
