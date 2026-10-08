@@ -424,7 +424,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         {inspectorTab==="outline"&&<section className="nt-inspector-section">
           <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
           <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.index)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
-        </section>
+        </section>}
         {inspectorTab==="properties"&&<section className="nt-inspector-section">
           <header><Braces/><strong>属性</strong></header>
           <div className="nt-meta">
@@ -436,18 +436,18 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <label><Tag/><span>Aliases</span><input value={properties.aliases.join(", ")} onChange={e=>patchProperties({aliases:e.target.value.split(",").map(item=>item.trim()).filter(Boolean)})} placeholder="别名，用逗号分隔"/></label>
             <footer>创建 {formatTime(draft.createdAt)}<br/>更新 {formatTime(draft.updatedAt)} · v{draft.version}</footer>
           </div>
-        </section>
+        </section>}
         {inspectorTab==="links"&&<section className="nt-inspector-section">
           <header><LinkIcon/><strong>知识链接</strong><span>{wikiLinks.length+backlinks.length}</span></header>
           <label className="nt-inspector-select"><span>插入 Wiki Link</span><select value="" onChange={e=>insertWikiLink(e.target.value)}><option value="">选择笔记…</option>{linkCandidates.map(item=><option key={item.id} value={item.id}>{titleOf(item)}</option>)}</select></label>
           <div className="nt-link-list"><strong>Links</strong>{wikiLinks.length?wikiLinks.map(link=><button key={link.id} disabled={!link.targetNoteId} onClick={()=>{if(link.targetNoteId)void onOpenNote(link.targetNoteId)}}>{link.resolved?"↗":"×"} {link.alias?link.alias:link.displayTitle}</button>):<small>正文输入 [[笔记标题]] 建立链接。</small>}</div>
           <div className="nt-link-list"><strong>Backlinks</strong>{backlinks.length?backlinks.map(link=><button key={link.id} onClick={()=>void onOpenNote(link.sourceNoteId)}>↩ {link.sourceTitle}</button>):<small>暂无反向链接</small>}</div>
-        </section>
+        </section>}
         {inspectorTab==="relations"&&<section className="nt-inspector-section">
           <header><LinkIcon/><strong>关联数据</strong></header>
           <label className="nt-inspector-select"><select value="" onChange={e=>addRelation(e.target.value)}><option value="">添加习惯、训练或账单…</option>{relationOptions.map(x=><option key={`${x.type}:${x.id}`} value={`${x.type}:${x.id}`}>{x.label}</option>)}</select></label>
           {draft.relations.length>0&&<div className="nt-relations">{draft.relations.map(rel=><span key={rel.id}>{rel.entityType} · {rel.entityId.slice(0,8)}<button onClick={()=>patch({relations:draft.relations.filter(x=>x.id!==rel.id)})}><X/></button></span>)}</div>}
-        </section>
+        </section>}
         {inspectorTab==="attachments"&&<section className="nt-inspector-section nt-attachments">
           <header><span><Paperclip/><strong>附件</strong></span><button onClick={()=>void attach()}><Plus/>添加</button></header>
           {cloudAttachmentLoading&&<small>正在读取云附件…</small>}
