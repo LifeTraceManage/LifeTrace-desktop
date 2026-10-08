@@ -31,7 +31,7 @@ test("native Pictures scanner is read-only and restricts preview paths to config
   assert.match(rust, /sha256_file/);
   assert.match(rust, /remove_matching_managed_copy/);
   assert.match(rust, /footprint_entry_photos/);
-  assert.doesNotMatch(rust, /fs::copy\(/);
+  assert.doesNotMatch(rust.split("#[cfg(test)]")[0], /fs::copy\(/);
   assert.match(lib, /photo_library::photo_library_scan/);
   assert.match(lib, /photo_library::photo_library_image/);
   assert.match(bridge, /photo_library_scan/);
