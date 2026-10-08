@@ -43,6 +43,7 @@ pub fn run() {
             commands::medical::medical_metric_history,
             commands::medical::medical_check_duplicates,
             commands::medical::medical_replace_report,
+            commands::medical::medical_list_revisions,
             commands::execution::execution_api_request,
             commands::local_api::local_json_api_request,
             commands::notes::notes_query,
