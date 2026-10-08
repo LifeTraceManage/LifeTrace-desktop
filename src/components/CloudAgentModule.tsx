@@ -350,6 +350,7 @@ export default function CloudAgentModule() {
         </div>
 
         {medicalDraft ? <MedicalImportReview
+          images={medicalDraft.images}
           draft={medicalDraft.result}
           disabled={loading}
           onConfirm={() => void confirmMedical()}
