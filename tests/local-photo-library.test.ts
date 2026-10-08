@@ -59,3 +59,17 @@ test("photo database retains local metadata and serves authorized local files", 
   assert.match(backend, /original_bytes_from_library/);
   assert.match(backend, /preview_bytes_from_library/);
 });
+
+test("local photo lightbox displays full portrait and landscape images inside the viewport", () => {
+  const gallery = read("src/components/LocalPhotoLibrary.tsx");
+  const css = read("app/photo-sync.css");
+  assert.match(gallery, /createPortal\(/);
+  assert.match(gallery, /document\.body/);
+  assert.match(gallery, /className="hx-overlay photo-preview local-photo-preview"/);
+  const modalStyles = css.slice(css.indexOf("/* Keep the local gallery's lightbox"));
+  assert.match(modalStyles, /height:min\(900px,calc\(100dvh - 32px\)\)/);
+  assert.match(modalStyles, /flex:1 1 0;min-width:0;min-height:0;overflow:hidden/);
+  assert.match(modalStyles, /width:100%;height:100%;min-width:0;min-height:0/);
+  assert.match(modalStyles, /object-fit:contain;object-position:center/);
+  assert.match(modalStyles, /@media\(max-width:620px\)/);
+});
