@@ -16,6 +16,7 @@ mod execution_reminder;
 mod execution_structure;
 mod execution_waiting;
 mod observability;
+mod photo_library;
 mod server;
 mod storage;
 mod sync;
@@ -56,12 +57,10 @@ pub fn run() {
             observability::client_log_read_recent,
             storage::storage_status,
             storage::storage_migrate,
-            desktop::photo_status,
-            desktop::photo_create_pairing,
-            desktop::photo_cancel_pairing,
-            desktop::photo_recover,
-            desktop::photo_set_compatibility,
-            desktop::photo_export_certificate,
+            photo_library::photo_library_scan,
+            photo_library::photo_library_add_folder,
+            photo_library::photo_library_remove_folder,
+            photo_library::photo_library_image,
             desktop::note_copy_attachment,
             desktop::note_delete_attachment,
             desktop::note_open_attachment,
