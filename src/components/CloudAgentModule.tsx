@@ -186,13 +186,13 @@ export default function CloudAgentModule() {
           mimeType: file.type,
           base64: await fileData(file),
         })));
-        const result = await cloudAgentApi.extractMedicalReports(images);
+        const result = await cloudAgentApi.extractMedicalReports(images, prompt);
         setReportFiles([]);
         setInput("");
         setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID() });
         setMessages((current) => [...current, {
           id: crypto.randomUUID(), role: "user",
-          content: `提交了 ${images.length} 张医疗报告图片进行识别（图片内容不保存到云端会话）。`,
+          content: `提交了 ${images.length} 张医疗报告图片进行识别${prompt ? `；附带说明：${prompt}` : ""}（图片内容不保存到云端会话）。`,
         }]);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "医疗检查报告识别失败");
