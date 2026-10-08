@@ -313,13 +313,38 @@ fn commit(root: &Path, input: MedicalCommitInput) -> Result<Vec<SavedMedicalRepo
                 params![asset.id,user,batch_id,asset.source_id,asset.name,asset.mime,asset.bytes.len() as i64,asset.hash,asset.filename]).map_err(|e|e.to_string())?;
             by_source.insert(asset.source_id.as_str(),asset.id.as_str());
         }
+        // Source IDs supplied to the vision model are ephemeral. Persist durable local asset
+        // IDs instead, so every section and observation can reopen its original file later.
+        fn persist_source_ids(
+            report: &Value,
+            lookup: &HashMap<&str, &str>,
+        ) -> Result<Value, String> {
+            let mut persisted = report.clone();
+            for field in ["sourceAssetIds"] {
+                for source in persisted[field].as_array_mut().ok_or("无效源文件列表")? {
+                    let id = source.as_str().ok_or("无效源文件")?;
+                    *source = Value::String(lookup.get(id).ok_or("找不到源文件")?.to_string());
+                }
+            }
+            for kind in ["sections", "observations"] {
+                for entry in persisted[kind].as_array_mut().ok_or("源文件内容无效")? {
+                    let id = entry["sourceAssetId"].as_str().ok_or("缺少字段源文件")?;
+                    entry["sourceAssetId"] = Value::String(
+                        lookup.get(id).ok_or("找不到字段来源文件")?.to_string()
+                    );
+                }
+            }
+            Ok(persisted)
+        }
+
         let mut saved=Vec::new();
         for report in reports {
+            let persisted = persist_source_ids(report, &by_source)?;
             let id=Uuid::new_v4().to_string();
             let title=required_str(report,"title",200)?.to_owned();
             let kind=required_str(report,"reportType",40)?;
             tx.execute("INSERT INTO medical_reports(id,user_id,batch_id,title,report_type,exam_at,facility,content_json,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-                params![id,user,batch_id,title,kind,optional_str(report,"examAt",30)?,optional_str(report,"facility",500)?,report.to_string(),stamp])
+                params![id,user,batch_id,title,kind,optional_str(report,"examAt",30)?,optional_str(report,"facility",500)?,persisted.to_string(),stamp])
                 .map_err(|e|e.to_string())?;
             for source_id in report["sourceAssetIds"].as_array().ok_or("缺少源文件")? {
                 let key=source_id.as_str().ok_or("无效源文件")?;
@@ -327,11 +352,11 @@ fn commit(root: &Path, input: MedicalCommitInput) -> Result<Vec<SavedMedicalRepo
                 tx.execute("INSERT INTO medical_report_asset_links(report_id,asset_id) VALUES(?1,?2)",
                     params![id,asset_id]).map_err(|e|e.to_string())?;
             }
-            for (position,section) in report["sections"].as_array().ok_or("缺少章节")?.iter().enumerate() {
+            for (position,section) in persisted["sections"].as_array().ok_or("缺少章节")?.iter().enumerate() {
                 tx.execute("INSERT INTO medical_report_sections(id,report_id,position,content_json) VALUES(?1,?2,?3,?4)",
                     params![Uuid::new_v4().to_string(),id,position as i64,section.to_string()]).map_err(|e|e.to_string())?;
             }
-            for (position,result) in report["observations"].as_array().ok_or("缺少结果")?.iter().enumerate() {
+            for (position,result) in persisted["observations"].as_array().ok_or("缺少结果")?.iter().enumerate() {
                 tx.execute("INSERT INTO medical_observations(id,report_id,position,name_raw,metric_key,value_number,unit_raw,content_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
                     params![Uuid::new_v4().to_string(),id,position as i64,required_str(result,"nameRaw",200)?,
                     optional_str(result,"metricKey",100)?,
