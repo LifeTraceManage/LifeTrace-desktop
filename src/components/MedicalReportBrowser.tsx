@@ -6,6 +6,7 @@ import {
   type MedicalListItem,
   type MedicalReportDetail,
   type MedicalMetricHistoryPoint,
+  type MedicalReportRevision,
 } from "@/src/services/medicalReportApi";
 
 /** Read-only archive. New reports are intentionally added through the cloud Agent. */
@@ -13,6 +14,7 @@ export default function MedicalReportBrowser() {
   const [items, setItems] = useState<MedicalListItem[]>([]);
   const [selected, setSelected] = useState<MedicalReportDetail | null>(null);
   const [preview, setPreview] = useState<MedicalAssetData | null>(null);
+  const [revisions, setRevisions] = useState<MedicalReportRevision[] | null>(null);
   const [trend, setTrend] = useState<{
     name: string; unit: string; points: MedicalMetricHistoryPoint[];
   } | null>(null);
@@ -33,8 +35,14 @@ export default function MedicalReportBrowser() {
     setError("");
     setPreview(null);
     setTrend(null);
+    setRevisions(null);
     try { setSelected(await medicalReportApi.detail(id)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取报告详情"); }
+  };
+  const loadRevisions = async (reportId: string) => {
+    setError("");
+    try { setRevisions(await medicalReportApi.listRevisions(reportId)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取历史修订"); }
   };
   const openAsset = async (id: string) => {
     setError("");
@@ -75,7 +83,7 @@ export default function MedicalReportBrowser() {
       {selected ? <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <h3>{selected.report.title}</h3>
-          <button type="button" onClick={() => { setSelected(null); setPreview(null); setTrend(null); }}>关闭详情</button>
+          <button type="button" onClick={() => { setSelected(null); setPreview(null); setTrend(null); setRevisions(null); }}>关闭详情</button>
         </div>
         <p>{selected.report.examAt || selected.report.issuedAt || "日期未知"} · {selected.report.facility || "医疗机构未知"} · {selected.report.reportType}</p>
         {selected.report.sections?.map((section, index) =>
@@ -141,6 +149,21 @@ export default function MedicalReportBrowser() {
             </div>
           </> : <p>没有可以比较的历史数值。</p>}
         </section> : null}
+        <div style={{ marginTop: 14 }}>
+          <button type="button" onClick={() => void loadRevisions(selected.id)}>查看修订历史</button>
+          {revisions ? <details open style={{ padding: 8 }}>
+            <summary>报告修订版本（{revisions.length} 条）</summary>
+            {!revisions.length ? <p>此报告尚未修订。</p> : revisions.map((revision) => <details key={revision.id} style={{ marginTop: 8 }}>
+              <summary>{new Date(revision.changedAt).toLocaleString("zh-CN")} · {revision.previous.title} → {revision.updated.title}</summary>
+              <div style={{ maxHeight: 220, overflowY: "auto", fontSize: 12 }}>
+                <strong>修订前的结构化结果</strong>
+                {revision.previous.observations?.map((item, index) => <p key={index}>
+                  {item.nameRaw}：{item.valueRaw} {item.unitRaw || ""}
+                </p>)}
+              </div>
+            </details>)}
+          </details> : null}
+        </div>
         <h4>原始报告图片</h4>
         {selected.assets.map((asset) => <button type="button" key={asset.id}
           onClick={() => void openAsset(asset.id)}
