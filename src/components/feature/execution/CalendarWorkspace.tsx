@@ -97,6 +97,7 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const range = useMemo(() => calendarRange(view, anchor), [view, anchor]);
   const calendarItems = useMemo(() => {
     const linked = new Set(events.map(event => event.sourceTaskId).filter(Boolean));
     const synthetic: CalendarEvent[] = [];
@@ -146,7 +147,6 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
   const [error, setError] = useState("");
   const [dragTarget, setDragTarget] = useState<string | null>(null);
 
-  const range = useMemo(() => calendarRange(view, anchor), [view, anchor]);
   const days = useMemo(() => enumerateCalendarDays(range), [range]);
 
   const load = useCallback(async () => {
@@ -225,7 +225,13 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
           >
             {hourLabels.map((_, hour) => <i key={hour} style={{ top: `${hour * 60 * minutePixel}px` }}/>) }
             {sameLocalDay(day, today) ? <span className="lt-calendar-now" style={{ top: `${nowMinutes * minutePixel}px` }}/>: null}
-            {timed.map((event) => <EventBlock key={event.id} event={event} day={day} onEdit={editItem} onReminder={onReminder} onRecurrence={onRecurrence}/>) }
+            {timed.map((event) => <EventBlock key={event.id} event={event} day={day} onEdit={editItem} onReminder={(subject) => {
+              if (event.sourceTaskId && isTaskItem(event)) {
+                onReminder({ subjectType: "task", subjectId: event.sourceTaskId, title: taskById.get(event.sourceTaskId)?.title ?? event.title });
+              } else {
+                onReminder(subject);
+              }
+            }} onRecurrence={onRecurrence}/>) }
           </div>;
         })}
       </div>
