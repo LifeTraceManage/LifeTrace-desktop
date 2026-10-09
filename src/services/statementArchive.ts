@@ -43,6 +43,7 @@ export type ArchivedStatementRow = {
   ordinal: number;
   source: "icbc" | "wechat" | "alipay" | "generic";
   status: string;
+  verified: boolean;
   payload: unknown;
 };
 export async function listArchivedStatementRows(): Promise<ArchivedStatementRow[]> {
