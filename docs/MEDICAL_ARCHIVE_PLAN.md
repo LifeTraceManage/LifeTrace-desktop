@@ -1,12 +1,15 @@
 # LifeTrace Desktop · Agent 驱动医疗检查报告归档方案
 
+> **最新产品范围（2026-10-09）**：医疗报告全部为图片，首版只接受 JPG/PNG/WebP（最多 8 张，每张不超过 5 MiB，总计 12 MiB），不提供 PDF 导入、不做 OCR。使用多模态模型直接读取图片；原件字节不改动，SQLite 与文件均不加密。最新范围优先于下方旧设计中的其他格式说明。
+
+
 > **存储决策更新（2026-10-08）**：用户明确不使用加密。原始图片作为普通本地文件保存，检查结果作为普通 SQLite 数据保存；无需 Medical Vault/密码/解锁。其他与此冲突的旧设计均由 [实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md) 取代。
 
 > **工程实施清单**：参见 [Agent 医疗报告归档实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md)。接口、安全、数据表、阶段任务及验收以实施方案为准。
 
-> 状态：方案更新（Agent-first；尚未实现）  
+> 状态：开发分支已有实现；仍在自动化与真实模型验收中  
 > 仓库：`LifeTraceManage/LifeTrace-desktop`  
-> 用户目标：**把医疗检查报告照片或 PDF 发给 LifeTrace 云端 Agent，由 Agent 识别并填写检查记录。**  
+> 用户目标：**把医疗检查报告照片 发给 LifeTrace 云端 Agent，由 Agent 识别并填写检查记录。**  
 > 用户交互：**上传报告 → Agent 提取 → 查看归档预览 → 一键确认**。不要求手动填写检查表单。  
 > 产品范围：只管理每次医疗检查报告，包括血检、尿检、彩超、CT、MRI、心电图、体检等；不建设完整医疗病历/诊疗系统。
 
@@ -14,7 +17,7 @@
 
 ### 1.1 唯一主要录入方式：对话
 
-用户在 `/app/assistant` 的云端 Agent 输入框发送一张或多张检查报告照片、扫描件或 PDF，也可以补充一句自然语言，例如：
+用户在 `/app/assistant` 的云端 Agent 输入框发送一张或多张检查报告照片、扫描图片，也可以补充一句自然语言，例如：
 
 - “把这份血常规报告记录下来”
 - “这是我今天做的腹部彩超”
@@ -55,7 +58,7 @@ Agent 应：
 
 - 列表：按日期倒序、检查类型、机构；
 - 详情：自动提取的日期、检查名称、报告所见、结论、指标表；
-- 附件：原图/PDF，按上传顺序预览；
+- 附件：原图，按上传顺序预览；
 - 趋势：对相同名称/同一单位的常见检验指标查看多次结果；
 - 管理动作：通过 Agent 对话修改、合并、重新识别、删除（删除需要明确确认）。
 
@@ -89,7 +92,7 @@ LifeTrace 当前云端 Agent 的实现与服务在：
 
 ```text
 桌面 Agent 对话窗口
-   └─ 用户发送 1..N 张报告照片 / PDF + 可选文字
+   └─ 用户发送 1..N 张报告照片 + 可选文字
         ↓
 桌面创建本机待归档草稿（保存原图、hash、上传顺序）
         ↓
@@ -228,7 +231,7 @@ created_at
 | 责任 | 所在端 | 说明 |
 | --- | --- | --- |
 | 文件选择/拍照及原图持有 | Desktop | 同一 Agent 聊天界面上传；原图先留本地 |
-| 直接视觉识别/字段抽取（无独立 OCR） | LifeTrace-cloud / 视觉模型提供方 | 将获授权的原始图片或 PDF 页面直接作为视觉输入 |
+| 直接视觉识别/字段抽取（无独立 OCR） | LifeTrace-cloud / 视觉模型提供方 | 将获授权的原始图片 页面直接作为视觉输入 |
 | 提取字段 schema 验证 | Cloud + Desktop | 模型输出当作非可信候选数据 |
 | 草稿预览/询问用户更正 | Agent 对话 UI | 展示异常字段和图片证据 |
 | 最终记录与原图持久化 | Desktop Rust + SQLite / encrypted object store | 不由 Cloud Agent 直接连本机数据库 |
@@ -258,7 +261,7 @@ created_at
 
 - 在上传界面/服务端校验该 provider/model 的 image input capability；
 - **必须使用实际支持图片输入的多模态视觉模型**，直接读取照片中的表格、文字、日期、医院、检查所见和结论；不实施 OCR -> text fallback；
-- 对图片直接提交原图（可做旋转/缩放/去除界面边框等不改变报告信息的预处理）。对 PDF：模型接口支持原生 PDF 时可直接发送；否则仅使用 PDF 渲染器按页转换为图片并交给视觉模型，**不采用 OCR 或单独的文档文本解析流水线**；
+- 仅直接发送图片给视觉模型；不使用 PDF 渲染器或 OCR。
 - 任何 provider 不支持图像时明确报错或要求切换，**不能假装图片已被识别**；
 - 上传必须有大小、格式、页数、分辨率限制，并有明确失败反馈。
 
@@ -369,7 +372,7 @@ type MedicalExamExtractionDraft = {
 
 ### LifeTrace-desktop
 
-- `src/components/CloudAgentModule.tsx`：图片 / PDF 上传、预览、进度、批量附件、Agent 归档预览卡、确认操作；
+- `src/components/CloudAgentModule.tsx`：图片 上传、预览、进度、批量附件、Agent 归档预览卡、确认操作；
 - `src/services/cloudAgentApi.ts`：支持携带安全文件引用的多模态请求，typed draft/commit status；
 - `src/components/DesktopHealthModule.tsx`：健康检查列表、详情及检测值趋势的只读工作区；
 - `src/services/medicalExamApi.ts`：本机 IPC 查询 / 提交 / 备份；
@@ -384,7 +387,7 @@ type MedicalExamExtractionDraft = {
 ### LifeTrace-cloud
 
 - Agent 请求/会话扩展为带安全附件引用的多模态消息；图像识别直接由视觉模型完成，禁止额外 OCR 中间流程；
-- 短期文件接收 / 图像预处理 / PDF 渲染为图片（如模型不原生支持 PDF）；**不引入 PaddleOCR、Docling、MinerU 或其他独立 OCR/文档提取引擎**；
+- 图片来源签名校验与大小限制；**不引入 PaddleOCR、Docling、MinerU 或其他独立 OCR/文档提取引擎**；
 - 实际可用 vision provider 的能力校验；
 - `MedicalExamExtractionDraft` 严格 schema 提取；
 - 医疗场景的受控 tool/capability + 预览/纠错；
@@ -416,7 +419,7 @@ type MedicalExamExtractionDraft = {
 - [ ] 多报告批量导入、拆分/合并；
 - [ ] 对话式修正与修订历史；
 - [ ] 血检/生化指标趋势；
-- [ ] PDF（原生多模态支持或按页渲染为图片）处理；
+- [ ] 图片格式与内容签名校验、来源关联和去重；
 - [ ] 普通文件备份与恢复；
 - [ ] 权限、过期、取消、恢复及中断重试。
 
