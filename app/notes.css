@@ -279,3 +279,27 @@
 .nt-library-reopen{align-self:flex-start;display:flex;align-items:center;gap:6px;margin:10px 16px;padding:7px 10px;border:0;border-radius:5px;background:transparent;color:var(--hx-muted,#738079);font-size:11px;cursor:pointer}
 .nt-library-reopen:hover{background:var(--hx-soft,#edf1ed);color:var(--hx-accent2,#176b54)}
 .nt-library-reopen svg{width:15px;height:15px}
+
+
+/* Remove the largest surrounding notes card entirely. */
+.lt-desk-content.notes-route .nt-workspace {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.lt-desk-content.notes-route .nt-library,
+.lt-desk-content.notes-route .nt-note-stage {
+  border-radius: 0;
+  box-shadow: none;
+}
+.lt-desk-content.notes-route .nt-library {
+  background: color-mix(in srgb, var(--lt-color-surface, #fff) 96%, var(--hx-soft, #edf1ed));
+}
+.lt-desk-content.notes-route .nt-note-stage {
+  background: transparent;
+}
