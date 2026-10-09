@@ -47,3 +47,14 @@ export type ArchivedStatementRow = {
 export async function listArchivedStatementRows(): Promise<ArchivedStatementRow[]> {
   return invoke<ArchivedStatementRow[]>("statement_list_raw_rows");
 }
+
+export type PersistedStatementMatch = {
+  bankBatchId: string;
+  bankOrdinal: number;
+  paymentBatchId: string;
+  paymentOrdinal: number;
+  reason: "unique-card-time-channel";
+};
+export async function saveArchivedStatementMatches(matches: PersistedStatementMatch[]): Promise<number> {
+  return invoke<number>("statement_save_matches", { matches });
+}
