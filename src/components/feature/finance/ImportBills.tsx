@@ -108,7 +108,17 @@ export default function ImportBills() {
 
       if (/\.pdf$/i.test(file.name)) {
         setBillSource("icbc");
-        const statement = await parseIcbcPdf(file);
+        let statement;
+        try {
+          statement = await parseIcbcPdf(file);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          await archiveBillRows(file, "icbc", [{
+            ordinal: 1, payload: {error: reason, filename: file.name}, status: "invalid",
+          }], false, {parseError: reason, transactions: 0});
+          setMessage("PDF 无法正确解析：已保存原始文件供重新识别，未生成任何财务交易。原因：" + reason);
+          return;
+        }
         if (statement.transactions.length === 0) throw new Error("未识别到银行交易，无法归档");
         const archived = await archiveBillRows(file, "icbc", statement.transactions.map((tx, i) => ({
           ordinal: i + 1, payload: tx, status: statement.valid ? "parsed" as const : "review" as const,
