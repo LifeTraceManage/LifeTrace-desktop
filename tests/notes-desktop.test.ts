@@ -24,7 +24,7 @@ test("desktop notes mirrors the web workspace without mounting vendor web", () =
   assert.match(notes, /executionApi\.tasks\.create/);
   assert.match(notes, /executionApi\.relations\.create/);
   assert.match(notes, /Markdown/);
-  assert.match(notes, /data-testid="markdown-editor"/);
+  assert.match(notes, /<RichMarkdownEditor/);
   assert.match(notes, /type:"markdown",source:markdown,editor:"desktop-markdown"/);
   assert.doesNotMatch(notes, /useEditor|EditorContent|StarterKit|DOMPurify|turndown/);
   assert.doesNotMatch(notes, /vendor\/web|NotesPage/);
