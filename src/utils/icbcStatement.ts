@@ -79,6 +79,8 @@ export function parseIcbcPages(pages: PositionedWord[][]): BankStatement {
     }
     const footer = (label: string) => {
       for (const anchor of words.filter(word => word.text.includes(label))) {
+        const own = anchor.text.slice(anchor.text.indexOf(label) + label.length).match(/^[\d,.]+/);
+        if (own) return own[0];
         const line = words.filter(word => Math.abs(word.y - anchor.y) < 2).sort((a, b) => a.x - b.x).map(word => word.text).join("");
         const match = line.match(new RegExp(label + "([\\d,.]+)"));
         if (match) return match[1];
