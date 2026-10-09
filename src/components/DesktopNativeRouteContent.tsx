@@ -94,7 +94,7 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
       record={(value) => setModal({ kind: "record", value })}
     />;
   } else if (route.startsWith("/app/execution")) {
-    content = <ExecutionModule onNavigate={navigate} initialTab="today" />;
+    content = <ExecutionModule onNavigate={navigate} />;
   } else if (route === "/app/calendar") {
     content = <ExecutionModule onNavigate={navigate} initialTab="calendar" />;
   } else if (route === "/app/habits") {
