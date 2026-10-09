@@ -12,7 +12,7 @@ test("album opens the native Pictures library by default without a legacy import
   assert.doesNotMatch(tabs, /<PhotoSyncDashboard\/>/);
   assert.match(tabs, /<LocalVaultModule\/>/);
   assert.match(gallery, /desktopPhotoLibrary\.scan\(\)/);
-  assert.match(gallery, /desktopPhotoLibrary\.addFolder\(\)/);
+  assert.doesNotMatch(gallery, /desktopPhotoLibrary\.addFolder\(\)/);
   assert.match(gallery, /desktopPhotoLibrary\.image\(photo\.path, "thumbnail"\)/);
   assert.match(gallery, /THUMB_CONCURRENCY = 4/);
 });
@@ -74,14 +74,24 @@ test("local photo lightbox displays full portrait and landscape images inside th
   assert.match(modalStyles, /@media\(max-width:620px\)/);
 });
 
-test("local gallery has no introduction banner and keeps folder management in the photo toolbar", () => {
+test("gallery removes the add-folder button and leaves search, refresh and existing roots", () => {
   const gallery = read("src/components/LocalPhotoLibrary.tsx");
   assert.doesNotMatch(gallery, /photo-sync-hero|电脑本地图库|在这里查看电脑中的照片/);
-  const toolbar = gallery.slice(gallery.indexOf('className="photo-section-actions"'));
-  assert.match(toolbar, /addFolder\(\)/);
-  assert.match(toolbar, /添加照片文件夹/);
-  assert.match(toolbar, /folderBusy \|\| busy/);
+  assert.doesNotMatch(gallery, /addFolder\(|添加照片文件夹/);
+  assert.match(gallery, /desktopPhotoLibrary\.removeFolder\(path\)/);
   assert.match(gallery, /className="local-photo-folders"/);
+  const toolbar = gallery.slice(gallery.indexOf('className="photo-section-actions"'));
   assert.match(toolbar, /搜索照片/);
   assert.match(toolbar, /刷新/);
+});
+
+test("album mode tabs stay pinned while gallery outer card is removed", () => {
+  const tabs = read("src/components/PhotoSyncModule.tsx");
+  const tabStyles = read("app/local-vault.css");
+  const galleryStyles = read("app/photo-sync.css");
+  assert.match(tabs, /className="photo-album-tabs"/);
+  assert.match(tabStyles, /\.photo-album-shell>\.photo-album-tabs\{/);
+  assert.match(tabStyles, /position:sticky;top:0;z-index:15/);
+  assert.match(galleryStyles, /\.photo-album-shell>\.local-photo-library>\.photo-timeline/);
+  assert.match(galleryStyles, /background:transparent;border:0;border-radius:0;box-shadow:none/);
 });
