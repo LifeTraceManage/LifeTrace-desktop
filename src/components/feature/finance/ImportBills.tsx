@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { archiveBillRows, listArchivedStatementBatches, reconcileArchivedStatements } from "@/src/services/statementArchive";
-import { bankChannel } from "@/src/utils/statementReconciliation";
+import { canBindStatementAccount, statementAccountFromSourceId } from "@/src/utils/bankAccountBinding";
 import { findSafeLedgerCorrections } from "@/src/utils/paymentLedgerPriority";
 import type { StoredStatementBatch } from "@/src/services/statementArchive";
 import { FileUp } from "lucide-react";
@@ -51,6 +51,7 @@ export default function ImportBills() {
   const [importing, setImporting] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [bankAccountId, setBankAccountId] = useState("");
+  const [confirmCardMismatch, setConfirmCardMismatch] = useState(false);
   const [newBankName, setNewBankName] = useState("工商银行储蓄卡");
   const [newBankLast4, setNewBankLast4] = useState("");
   const [newBankBalance, setNewBankBalance] = useState("");
@@ -59,9 +60,12 @@ export default function ImportBills() {
   const isPendingTransfer = (row: ImportRow) =>
     row.type === "transfer" || row.review === true || row.category === "资金流转（待确认）";
   const resolvedAccount = bankAccounts.find(account => account.id === bankAccountId);
+  const statementAccounts = [...new Set(rows.map(row => statementAccountFromSourceId(row.sourceId)).filter(Boolean))];
+  const cardMismatch = Boolean(resolvedAccount && statementAccounts.some(value =>
+    !canBindStatementAccount(value, resolvedAccount.last4, false)));
   const effectiveBankRows = rows.map(row =>
     billSource === "icbc" && !row.accountId && resolvedAccount &&
-      (!resolvedAccount.last4 || row.sourceId?.split("/")[3]?.endsWith(resolvedAccount.last4))
+      canBindStatementAccount(statementAccountFromSourceId(row.sourceId), resolvedAccount.last4, confirmCardMismatch)
       ? { ...row, account: resolvedAccount.name, accountId: resolvedAccount.id }
       : row,
   );
@@ -143,6 +147,7 @@ export default function ImportBills() {
       if (/\.pdf$/i.test(file.name)) {
         setBillSource("icbc");
         setBankAccountId("");
+        setConfirmCardMismatch(false);
         let statement;
         try {
           statement = await parseIcbcPdf(file);
@@ -191,9 +196,9 @@ export default function ImportBills() {
           const existing = transactions.some(item => item.note?.includes(key));
           const archivedId = archived.batchId + ":" + (rowIndex + 1);
           if (existing || linkedBankRows.has(archivedId)) { duplicates++; continue; }
-          // Payment-channel bank debits are held until their source can be reconciled.
-          const intermediary = bankChannel(tx.counterparty, tx.summary);
-          const uncertain = Boolean(intermediary) || uncertainBankRows.has(archivedId);
+          // Only actual cross-platform candidate conflicts need review.
+          // Channel text alone is not proof of a duplicate: otherwise every bank-funded purchase gets stuck.
+          const uncertain = uncertainBankRows.has(archivedId);
           const internal = /基金购买|理财|余额宝|微信零钱提|跨行汇款|他行汇入/.test(tx.summary);
           if (internal) transfers++;
           parsed.push({
@@ -642,7 +647,7 @@ export default function ImportBills() {
                 <p>先选择与 PDF 卡号后四位一致的账户。未匹配账户、内部资金划转会保留在原始账单中，只有已绑定的普通收支可以入账。</p>
                 <label htmlFor="bank-import-account">未匹配流水归属账户</label>
                 <select id="bank-import-account" value={bankAccountId}
-                  onChange={event => setBankAccountId(event.target.value)}>
+                  onChange={event => { setBankAccountId(event.target.value); setConfirmCardMismatch(false); }}>
                   <option value="">请选择银行账户</option>
                   {bankAccounts.map(account => (
                     <option key={account.id} value={account.id}>
@@ -650,6 +655,16 @@ export default function ImportBills() {
                     </option>
                   ))}
                 </select>
+                {statementAccounts.length > 0 ? (
+                  <p>PDF 流水账户：{statementAccounts.map(value => "尾号 " + value.slice(-4)).join("、")}</p>
+                ) : null}
+                {cardMismatch ? (
+                  <label style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                    <input type="checkbox" checked={confirmCardMismatch}
+                      onChange={event => setConfirmCardMismatch(event.target.checked)} />
+                    <span>我已核对 PDF 账户与所选工商银行账户属于同一张卡，确认绑定（尾号不一致时必须手动确认）。</span>
+                  </label>
+                ) : null}
                 <details>
                   <summary>新增工商银行账户</summary>
                   <label htmlFor="bank-import-name">账户名称</label>
@@ -669,7 +684,7 @@ export default function ImportBills() {
                   </button>
                 </details>
                 <p role="status">可安全入账 {readyRows.length} 笔；待复核 {pendingRows.length} 笔（其中资金流转 
-                  {pendingRows.filter(isPendingTransfer).length} 笔）。银行卡尾号不符的记录不会被强制归入所选账户。</p>
+                  {pendingRows.filter(isPendingTransfer).length} 笔）。银行卡尾号不符的记录只有显式确认后才会绑定。</p>
               </div>
             ) : null}
             {rows.length > 0 ? (
