@@ -4,7 +4,6 @@ use std::{
 };
 
 use serde_json::{json, Value};
-use tauri::State;
 use tokio::fs;
 
 pub struct DesktopState {
