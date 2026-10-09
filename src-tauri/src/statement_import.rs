@@ -114,13 +114,29 @@ pub fn save(db: &mut Connection, req: &SaveStatementRequest) -> Result<SaveState
     let key = format!("{}:{}", req.source, req.file_sha256.to_ascii_lowercase());
     let batch_id = format!("{:x}", Sha256::digest(key.as_bytes()));
     let tx = db.transaction().map_err(|e| e.to_string())?;
-    let old = tx.query_row("SELECT row_count FROM statement_import_batches WHERE id=?1",
-        [&batch_id], |row| row.get::<_, i64>(0)).optional().map_err(|e| e.to_string())?;
-    if let Some(row_count) = old {
-        let actual: i64 = tx.query_row("SELECT COUNT(*) FROM statement_import_rows WHERE batch_id=?1",
-            [&batch_id], |row| row.get(0)).map_err(|e| e.to_string())?;
-        if actual != row_count {
-            return Err("已存在账单批次数据不完整，拒绝静默跳过".into());
+    let old = tx.query_row("SELECT row_count,verified FROM statement_import_batches WHERE id=?1",
+        [&batch_id], |row| Ok((row.get::<_, i64>(0)?,row.get::<_, bool>(1)?)))
+        .optional().map_err(|e|e.to_string())?;
+    if let Some((row_count,was_verified)) = old {
+        let actual:i64=tx.query_row("SELECT COUNT(*) FROM statement_import_rows WHERE batch_id=?1",
+            [&batch_id], |row|row.get(0)).map_err(|e|e.to_string())?;
+        if actual!=row_count {return Err("已存在账单批次数据不完整，拒绝静默跳过".into());}
+        // A previously unverified batch can be reparsed and upgraded without
+        // losing the immutable source bytes or creating another batch.
+        if !was_verified && req.verified {
+            tx.execute("DELETE FROM statement_import_rows WHERE batch_id=?1",[&batch_id]).map_err(|e|e.to_string())?;
+            for row in &req.rows {
+                tx.execute("INSERT INTO statement_import_rows(batch_id,ordinal,external_id,status,payload_json) VALUES(?1,?2,?3,?4,?5)",
+                    params![batch_id,row.ordinal,row.source_id,row.status,row.payload.to_string()])
+                    .map_err(|e|e.to_string())?;
+            }
+            tx.execute("UPDATE statement_import_batches SET verified=1,validation_json=?2,row_count=?3 WHERE id=?1",
+                params![batch_id,req.validation.to_string(),req.rows.len() as i64]).map_err(|e|e.to_string())?;
+            let count:i64=tx.query_row("SELECT COUNT(*) FROM statement_import_rows WHERE batch_id=?1",
+                [&batch_id],|row|row.get(0)).map_err(|e|e.to_string())?;
+            if count!=req.rows.len() as i64 {return Err("升级入库笔数不一致".into());}
+            tx.commit().map_err(|e|e.to_string())?;
+            return Ok(SaveStatementResult{batch_id,inserted:req.rows.len(),existing:true,persisted:count as usize});
         }
         tx.commit().map_err(|e| e.to_string())?;
         return Ok(SaveStatementResult{batch_id,inserted:0,existing:true,persisted:actual as usize});
