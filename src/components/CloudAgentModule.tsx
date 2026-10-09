@@ -25,15 +25,12 @@ import {
   medicalReportApi, type MedicalImageInput, type MedicalExtractReply, type MedicalListItem,
 } from "@/src/services/medicalReportApi";
 import {
-  checkMedicalFileLimits, prepareMedicalUploads, mapVisionDraftToOriginals,
-  type MedicalPageSource,
-} from "@/src/services/medicalPdfPages";
+  checkMedicalImageLimits, prepareMedicalImages, checkArchivedMedicalImages,
+} from "@/src/services/medicalImageUploads";
 
 type PendingMedicalDraft = {
   result: MedicalExtractReply;
   images: MedicalImageInput[];
-  originals: MedicalImageInput[];
-  pageSources: Record<string, MedicalPageSource>;
   idempotencyKey: string;
   replaceReportId?: string;
 }
@@ -159,7 +156,7 @@ export default function CloudAgentModule() {
     if (reportFiles.length) {
       const imagesToSend = reportFiles;
       try {
-        checkMedicalFileLimits(imagesToSend);
+        checkMedicalImageLimits(imagesToSend);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "检查报告附件不符合限制");
         return;
@@ -168,23 +165,21 @@ export default function CloudAgentModule() {
       setError("");
       setLoading(true);
       try {
-        const prepared = await prepareMedicalUploads(imagesToSend);
-        const duplicates = await medicalReportApi.checkDuplicates(prepared.originals);
+        const images = await prepareMedicalImages(imagesToSend);
+        const duplicates = await medicalReportApi.checkDuplicates(images);
         if (duplicates.length) {
           const existing = duplicates.map((item) => item.existingTitle || "已有归档文件")
             .filter((item, index, all) => all.indexOf(item) === index);
           throw new Error(`检测到 ${duplicates.length} 张已归档的相同原始图片（${existing.join("、")}），请勿重复导入。需要更正时请使用原记录。`);
         }
-        const extracted = await cloudAgentApi.extractMedicalReports(prepared.vision, prompt);
-        const result = mapVisionDraftToOriginals(extracted, prepared.sourcePages);
+        const result = await cloudAgentApi.extractMedicalReports(images, prompt);
         setReportFiles([]);
         setInput("");
-        setMedicalDraft({ result, images: prepared.vision, originals: prepared.originals,
-          pageSources: prepared.sourcePages, idempotencyKey: crypto.randomUUID() });
+        setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID() });
         setArchivedReports(null);
         setMessages((current) => [...current, {
           id: crypto.randomUUID(), role: "user",
-          content: `提交了 ${prepared.originals.length} 份医疗报告文件进行识别${prompt ? `；附带说明：${prompt}` : ""}（图片内容不保存到云端会话）。`,
+          content: `提交了 ${images.length} 张医疗报告图片进行识别${prompt ? `；附带说明：${prompt}` : ""}（图片内容不保存到云端会话）。`,
         }]);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "医疗检查报告识别失败");
@@ -230,8 +225,7 @@ export default function CloudAgentModule() {
     setLoading(true);
     setError("");
     try {
-      const extracted = await cloudAgentApi.extractMedicalReports(medicalDraft.images, instruction);
-      const result = mapVisionDraftToOriginals(extracted, medicalDraft.pageSources);
+      const result = await cloudAgentApi.extractMedicalReports(medicalDraft.images, instruction);
       setMedicalDraft((current) => current ? { ...current, result, idempotencyKey: crypto.randomUUID() } : current);
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), role: "user",
@@ -269,24 +263,19 @@ export default function CloudAgentModule() {
       if (!detail.assets.length || detail.assets.length > 8) {
         throw new Error("该记录的原图数量超出当前视觉模型支持范围");
       }
-      const loaded = await Promise.all(detail.assets.map(async (asset) => ({
-        assetId: asset.id,
-        data: await medicalReportApi.readAsset(asset.id),
-      })));
-      const files = loaded.map(({ data }) => {
-        const bytes = Uint8Array.from(atob(data.base64), (ch) => ch.charCodeAt(0));
-        return new File([bytes], data.originalName, { type: data.mimeType });
-      });
-      const prepared = await prepareMedicalUploads(files, loaded.map((x) => x.assetId));
-      const extracted = await cloudAgentApi.extractMedicalReports(
-        prepared.vision, input.trim() || "完整重新识别本报告，保留所有原文与检验指标",
+      const images: MedicalImageInput[] = await Promise.all(detail.assets.map(async (asset) => {
+        const raw = await medicalReportApi.readAsset(asset.id);
+        return { assetId: asset.id, originalName: raw.originalName,
+          mimeType: raw.mimeType, base64: raw.base64 };
+      }));
+      checkArchivedMedicalImages(images);
+      const result = await cloudAgentApi.extractMedicalReports(
+        images, input.trim() || "完整重新识别本报告，保留所有原文与检验指标",
       );
-      const result = mapVisionDraftToOriginals(extracted, prepared.sourcePages);
       if (result.reports.length !== 1) {
         throw new Error("模型将图片识别成多份报告，不能直接覆盖原记录。请调整说明后重新尝试");
       }
-      setMedicalDraft({ result, images: prepared.vision, originals: prepared.originals,
-        pageSources: prepared.sourcePages, idempotencyKey: crypto.randomUUID(), replaceReportId: id });
+      setMedicalDraft({ result, images, idempotencyKey: crypto.randomUUID(), replaceReportId: id });
       setReportFiles([]);
       setArchivedReports(null);
       setInput("");
@@ -310,7 +299,7 @@ export default function CloudAgentModule() {
       const saved = replacement
         ? [await medicalReportApi.replaceReport(replacement, medicalDraft.result, medicalDraft.idempotencyKey)]
         : await medicalReportApi.commitDraft(
-            medicalDraft.result, medicalDraft.originals, medicalDraft.idempotencyKey,
+            medicalDraft.result, medicalDraft.images, medicalDraft.idempotencyKey,
           );
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), role: "assistant",
@@ -408,7 +397,6 @@ export default function CloudAgentModule() {
 
         {medicalDraft ? <MedicalImportReview
           images={medicalDraft.images}
-          pageSources={medicalDraft.pageSources}
           draft={medicalDraft.result}
           disabled={loading}
           onConfirm={() => void confirmMedical()}
@@ -441,7 +429,7 @@ export default function CloudAgentModule() {
             event.preventDefault();
             if (loading || medicalDraft) return;
             const files = Array.from(event.dataTransfer.files);
-            try { checkMedicalFileLimits(files); setReportFiles(files); setError(""); }
+            try { checkMedicalImageLimits(files); setReportFiles(files); setError(""); }
             catch (cause) { setError(cause instanceof Error ? cause.message : "无法添加医疗附件"); }
           }}
           onSubmit={(event) => { event.preventDefault(); void send(); }}>
@@ -458,14 +446,14 @@ export default function CloudAgentModule() {
             placeholder={medicalDraft ? "输入识别更正说明，例如：第二张是第一页的续页" : "给云端 Agent 一个任务…"}
             disabled={loading}
           />
-          <label title="选择医疗报告图片或 PDF" style={{ cursor: loading || medicalDraft ? "not-allowed" : "pointer" }}>
+          <label title="选择医疗报告图片" style={{ cursor: loading || medicalDraft ? "not-allowed" : "pointer" }}>
             <Paperclip/>
-            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-              aria-label="选择医疗报告图片或 PDF" style={{ display: "none" }} disabled={loading || !!medicalDraft}
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple
+              aria-label="选择医疗报告图片" style={{ display: "none" }} disabled={loading || !!medicalDraft}
               onChange={(event) => {
                 const files = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
-                try { checkMedicalFileLimits(files); setReportFiles(files); setError(""); }
+                try { checkMedicalImageLimits(files); setReportFiles(files); setError(""); }
                 catch (cause) { setError(cause instanceof Error ? cause.message : "无法添加医疗附件"); }
               }}
             />
