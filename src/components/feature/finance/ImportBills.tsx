@@ -106,6 +106,7 @@ export default function ImportBills() {
   };
 
   const read = async (file: File) => {
+    let archivedOriginal = false;
     try {
       setRows([]);
       setMessage("正在解析账单…");
@@ -120,6 +121,8 @@ export default function ImportBills() {
           await archiveBillRows(file, "icbc", [{
             ordinal: 1, payload: {error: reason, filename: file.name}, status: "invalid",
           }], false, {parseError: reason, transactions: 0});
+          archivedOriginal = true;
+          refreshArchive();
           setMessage("PDF 无法正确解析：已保存原始文件供重新识别，未生成任何财务交易。原因：" + reason);
           return;
         }
@@ -131,6 +134,7 @@ export default function ImportBills() {
           pages: statement.pages,
           balanceErrors: statement.balanceErrors,
         });
+        archivedOriginal = true;
         if (!statement.valid) {
           refreshArchive();
           setMessage("原始银行流水已存档 " + archived.persisted + " 行，但未通过校验，禁止生成收支交易：" + statement.errors.join("；"));
@@ -220,6 +224,7 @@ export default function ImportBills() {
         payload: {headers, cells: row.map(cellText)},
         status: "review" as const,
       })), false, {headerRow: headerRow + 1, rows: originalRows.length});
+      archivedOriginal = true;
       refreshArchive();
       const index = (...names: string[]) =>
         headers.findIndex((header) =>
@@ -387,7 +392,23 @@ export default function ImportBills() {
       );
     } catch (error) {
       setRows([]);
-      setMessage(error instanceof Error ? error.message : "文件解析失败");
+      const reason = error instanceof Error ? error.message : "文件解析失败";
+      if (!archivedOriginal) {
+        try {
+          const source = /\.pdf$/i.test(file.name) ? "icbc" : "generic";
+          await archiveBillRows(file, source, [{
+            ordinal: 1, payload: {parseError: reason, filename: file.name}, status: "invalid",
+          }], false, {parseError: reason, transactions: 0});
+          refreshArchive();
+          setMessage("已归档待复核原始文件，未生成财务交易。原因：" + reason);
+        } catch (archiveError) {
+          setMessage("解析及原始文件归档均失败：" +
+            (archiveError instanceof Error ? archiveError.message : String(archiveError)) +
+            "；解析原因：" + reason);
+        }
+      } else {
+        setMessage("原始账单已保留，但交易解析失败：" + reason);
+      }
     } finally {
       if (input.current) input.current.value = "";
     }
