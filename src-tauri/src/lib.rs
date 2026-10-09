@@ -46,6 +46,7 @@ pub fn run() {
             commands::medical::medical_list_revisions,
             commands::medical_backup::medical_export_backup,
             commands::medical_backup::medical_import_backup,
+            commands::medical_integrity::medical_verify_archive;
             commands::execution::execution_api_request,
             commands::local_api::local_json_api_request,
             commands::state::state_get,
