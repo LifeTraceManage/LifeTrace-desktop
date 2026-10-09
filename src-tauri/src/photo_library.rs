@@ -586,6 +586,23 @@ mod tests {
     }
 
     #[test]
+    fn fixture_scan_does_not_include_unregistered_neighbor_folders() {
+        let dir = std::env::temp_dir().join(format!("lifetrace-gallery-fixture-{}", uuid::Uuid::new_v4()));
+        let data = dir.join("data");
+        let included = dir.join("included");
+        let excluded = dir.join("excluded");
+        fs::create_dir_all(&included).unwrap();
+        fs::create_dir_all(&excluded).unwrap();
+        fs::write(included.join("one.jpg"), b"fixture one").unwrap();
+        fs::write(excluded.join("other.jpg"), b"fixture two").unwrap();
+        add_folder(&data, included.to_string_lossy().to_string()).unwrap();
+        let result = scan_registered_fixture(&data);
+        assert_eq!(result.photos.len(), 1);
+        assert_eq!(result.photos[0].name, "one.jpg");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn rejects_images_outside_authorized_folders() {
         let dir = std::env::temp_dir().join(format!("lifetrace-library-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
