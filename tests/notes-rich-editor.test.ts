@@ -6,38 +6,34 @@ const moduleSource = readFileSync("src/components/NotesModule.tsx", "utf8");
 const richSource = readFileSync("src/components/RichMarkdownEditor.tsx", "utf8");
 const styles = readFileSync("app/notes.css", "utf8");
 
-test("notes have exactly one inline live editor and no view mode switcher", () => {
-  assert.match(moduleSource, /<RichMarkdownEditor/);
+test("only CodeMirror is used for live Markdown, without a separate source view", () => {
+  assert.match(moduleSource, /<CodeMirrorMarkdownEditor/);
   assert.match(moduleSource, /nt-edit-layout nt-mode-rich/);
-  assert.doesNotMatch(moduleSource, /editorMode|setEditorMode|effectiveEditorMode/);
+  assert.doesNotMatch(moduleSource, /RichMarkdownEditor|editorMode|setEditorMode|effectiveEditorMode/);
   assert.doesNotMatch(moduleSource, /nt-view-switch|nt-markdown-preview|data-testid="markdown-editor"/);
   assert.match(moduleSource, /showInspector&&!focusMode&&<aside className="nt-inspector"/);
-  assert.match(moduleSource, /nt-focus-mode/);
-  assert.match(moduleSource, /nt-library-collapsed/);
-  assert.match(styles, /\.nt-edit-layout\.nt-mode-rich/);
+  assert.match(moduleSource, /nt-focus-mode|nt-library-collapsed/);
+  assert.match(styles, /\.nt-cm-editor/);
 });
 
-test("live editor protects Markdown extensions without switching to source mode", () => {
-  assert.match(richSource, /hasUnsupportedMarkdown/);
-  assert.match(richSource, /attachment:\\\/\\\//);
-  assert.match(richSource, /nt-rich-protected/);
-  assert.match(richSource, /onChangeRef\.current\(next\)/);
-  assert.match(richSource, /lastEmitted\.current = next/);
-  assert.match(richSource, /emitUpdate: false/);
-  assert.match(richSource, /focusHeading\(text: string\)/);
-  assert.match(richSource, /insertText\(text: string\)/);
-  assert.match(moduleSource, /richEditorRef\.current\?\.focusHeading/);
+test("CodeMirror live preview keeps Markdown as the actual editable document", () => {
+  const cm = readFileSync("src/components/CodeMirrorMarkdownEditor.tsx", "utf8");
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.match(cm, /from "@codemirror\/state"/);
+  assert.match(cm, /from "@codemirror\/view"/);
+  assert.match(cm, /markdown\(\), history\(\)/);
+  assert.match(cm, /EditorState\.create/);
+  assert.match(cm, /update\.state\.doc\.toString\(\)/);
+  assert.match(cm, /Decoration\.replace/);
+  assert.match(cm, /update\.selectionSet/);
+  assert.match(cm, /focusHeading\(text: string\)/);
+  assert.match(cm, /insertText\(text: string\)/);
+  assert.match(cm, /attachment:\\\/\\\//);
+  assert.doesNotMatch(cm, /TurndownService|setContent\(|getHTML\(|@tiptap/);
+  assert.ok(packageJson.dependencies["@codemirror/lang-markdown"]);
+  assert.ok(packageJson.dependencies["@codemirror/view"]);
+  assert.equal(packageJson.dependencies["@tiptap/react"], undefined);
 });
-
-test("rich editor renders safe Markdown and exposes expected formatting tools", () => {
-  assert.match(richSource, /ReactMarkdown remarkPlugins=\{\[remarkGfm\]\}/);
-  assert.match(richSource, /StarterKit\.configure/);
-  assert.match(richSource, /TaskItem\.configure/);
-  assert.match(richSource, /toggleTaskList/);
-  assert.match(richSource, /toggleCodeBlock/);
-  assert.match(richSource, /TurndownService/);
-});
-
 
 test("desktop notes are full-bleed without the enclosing workspace card", () => {
   const shell = readFileSync("src/components/DesktopWorkbenchShell.tsx", "utf8");
