@@ -275,7 +275,8 @@ fn import_backup(root:&Path,source:&Path)->Result<MedicalBackupResult,String>{
             created.push(path.clone());
             drop(handle);
             fs::copy(source,&path).map_err(|_|"备份原图写入失败")?;
-            fs::File::open(&path).and_then(|f|f.sync_all())
+            fs::OpenOptions::new().write(true).open(&path)
+                .and_then(|f| f.sync_all())
                 .map_err(|_|"备份原图落盘失败")?;
         }
         let tx=db.transaction().map_err(|e|e.to_string())?;
