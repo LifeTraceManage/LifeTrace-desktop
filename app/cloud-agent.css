@@ -7,8 +7,8 @@
 .lt-cloud-agent-history>header span{display:flex;flex-direction:column}
 .lt-cloud-agent-history>header small,.lt-cloud-agent-history-list small{opacity:.58}
 .lt-cloud-agent-history>header button,.lt-cloud-agent-history-list article>button:last-child{border:0;background:transparent;border-radius:8px;padding:7px;cursor:pointer}
-.lt-cloud-agent-history-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px;display:grid;gap:4px}
-.lt-cloud-agent-history-list article{display:flex;align-items:center;border-radius:10px;border:1px solid transparent}
+.lt-cloud-agent-history-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:4px}
+.lt-cloud-agent-history-list article{flex:0 0 auto;width:100%;display:flex;align-items:center;border-radius:10px;border:1px solid transparent}
 .lt-cloud-agent-history-list article.active{background:var(--lt-card,#fff);border-color:var(--lt-border,#e5e7eb)}
 .lt-cloud-agent-history-list article>button:first-child{min-width:0;flex:1;border:0;background:transparent;text-align:left;padding:10px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
 .lt-cloud-agent-history-list article strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -25,12 +25,12 @@
 .lt-cloud-agent-orb svg{width:20px}
 .lt-cloud-agent-trust{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.72;white-space:nowrap}
 .lt-cloud-agent-trust svg{width:15px}
-.lt-cloud-agent-messages{min-height:0;min-width:0;padding:22px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;gap:14px}
+.lt-cloud-agent-messages{min-height:0;min-width:0;padding:22px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:14px}
 .lt-cloud-agent-empty{margin:auto;max-width:520px;text-align:center;padding:42px 22px}
 .lt-cloud-agent-empty>svg{width:42px;height:42px;opacity:.5}
 .lt-cloud-agent-empty h2{margin:12px 0 7px;font-size:20px}
 .lt-cloud-agent-empty p{margin:0;opacity:.62;line-height:1.7}
-.lt-cloud-agent-message{display:flex;gap:10px;align-items:flex-start;max-width:min(780px,88%)}
+.lt-cloud-agent-message{flex:0 0 auto;display:flex;gap:10px;align-items:flex-start;max-width:min(780px,88%)}
 .lt-cloud-agent-message.user{align-self:flex-end;flex-direction:row-reverse}
 .lt-cloud-agent-message>span{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--lt-accent,#2563eb) 11%,transparent);font-size:12px;flex:none}
 .lt-cloud-agent-message>span svg{width:16px}
