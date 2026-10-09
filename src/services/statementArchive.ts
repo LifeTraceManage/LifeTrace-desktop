@@ -69,6 +69,7 @@ export async function reconcileArchivedStatements() {
     return {bankBatchId, bankOrdinal:Number(bankOrdinal), paymentBatchId,
       paymentOrdinal:Number(paymentOrdinal), reason:match.reason};
   });
-  if (matches.length) await saveArchivedStatementMatches(matches);
+  // Also persist an empty snapshot so stale inferred links are cleared.
+  await saveArchivedStatementMatches(matches);
   return { ...result, rawRows };
 }
