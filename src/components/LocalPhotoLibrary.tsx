@@ -136,22 +136,6 @@ export default function LocalPhotoLibrary() {
     return () => document.removeEventListener("keydown", onKey);
   }, [selected, index, filtered]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addFolder = async () => {
-    setFolderBusy(true);
-    setError("");
-    try {
-      const result = await desktopPhotoLibrary.addFolder();
-      if (!result.canceled) {
-        setPage(1);
-        await refresh();
-      }
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setFolderBusy(false);
-    }
-  };
-
   const removeFolder = async (path: string) => {
     setFolderBusy(true);
     try {
@@ -173,22 +157,19 @@ export default function LocalPhotoLibrary() {
           <span>{root.name}</span>
           {root.removable && <button type="button" title="从图库移除此文件夹（不会删除任何照片）" aria-label={"移除文件夹 " + root.name} disabled={folderBusy} onClick={() => void removeFolder(root.path)}><X aria-hidden="true" /></button>}
         </span>)}
-      {!busy && snapshot && snapshot.roots.length === 0 && <span className="local-photo-folder">未找到系统图片文件夹，选择一个文件夹即可接入</span>}
+      {!busy && snapshot && snapshot.roots.length === 0 && <span className="local-photo-folder">未找到系统图片文件夹</span>}
     </div>
 
     <section className="photo-timeline">
       <header className="photo-section-head">
         <div><span>本地图片</span><h2>{snapshot?.photos.length ?? 0} 张照片</h2></div>
         <div className="photo-section-actions">
-          <button className="hx-btn primary" type="button" onClick={() => void addFolder()} disabled={folderBusy || busy}>
-            <FolderOpen aria-hidden="true" />添加照片文件夹
-          </button>
           <label className="local-photo-search"><Search aria-hidden="true" /><input aria-label="搜索照片文件名" placeholder="搜索照片" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }}/></label>
           <button type="button" className="hx-btn secondary" onClick={() => void refresh()} disabled={busy}><RefreshCw className={busy ? "spin" : ""} aria-hidden="true" />刷新</button>
         </div>
       </header>
       {error && <p className="local-photo-error" role="alert">{error}</p>}
-      {snapshot?.truncated && <p className="local-photo-notice">图库照片过多，当前显示最多 25,000 张。可以缩小所选文件夹范围。</p>}
+      {snapshot?.truncated && <p className="local-photo-notice">图库照片过多，当前最多显示 25,000 张。</p>}
       {busy && !snapshot ? <div className="photo-loading"><LoaderCircle className="spin" /><p>正在读取本机图片文件夹…</p></div> :
         filtered.length ? <>
           <div className="photo-grid">{visible.map((photo) =>
@@ -201,7 +182,7 @@ export default function LocalPhotoLibrary() {
             <span>第 {page} / {pages} 页</span>
             <button className="hx-btn secondary" disabled={page >= pages} onClick={() => setPage((current) => current + 1)}>下一页</button>
           </nav>}
-        </> : <div className="photo-empty"><Images aria-hidden="true" /><h3>{query ? "没有找到匹配的照片" : "图库里还没有照片"}</h3><p>{query ? "试试其他文件名" : "会自动显示系统“图片”文件夹中的照片，也可点击“添加照片文件夹”选择其他位置。"}</p></div>}
+        </> : <div className="photo-empty"><Images aria-hidden="true" /><h3>{query ? "没有找到匹配的照片" : "图库里还没有照片"}</h3><p>{query ? "试试其他文件名" : "会自动显示系统“图片”文件夹中的照片。"}</p></div>}
     </section>
 
     {selected && typeof document !== "undefined" && createPortal(
