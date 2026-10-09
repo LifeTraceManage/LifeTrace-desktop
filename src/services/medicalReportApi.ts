@@ -104,6 +104,9 @@ export type MedicalAssetData = {
   base64: string;
 };
 export const medicalReportApi = {
+  verifyArchive() {
+    return invoke<MedicalArchiveIntegrity>("medical_verify_archive");
+  },
   exportBackup(directory: string) {
     return invoke<MedicalBackupResult>("medical_export_backup", { directory });
   },
