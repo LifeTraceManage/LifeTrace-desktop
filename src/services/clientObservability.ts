@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export type ClientLogLevel = "debug" | "info" | "warn" | "error" | "fatal";
 export type ClientRuntime = "browser" | "tauri" | "node" | "unknown";
 export type ClientErrorCategory =
@@ -101,7 +103,6 @@ const PRODUCTION_BUILD = Boolean(import.meta.env?.PROD);
 const memoryEvents: ClientLogEvent[] = [];
 let globalHandlersInstalled = false;
 let tauriTransportUnavailable = false;
-let tauriInvokePromise: Promise<typeof import("@tauri-apps/api/core").invoke> | null = null;
 
 function detectRuntime(): ClientRuntime {
   if (typeof window !== "undefined") {
@@ -234,17 +235,9 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function tauriInvoke(): Promise<typeof import("@tauri-apps/api/core").invoke> {
-  if (!tauriInvokePromise) {
-    tauriInvokePromise = import("@tauri-apps/api/core").then((module) => module.invoke);
-  }
-  return tauriInvokePromise;
-}
-
 async function persistTauriEvent(event: ClientLogEvent): Promise<void> {
   if (!isTauriRuntime() || tauriTransportUnavailable) return;
   try {
-    const invoke = await tauriInvoke();
     await invoke("client_log_write", { event });
   } catch (error) {
     tauriTransportUnavailable = true;

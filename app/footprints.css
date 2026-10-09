@@ -710,7 +710,47 @@
 }
 .footprint-editor > footer svg { width: 14px; }
 
-.footprint-photo-picker { width: min(900px, 100%); }
+.footprint-photo-picker {
+  width: min(900px, 100%);
+  height: min(800px, 94dvh);
+  max-height: 94dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.footprint-photo-picker > header,
+.footprint-photo-picker > .footprint-photo-search,
+.footprint-photo-picker > footer {
+  flex: 0 0 auto;
+}
+.footprint-photo-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.footprint-photo-load-trigger { height: 1px; }
+.footprint-photo-feed-status {
+  min-height: 44px;
+  padding: 10px 18px 18px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: var(--hx-muted, #738079);
+  font-size: 10px;
+}
+.footprint-photo-feed-status svg { width: 17px; height: 17px; }
+.footprint-photo-feed-status button {
+  padding: 6px 12px;
+  border: 1px solid var(--hx-line, var(--lt-color-border, #dfe5e1));
+  border-radius: 9px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
 .footprint-photo-search {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;

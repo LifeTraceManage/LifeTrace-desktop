@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Copy, NotebookPen, Pencil, Plus, Tags, Trash2 } from "lucide-react";
+import { Copy, Pencil, Plus, Tags, Trash2 } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Transaction } from "@/src/types";
 import ContextMenu from "@/src/ui/menu/ContextMenu";
@@ -14,10 +14,8 @@ import CategoryManagerDialog from "./CategoryManagerDialog";
 
 export default function Transactions({
   edit,
-  note,
 }: {
   edit: (value?: Transaction) => void;
-  note: (value: Transaction) => void;
 }) {
   const { transactions, categories, deleteTransaction } = useLifeStore();
   const [search, setSearch] = useState("");
@@ -50,13 +48,6 @@ export default function Transactions({
   ])).filter(Boolean).sort((left, right) => left.localeCompare(right, "zh-CN"));
 
   const actionsFor = (item: Transaction): AppAction<Transaction>[] => [
-    {
-      id: "note",
-      label: "添加消费笔记",
-      icon: NotebookPen,
-      group: "primary",
-      execute: note,
-    },
     {
       id: "copy",
       label: "复制交易摘要",
@@ -227,9 +218,6 @@ export default function Transactions({
                 {selected.note ? <div><dt>备注</dt><dd>{selected.note}</dd></div> : null}
               </dl>
               <div className="lt-inspector-actions">
-                <Button variant="secondary" icon={<NotebookPen aria-hidden="true" />} onClick={() => note(selected)}>
-                  添加笔记
-                </Button>
                 <Button variant="primary" icon={<Pencil aria-hidden="true" />} onClick={() => edit(selected)}>
                   编辑
                 </Button>

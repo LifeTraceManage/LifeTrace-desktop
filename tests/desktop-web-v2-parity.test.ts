@@ -26,7 +26,6 @@ test("native desktop route owns all primary non-travel product pages", () => {
     "/app/fitness",
     "/app/health",
     "/app/review",
-    "/app/notes",
     "/app/photos",
     "/app/footprints",
     "/app/finance",
@@ -37,7 +36,6 @@ test("native desktop route owns all primary non-travel product pages", () => {
     assert.match(routes, new RegExp(route.replaceAll("/", "\\/")));
   }
 
-  assert.match(routes, /<NotesModule \/>/);
   assert.match(routes, /<PhotoSyncModule \/>/);
   assert.match(routes, /<Footprints \/>/);
   assert.match(routes, /<CloudAgentModule \/>/);

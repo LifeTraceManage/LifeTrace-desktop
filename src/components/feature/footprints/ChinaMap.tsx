@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  use,
   useEffect,
   useMemo,
   useRef,
@@ -12,7 +13,7 @@ import {
 } from "react";
 import { ChevronLeft, Minus, Plus, RotateCcw } from "lucide-react";
 import { geoArea, geoMercator, geoPath } from "d3-geo";
-import rawChina from "@/src/assets/maps/china-provinces.json";
+import { loadChinaProvinces } from "@/src/services/chinaMapAssets";
 import rawCityPoints from "@/src/assets/maps/china-city-points.json";
 import type { CityFootprintSummary, ProvinceFootprintSummary } from "./types";
 import { footprintVisitIntensity } from "./footprintViewModel";
@@ -95,7 +96,8 @@ const easyTapProvinceCodes = new Set([
   "820000",
 ]);
 
-const chinaSource = rawChina as unknown as { type: string; features: AdminFeature[] };
+type ChinaSource = { type: string; features: AdminFeature[] };
+
 const cityPointData = rawCityPoints as { cities: CityPoint[] };
 
 function normalizeCityName(name: string) {
@@ -200,6 +202,7 @@ export default function ChinaMap({
   onSelectCity,
   onBackToCountry,
 }: ChinaMapProps) {
+  const chinaSource = use(loadChinaProvinces()) as ChinaSource;
   const [hovered, setHovered] = useState<HoveredRegion | null>(null);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState<MapPoint>({ x: 0, y: 0 });

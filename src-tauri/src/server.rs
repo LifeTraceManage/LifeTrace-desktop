@@ -10,7 +10,6 @@ mod execution_waiting;
 mod footprints;
 mod imports;
 pub(crate) mod migration;
-mod notes;
 pub(crate) mod photo;
 mod state;
 pub(crate) mod xunji;
@@ -40,7 +39,6 @@ use crate::database;
 pub(crate) struct AppState {
     data_dir: PathBuf,
     database: Arc<Mutex<Connection>>,
-    photo_runtime: Arc<photo::Runtime>,
 }
 
 #[derive(Serialize)]
@@ -350,37 +348,28 @@ fn local_json_routes() -> Router<AppState> {
         .route("/api/xunji/imports", get(xunji::list).post(xunji::update))
 }
 
-pub(crate) fn local_json_ipc_router(
-    data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
-) -> Result<Router, String> {
+pub(crate) fn local_json_ipc_router(data_dir: PathBuf) -> Result<Router, String> {
     let connection = database::connection::open(&data_dir.join("lifetrace.db"))
         .map_err(|error| format!("无法打开本机 JSON 数据库: {error}"))?;
     let state = AppState {
         data_dir,
         database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
     };
     Ok(local_json_routes().with_state(state))
 }
 
-pub(crate) fn execution_ipc_router(
-    data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
-) -> Result<Router, String> {
+pub(crate) fn execution_ipc_router(data_dir: PathBuf) -> Result<Router, String> {
     let connection = database::connection::open(&data_dir.join("lifetrace.db"))
         .map_err(|error| format!("无法打开本机执行数据库: {error}"))?;
     let state = AppState {
         data_dir,
         database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
     };
     Ok(execution_routes().with_state(state))
 }
 
 pub async fn serve(
     data_dir: PathBuf,
-    photo_runtime: Arc<photo::Runtime>,
     sync_state: crate::sync::SyncDesktopState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::fs::create_dir_all(&data_dir).await?;
@@ -411,7 +400,6 @@ pub async fn serve(
     }
     state::ensure_schema(&connection)?;
     imports::ensure_schema(&connection)?;
-    crate::database::repositories::notes::seed_default_folders(&connection)?;
     photo::ensure_schema(&connection)?;
     match crate::database::legacy::d1_import::import_once(&mut connection, &data_dir) {
         Ok(count) if count > 0 => eprintln!("LifeTrace migrated {count} legacy records"),
@@ -421,23 +409,10 @@ pub async fn serve(
     let state = AppState {
         data_dir,
         database: Arc::new(Mutex::new(connection)),
-        photo_runtime,
     };
     let exif_state = state.clone();
     tokio::spawn(async move {
         photo::run_exif_background_indexer(exif_state).await;
-    });
-    let lan_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_lan(lan_state).await {
-            eprintln!("LifeTrace photo sync service stopped: {error}");
-        }
-    });
-    let compatibility_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(error) = photo::serve_compatibility(compatibility_state).await {
-            eprintln!("LifeTrace photo compatibility service stopped: {error}");
-        }
     });
     let media_state = state.clone();
     tokio::spawn(async move {
@@ -465,7 +440,6 @@ pub async fn serve(
                 .patch(imports::update)
                 .delete(imports::remove),
         )
-        .route("/api/notes", get(notes::get).post(notes::mutate))
         .merge(local_json_routes())
         .route("/api/xunji/parse", axum::routing::post(xunji::parse))
         .layer(middleware::from_fn_with_state(

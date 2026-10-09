@@ -11,7 +11,6 @@ import {
   ListChecks,
   Mail,
   MapPinned,
-  NotebookPen,
   WalletCards,
 } from "lucide-react";
 import type { NavGroup } from "./AppShell";
@@ -31,7 +30,6 @@ export type PlatformView =
   | "calendar"
   | "review"
   | "analytics"
-  | "notes"
   | "settings"
   | "gallery";
 
@@ -53,7 +51,6 @@ export const navGroups: NavGroup[] = [
   {
     label: "记录",
     items: [
-      { id: "notes", label: "笔记", icon: NotebookPen },
       { id: "photos", label: "照片", icon: Images },
       { id: "footprints", label: "足迹", icon: MapPinned },
       { id: "mail", label: "邮件", icon: Mail },
@@ -93,7 +90,6 @@ export const pageTitles: Record<PlatformView, string> = {
   calendar: "生活日历",
   review: "每日复盘",
   analytics: "分析与洞察",
-  notes: "笔记",
   settings: "设置",
   gallery: "设计系统",
 };

@@ -55,13 +55,8 @@ impl Migration for M0013NoteLinks {
                 message: format!("create note link index: {error}"),
             })?;
 
-        let link_count =
-            crate::database::note_links::rebuild_all(transaction).map_err(|error| {
-                MigrationError {
-                    version: 13,
-                    message: format!("backfill note link index: {error}"),
-                }
-            })?;
+        // Historical schema is preserved for existing databases; note indexing is retired.
+        let link_count = 0usize;
 
         let mut report = MigrationReport::default();
         report.migrated = link_count;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DesktopLocalToolsCenter from "@/src/components/DesktopLocalToolsCenter";
 import DesktopNativeRouteContent from "@/src/components/DesktopNativeRouteContent";
 import DesktopWorkbenchShell from "@/src/components/DesktopWorkbenchShell";
@@ -46,6 +46,7 @@ export default function DesktopCloudWorkspace() {
   const authenticated = useCloudAuthStore((value) => value.authenticated);
   const phase = useCloudAuthStore((value) => value.phase);
   const authError = useCloudAuthStore((value) => value.error);
+  const boundProfileId = useCloudAuthStore((value) => value.binding?.profileId);
   const logoutNative = useCloudAuthStore((value) => value.logout);
   const ready = useLifeStore((value) => value.ready);
   const storageError = useLifeStore((value) => value.storageError);
@@ -59,6 +60,9 @@ export default function DesktopCloudWorkspace() {
   const [manualSyncError, setManualSyncError] = useState("");
   const [privacy, setPrivacy] = useState(false);
   const [localToolsOpen, setLocalToolsOpen] = useState(false);
+  const syncFlight = useRef<Promise<void> | null>(null);
+  const lastAppliedSync = useRef<string>("");
+  const initialSyncKey = useRef<string>("");
 
   const reloadLocal = useCallback(async () => {
     await initialize();
@@ -72,50 +76,96 @@ export default function DesktopCloudWorkspace() {
     try {
       const status = await desktopSync.status();
       setSyncStatus(status);
+      // Rust's background scheduler writes SQLite without notifying React.
+      // Reload when a new successful cloud sync is observed, including syncs
+      // performed by the scheduler while this window remains open.
+      if (!syncFlight.current && status.lastSuccessAt && (status.phase === "up_to_date" || status.phase === "conflict")) {
+        const version = `${status.profileId}:${status.lastSuccessAt}`;
+        if (lastAppliedSync.current !== version) {
+          lastAppliedSync.current = version;
+          try {
+            await reloadLocal();
+          } catch (error) {
+            // Allow the next poll to retry refreshing the UI.
+            lastAppliedSync.current = "";
+            throw error;
+          }
+        }
+      }
       if (!hardSyncError(status)) setManualSyncError("");
       return status;
     } catch {
       return null;
     }
-  }, [cloudReady]);
+  }, [cloudReady, reloadLocal]);
 
-  const refresh = useCallback(async () => {
-    if (!desktopSync.available()) {
-      setManualSyncError("桌面同步服务尚未就绪");
-      return;
-    }
-    if (!navigator.onLine || !cloudReady) {
-      setNetworkOnline(navigator.onLine);
-      setManualSyncError(
-        navigator.onLine
-          ? "云端会话暂不可用；本地数据仍可使用，恢复后会自动同步。"
-          : "",
-      );
-      return;
-    }
-    setSyncing(true);
-    setManualSyncError("");
-    try {
-      await desktopSync.now(false);
-      await reloadLocal();
-      await refreshSyncStatus();
-    } catch (cause) {
-      const status = await refreshSyncStatus();
-      const hardError = hardSyncError(status);
-      if (hardError) {
-        setManualSyncError(hardError);
-      } else if (!status) {
-        setManualSyncError(syncErrorMessage(cause));
+  const refresh = useCallback((): Promise<void> => {
+    if (syncFlight.current) return syncFlight.current;
+    const task = (async () => {
+      if (!desktopSync.available()) {
+        setManualSyncError("桌面同步服务尚未就绪");
+        return;
       }
-      // Offline/backoff are retryable scheduler states, not permanent UI errors.
-    } finally {
-      setSyncing(false);
-    }
+      if (!navigator.onLine || !cloudReady) {
+        setNetworkOnline(navigator.onLine);
+        setManualSyncError(
+          navigator.onLine ? "云端会话暂不可用；本地数据仍可使用，恢复后会自动同步。" : "",
+        );
+        return;
+      }
+      setSyncing(true);
+      setManualSyncError("");
+      try {
+        await desktopSync.now(false);
+        await reloadLocal();
+        const status = await refreshSyncStatus();
+        if (status?.lastSuccessAt) {
+          lastAppliedSync.current = `${status.profileId}:${status.lastSuccessAt}`;
+        }
+      } catch (cause) {
+        const status = await refreshSyncStatus();
+        const hardError = hardSyncError(status);
+        if (hardError) {
+          setManualSyncError(hardError);
+        } else if (!status) {
+          setManualSyncError(syncErrorMessage(cause));
+        }
+      } finally {
+        setSyncing(false);
+      }
+    })();
+    syncFlight.current = task;
+    void task.finally(() => {
+      if (syncFlight.current === task) syncFlight.current = null;
+    });
+    return task;
   }, [cloudReady, reloadLocal, refreshSyncStatus]);
 
   useEffect(() => {
     void reloadLocal();
   }, [reloadLocal]);
+
+  // Immediately pull once after cloud authentication. Re-entering the habits
+  // screen also pulls changes authored on the web instead of waiting for the
+  // scheduler's five-minute cycle.
+  useEffect(() => {
+    if (!cloudReady) {
+      initialSyncKey.current = "";
+      lastAppliedSync.current = "";
+      return;
+    }
+    if (!ready || !networkOnline) return;
+    const identity = `${user?.id ?? ""}:${boundProfileId ?? "unbound"}`;
+    if (initialSyncKey.current !== identity) {
+      initialSyncKey.current = identity;
+      void refresh();
+    }
+  }, [ready, cloudReady, networkOnline, refresh, user?.id, boundProfileId]);
+
+  useEffect(() => {
+    if (!ready || !cloudReady || !networkOnline || navigation.route !== "/app/habits") return;
+    void refresh();
+  }, [navigation.route, ready, cloudReady, networkOnline, boundProfileId, refresh]);
 
   useEffect(() => {
     const online = () => {

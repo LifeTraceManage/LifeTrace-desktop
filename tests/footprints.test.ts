@@ -9,7 +9,12 @@ import {
   footprintVisitIntensity,
   groupFootprintsByYear,
 } from "../src/components/feature/footprints/footprintViewModel";
-import type { FootprintEntry } from "../src/components/feature/footprints/types";
+import {
+  PHOTO_PICKER_BATCH_SIZE,
+  hasMorePhotoBatches,
+  mergePhotoBatches,
+} from "../src/components/feature/footprints/photoPickerPagination";
+import type { FootprintEntry, FootprintPhoto } from "../src/components/feature/footprints/types";
 
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -211,4 +216,64 @@ test("Footprints hierarchy navigation is double-click driven without a dedicated
   assert.doesNotMatch(drawer, /查看省内地图/);
   assert.doesNotMatch(drawer, /先选择省份/);
   assert.doesNotMatch(page, /onEnterProvinceMap/);
+});
+
+test("Footprints photo picker uses the gallery's local file time without changing GPS suggestion rank", () => {
+  const repository = read("src-tauri/src/database/repositories/footprints.rs");
+  const picker = read("src/components/feature/footprints/FootprintPhotoPicker.tsx");
+  const types = read("src/components/feature/footprints/types.ts");
+  const library = read("src-tauri/src/photo_library.rs");
+
+  assert.match(library, /photos\.sort_by\(\|a, b\| b\.modified_at\.cmp\(&a\.modified_at\)/);
+  assert.match(repository, /local_modified_at \/ 1000000000/);
+  assert.match(repository, /COALESCE\(local_file_path,original_file_name\) ASC,id ASC/);
+  assert.match(repository, /photo_picker_matches_local_library_modified_time_and_keeps_legacy_fallback/);
+  assert.match(picker, /photo\.modifiedAt != null/);
+  assert.match(picker, /photo\.modifiedAt \* 1000/);
+  assert.match(picker, /toLocaleString\("zh-CN", \{ hour12: false \}\)/);
+  assert.match(types, /modifiedAt\?: number \| null/);
+
+  // Existing suggestion ranking and linked-photo manual ordering are unchanged.
+  assert.match(repository, /suggestions\.sort_by\(\|left, right\|/);
+  assert.match(repository, /ORDER BY ep\.is_cover DESC,ep\.sort_order ASC,ep\.photo_id ASC/);
+});
+
+test("photo picker batches append without duplicates and reset correctly after searching", () => {
+  const photo = (id: string): FootprintPhoto => ({
+    id,
+    originalFileName: `${id}.jpg`,
+    mediaType: "image",
+    capturedAt: null,
+    importedAt: "2026-10-01",
+    latitude: null,
+    longitude: null,
+  });
+  const first = mergePhotoBatches([], [photo("a"), photo("b")], 1);
+  const second = mergePhotoBatches(first, [photo("b"), photo("c")], 2);
+  assert.deepEqual(second.map((item) => item.id), ["a", "b", "c"]);
+  assert.deepEqual(mergePhotoBatches(second, [photo("matched")], 1).map((item) => item.id), ["matched"]);
+  assert.deepEqual(mergePhotoBatches([], [photo("a"), photo("a")], 1).map((item) => item.id), ["a"]);
+  assert.equal(PHOTO_PICKER_BATCH_SIZE, 48);
+  assert.equal(hasMorePhotoBatches(48, 120, false), true);
+  assert.equal(hasMorePhotoBatches(120, 120, false), false);
+  assert.equal(hasMorePhotoBatches(48, 120, true), false);
+});
+
+test("footprint photo picker uses scroll-triggered append without page navigation", () => {
+  const picker = read("src/components/feature/footprints/FootprintPhotoPicker.tsx");
+  const css = read("app/footprints.css");
+  assert.match(picker, /new IntersectionObserver/);
+  assert.match(picker, /root, rootMargin: "0px 0px 240px 0px"/);
+  assert.match(picker, /observer\.disconnect\(\)/);
+  assert.match(picker, /nextPagePendingRef\.current/);
+  assert.match(picker, /mergePhotoBatches\(existing, value\.photos, page\)/);
+  assert.match(picker, /setPhotos\(\[\]\)/);
+  assert.match(picker, /setPage\(1\)/);
+  assert.match(picker, /scrollRef\.current\?\.scrollTo\(\{ top: 0 \}\)/);
+  assert.match(picker, /onClick=\{retryLoad\}/);
+  assert.match(picker, /aria-pressed=\{selected\.has\(photo\.id\)\}/);
+  assert.doesNotMatch(picker, /上一页|下一页|ChevronLeft|ChevronRight|\{page\} \/ \{pages\}/);
+  assert.match(css, /\.footprint-photo-scroll\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.footprint-photo-picker\s*\{[^}]*flex-direction:\s*column/);
+  assert.match(picker, /footprint-photo-load-trigger/);
 });

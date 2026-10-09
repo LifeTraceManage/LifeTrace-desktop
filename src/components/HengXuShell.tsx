@@ -11,7 +11,6 @@ import {
   Sun,
 } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
-import { noteApi } from "@/src/services/noteApi";
 import AppShell from "@/src/components/layout/AppShell";
 import type { CommandItem } from "@/src/components/layout/CommandPalette";
 import {
@@ -37,13 +36,11 @@ import EditorModal, {
 } from "@/src/components/feature/forms/EditorModal";
 import ExecutionModule from "@/src/components/feature/execution/ExecutionModule";
 import MailActionCenter from "@/src/components/feature/mail/MailActionCenter";
-import NotesModule from "@/src/components/NotesModule";
 import PhotoSyncModule from "@/src/components/PhotoSyncModule";
 import Footprints from "@/src/components/feature/footprints/Footprints";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
 import AppUpdaterHost from "@/src/components/AppUpdaterHost";
 import type { ToastPayload } from "@/src/ui/feedback/toastBus";
-import { escapeHtml, dayKey } from "@/src/utils/format";
 
 const DENSITY_KEY = "lifetrace:ui-density";
 
@@ -61,58 +58,8 @@ export default function HengXuShell() {
   const [toast, setToast] = useState("");
   const [toastDuration, setToastDuration] = useState(2200);
 
-  const makeLinkedNote = async (
-    noteType: "habit_log" | "workout_review" | "expense_note",
-    title: string,
-    entityType: "habit" | "workout" | "transaction",
-    entityId: string,
-    content: string,
-  ) => {
-    const created = await noteApi.create({
-      title,
-      noteType,
-      folderId: null,
-      contentJson: {
-        type: "doc",
-        content: [
-          {
-            type: "paragraph",
-            content: [{ type: "text", text: content }],
-          },
-        ],
-      },
-      contentHtml: `<p>${escapeHtml(content).replace(/\n/g, "<br>")}</p>`,
-      contentText: content,
-      contentMarkdown: content,
-      summary: content.replace(/\s+/g, " ").slice(0, 160),
-      isPinned: false,
-      isFavorite: false,
-      isArchived: false,
-      tagIds: [],
-      relations: [
-        {
-          id: crypto.randomUUID(),
-          noteId: "pending",
-          entityType,
-          entityId,
-          relationType: "created_from",
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    });
-    window.localStorage.setItem("lifetrace:last-note", created.id);
-    setView("notes");
-    window.dispatchEvent(
-      new CustomEvent("hengxu-toast", { detail: "关联笔记已创建" }),
-    );
-  };
-
   const openAnalyticsEntity = (entityType: string, entityId: string) => {
     switch (entityType) {
-      case "note":
-        window.localStorage.setItem("lifetrace:last-note", entityId);
-        setView("notes");
-        return;
       case "transaction":
         setView("transactions");
         return;
@@ -306,10 +253,6 @@ export default function HengXuShell() {
           <Dashboard
             go={(next) => setView(next as PlatformView)}
             record={(value) => setModal({ kind: "record", value })}
-            openNotes={(id) => {
-              if (id) window.localStorage.setItem("lifetrace:last-note", id);
-              setView("notes");
-            }}
           />
         ) : null}
         {view === "execution" ? <ExecutionModule /> : null}
@@ -318,46 +261,18 @@ export default function HengXuShell() {
           <Habits
             edit={(value) => setModal({ kind: "activity", value })}
             record={(value) => setModal({ kind: "record", value })}
-            note={(value) =>
-              void makeLinkedNote(
-                "habit_log",
-                `${value.name}练习记录 - ${dayKey()}`,
-                "habit",
-                value.id,
-                `今天的记录：\n\n问题：\n\n下次重点：`,
-              )
-            }
           />
         ) : null}
         {view === "fitness" ? (
-          <Fitness
-            note={(value) =>
-              void makeLinkedNote(
-                "workout_review",
-                `训练复盘 - ${dayKey(new Date(value.occurredAt))}`,
-                "workout",
-                value.id,
-                `训练名称：${value.name}\n训练日期：${dayKey(new Date(value.occurredAt))}\n训练时长：${Math.max(1, Math.round(value.durationSeconds / 60))} 分钟\n总容量：${value.volumeKg ?? "未记录"}\n动作数量：${value.exerciseCount}\n训练来源：${value.source}`,
-              )
-            }
-          />
+          <Fitness />
         ) : null}
         {view === "photos" ? <PhotoSyncModule /> : null}
         {view === "footprints" ? <Footprints /> : null}
-        {view === "notes" ? <NotesModule /> : null}
+        
         {view === "finance" ? <Finance /> : null}
         {view === "transactions" ? (
           <Transactions
             edit={(value) => setModal({ kind: "transaction", value })}
-            note={(value) =>
-              void makeLinkedNote(
-                "expense_note",
-                `消费记录 - ${value.counterparty || value.category}`,
-                "transaction",
-                value.id,
-                `日期：${dayKey(new Date(value.occurredAt))}\n金额：¥${value.amount.toFixed(2)}\n分类：${value.category}\n账户：${value.account}\n商户：${value.counterparty || "未填写"}\n消费目的：`,
-              )
-            }
           />
         ) : null}
         {view === "accounts" ? (

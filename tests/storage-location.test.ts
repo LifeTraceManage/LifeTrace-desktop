@@ -57,9 +57,9 @@ test("all desktop data roots are created from the resolved storage directory", a
   assert.match(source, /storage::bootstrap\(app\.handle\(\)\)/);
   assert.match(source, /storage::schedule_pending_cleanup\(storage_config_path\)/);
   assert.match(source, /VaultState::new\(data_dir\.join\("vault"\)\)/);
-  assert.match(source, /Runtime::new\(data_dir\.clone\(\)\)/);
+  assert.match(source, /app\.manage\(desktop::DesktopState \{[\s\S]*?data_dir: data_dir\.clone\(\)/);
   assert.match(source, /SyncDesktopState::new\(data_dir\.clone\(\)\)/);
-  assert.match(source, /server::serve\(data_dir, photo_runtime, sync_state\)/);
+  assert.match(source, /server::serve\(data_dir, sync_state\)/);
 });
 
 test("migrated database rewrites note attachment absolute paths to the new root", async () => {

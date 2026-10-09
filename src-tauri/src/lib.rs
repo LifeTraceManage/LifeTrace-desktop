@@ -16,13 +16,13 @@ mod execution_reminder;
 mod execution_structure;
 mod execution_waiting;
 mod observability;
+mod photo_library;
 mod server;
 mod storage;
 mod sync;
 mod vault;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use tauri::Manager;
 
@@ -48,12 +48,6 @@ pub fn run() {
             commands::medical_backup::medical_import_backup,
             commands::execution::execution_api_request,
             commands::local_api::local_json_api_request,
-            commands::notes::notes_query,
-            commands::notes::notes_mutate,
-            commands::note_files::note_cloud_list_attachments,
-            commands::note_files::note_cloud_upload_attachment,
-            commands::note_files::note_cloud_download_attachment,
-            commands::note_files::note_cloud_delete_attachment,
             commands::state::state_get,
             commands::state::state_mutate,
             commands::xunji::xunji_parse_image,
@@ -66,16 +60,10 @@ pub fn run() {
             observability::client_log_read_recent,
             storage::storage_status,
             storage::storage_migrate,
-            desktop::photo_status,
-            desktop::photo_create_pairing,
-            desktop::photo_cancel_pairing,
-            desktop::photo_recover,
-            desktop::photo_set_compatibility,
-            desktop::photo_export_certificate,
-            desktop::note_copy_attachment,
-            desktop::note_delete_attachment,
-            desktop::note_open_attachment,
-            desktop::note_show_attachment,
+            photo_library::photo_library_scan,
+            photo_library::photo_library_add_folder,
+            photo_library::photo_library_remove_folder,
+            photo_library::photo_library_image,
             desktop::write_text_file,
             desktop::read_text_file,
             desktop::desktop_open_url,
@@ -134,10 +122,8 @@ pub fn run() {
 
             let vault_state = Arc::new(vault::VaultState::new(data_dir.join("vault"))?);
             app.manage(vault_state);
-            let photo_runtime = server::photo::Runtime::new(data_dir.clone());
             app.manage(desktop::DesktopState {
                 data_dir: data_dir.clone(),
-                photo_runtime: photo_runtime.clone(),
             });
             let sync_state = sync::SyncDesktopState::new(data_dir.clone());
             app.manage(sync_state.clone());
@@ -145,27 +131,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 scheduler_state.scheduler().await;
             });
-            let photo_relay_state = sync_state.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(30));
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-                loop {
-                    interval.tick().await;
-                    let authenticated = {
-                        let auth = photo_relay_state.auth.read().await;
-                        auth.access_token.is_some() && auth.cloud_user_id.is_some()
-                    };
-                    if !authenticated {
-                        continue;
-                    }
-                    if let Err(error) = sync::photo_staging::drain(&photo_relay_state).await {
-                        eprintln!("LifeTrace cloud photo staging drain skipped: {error}");
-                    }
-                }
-            });
             tauri::async_runtime::spawn(async move {
                 if let Err(error) =
-                    server::serve(data_dir, photo_runtime, sync_state).await
+                    server::serve(data_dir, sync_state).await
                 {
                     eprintln!("LifeTrace local service stopped: {error}");
                 }

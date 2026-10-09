@@ -1,0 +1,254 @@
+/* LifeTrace desktop gallery — photograph-first, low-chrome layout.
+   Scoped to the album shell to avoid altering sync dashboards or footprint pickers. */
+.photo-album-shell{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  min-height:0;
+  gap:0;
+  background:transparent;
+}
+.photo-album-shell>.photo-album-tabs{
+  position:sticky;
+  top:0;
+  z-index:15;
+  align-self:stretch;
+  display:flex;
+  align-items:center;
+  width:max-content;
+  max-width:100%;
+  gap:3px;
+  margin:0 0 19px;
+  padding:4px;
+  background:color-mix(in srgb,#fff 94%,var(--hx-soft));
+  border:1px solid var(--hx-line);
+  border-radius:12px;
+  box-shadow:0 2px 9px rgba(22,35,28,.035);
+}
+.photo-album-shell>.photo-album-tabs button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-width:122px;
+  min-height:37px;
+  padding:7px 16px;
+  background:transparent;
+  border:0;
+  border-radius:9px;
+  color:var(--hx-muted);
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:0;
+  box-shadow:none;
+  transition:background .15s ease,color .15s ease,box-shadow .15s ease;
+}
+.photo-album-shell>.photo-album-tabs button svg{height:15px;width:15px}
+.photo-album-shell>.photo-album-tabs button:hover{color:var(--hx-ink);background:var(--hx-soft)}
+.photo-album-shell>.photo-album-tabs button.active,
+.photo-album-shell>.photo-album-tabs button[aria-selected="true"]{
+  background:#fff;
+  color:var(--hx-ink);
+  box-shadow:0 1px 5px rgba(20,35,27,.11);
+}
+.photo-album-shell>.local-photo-library{
+  padding:0;
+  margin:0;
+  gap:0;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+.photo-album-shell .local-photo-library .local-photo-folders{
+  min-height:0;
+  margin:0 0 12px;
+  gap:7px;
+}
+.photo-album-shell .local-photo-library .local-photo-folder{
+  padding:2px 0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  font-size:11px;
+  color:var(--hx-muted);
+}
+.photo-album-shell .local-photo-library .local-photo-folder + .local-photo-folder:before{
+  content:"·";
+  padding-right:6px;
+  color:var(--hx-muted);
+}
+.photo-album-shell .local-photo-library .local-photo-folder>svg{
+  width:13px;
+  height:13px;
+  opacity:.65;
+}
+.photo-album-shell .local-photo-library .photo-timeline{
+  min-height:0;
+  padding:0 0 24px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.photo-album-shell .local-photo-library .photo-section-head{
+  align-items:center;
+  gap:18px;
+  margin:0 0 17px;
+  padding:0 0 14px;
+  border-bottom:1px solid var(--hx-line);
+}
+.photo-album-shell .local-photo-library .photo-section-head>div>span{
+  font-size:10px;
+  font-weight:500;
+  letter-spacing:.04em;
+  text-transform:none;
+}
+.photo-album-shell .local-photo-library .photo-section-head h2{
+  margin-top:3px;
+  font-size:22px;
+  font-weight:650;
+  letter-spacing:-.035em;
+}
+.photo-album-shell .local-photo-library .photo-section-actions{gap:8px}
+.photo-album-shell .local-photo-library .local-photo-search{
+  min-width:190px;
+  height:38px;
+  border:1px solid var(--hx-line);
+  border-radius:9px;
+  background:color-mix(in srgb,#fff 80%,var(--hx-soft));
+  box-shadow:none;
+}
+.photo-album-shell .local-photo-library .local-photo-search input{
+  height:36px;
+  font-size:12px;
+}
+.photo-album-shell .local-photo-library .photo-section-actions .hx-btn{
+  min-height:38px;
+  padding:0 13px;
+  border-radius:9px;
+}
+.photo-album-shell .local-photo-library .photo-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(156px,1fr));
+  gap:7px;
+  align-items:stretch;
+}
+.photo-album-shell .local-photo-library .photo-card{
+  position:relative;
+  display:block;
+  padding:0;
+  margin:0;
+  border:0;
+  border-radius:5px;
+  overflow:hidden;
+  background:var(--hx-soft);
+  box-shadow:none;
+  text-align:left;
+  cursor:zoom-in;
+  transform:translateZ(0);
+  transition:filter .15s ease,transform .15s ease;
+}
+.photo-album-shell .local-photo-library .photo-card:hover{
+  border:0;
+  filter:brightness(.96);
+  box-shadow:none;
+}
+.photo-album-shell .local-photo-library .photo-card:focus-visible{
+  outline:3px solid var(--hx-accent);
+  outline-offset:2px;
+  z-index:2;
+}
+.photo-album-shell .local-photo-library .photo-thumb{
+  aspect-ratio:1;
+  display:block;
+  width:100%;
+  background:var(--hx-soft);
+}
+.photo-album-shell .local-photo-library .photo-thumb img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.photo-album-shell .local-photo-library .photo-card-copy{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:1;
+  padding:29px 10px 9px;
+  background:linear-gradient(transparent,rgba(8,17,13,.78));
+  color:#fff;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .15s ease;
+}
+.photo-album-shell .local-photo-library .photo-card:hover .photo-card-copy,
+.photo-album-shell .local-photo-library .photo-card:focus-visible .photo-card-copy{
+  opacity:1;
+}
+.photo-album-shell .local-photo-library .photo-card-copy strong{
+  font-size:11px;
+  font-weight:550;
+  color:#fff;
+}
+.photo-album-shell .local-photo-library .photo-card-copy small{
+  margin-top:2px;
+  color:rgba(255,255,255,.78);
+  font-size:10px;
+}
+.photo-album-shell .local-photo-library .photo-pagination{
+  margin-top:22px;
+  padding-top:12px;
+  border:0;
+}
+.photo-album-shell .local-photo-library .photo-pagination span{font-size:12px}
+@media (max-width:760px){
+  .photo-album-shell>.photo-album-tabs{margin-bottom:14px}
+  .photo-album-shell .local-photo-library .photo-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:5px}
+  .photo-album-shell .local-photo-library .photo-section-head{align-items:flex-start;flex-wrap:wrap}
+  .photo-album-shell .local-photo-library .photo-section-actions{width:100%}
+  .photo-album-shell .local-photo-library .local-photo-search{flex:1}
+  .photo-album-shell .local-photo-library .local-photo-search input{max-width:none;width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .photo-album-shell .local-photo-library .photo-card,
+  .photo-album-shell .local-photo-library .photo-card-copy,
+  .photo-album-shell>.photo-album-tabs button{transition:none}
+}
+@media (hover:none){
+  .photo-album-shell .local-photo-library .photo-card-copy{opacity:1}
+}
+
+/* Infinite gallery: batches remain in document order; the browser can skip
+   painting offscreen batches without breaking native scroll positioning. */
+.photo-album-shell .local-photo-infinite-list{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  min-width:0;
+}
+.photo-album-shell .local-photo-infinite-list .local-photo-grid-batch{
+  width:100%;
+  content-visibility:auto;
+  contain-intrinsic-size:auto 1700px;
+}
+.photo-album-shell .local-photo-load-more{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  min-height:64px;
+  color:var(--hx-muted);
+  font-size:12px;
+}
+.photo-album-shell .local-photo-load-more svg{width:16px;height:16px}
+.photo-album-shell .local-photo-list-end{
+  padding:20px 0 12px;
+  text-align:center;
+  font-size:11px;
+  color:var(--hx-muted);
+}
+@media(max-width:760px){
+  .photo-album-shell .local-photo-infinite-list{gap:5px}
+  .photo-album-shell .local-photo-infinite-list .local-photo-grid-batch{contain-intrinsic-size:auto 1900px}
+}

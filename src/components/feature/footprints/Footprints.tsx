@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -221,6 +222,7 @@ export default function Footprints() {
 
       {mode === "map" ? (
         <section className="footprint-map-layout">
+          <Suspense fallback={<div role="status" className="footprint-map-loading">正在读取本地地图…</div>}>
           <ChinaMap
             level={mapLevel}
             provinces={provinces}
@@ -233,6 +235,7 @@ export default function Footprints() {
             onSelectCity={(code, name) => setSelectedCity({ code, name })}
             onBackToCountry={backToCountryMap}
           />
+          </Suspense>
           <ProvinceDrawer
             selected={Boolean(selectedProvince)}
             summary={selectedSummary}

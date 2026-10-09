@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, Database, FileUp, NotebookPen, ShieldCheck } from "lucide-react";
-import NotesModule from "@/src/components/NotesModule";
-import ImportBills from "@/src/components/feature/finance/ImportBills";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { ArrowLeft, Database, FileUp, ShieldCheck } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 
-type LocalTool = "bills" | "notes";
+const ImportBills = lazy(() => import("@/src/components/feature/finance/ImportBills"));
+
+type LocalTool = "bills";
 
 const TOOLS: Array<{ id: LocalTool; label: string; description: string; icon: typeof FileUp }> = [
   { id: "bills", label: "账单导入", description: "导入微信、支付宝账单文件", icon: FileUp },
-  { id: "notes", label: "本地笔记", description: "直接访问 SQLite 中的笔记与本地内容", icon: NotebookPen },
 ];
 
 export default function DesktopLocalToolsCenter({ onClose }: { onClose: () => void }) {
@@ -67,8 +66,9 @@ export default function DesktopLocalToolsCenter({ onClose }: { onClose: () => vo
         </nav>
 
         <div className="lt-local-tools-content">
-          {tool === "bills" ? <ImportBills/> : null}
-          {tool === "notes" ? <NotesModule/> : null}
+          <Suspense fallback={<div role="status" className="lt-local-tools-loading">正在加载本机工具…</div>}>
+            {tool === "bills" ? <ImportBills/> : null}
+          </Suspense>
         </div>
       </div>
     </section>

@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
-import { noteApi } from "@/src/services/noteApi";
 import CloudAccountPanel from "@/src/components/CloudAccountPanel";
 import AboutLifeTracePanel from "@/src/components/AboutLifeTracePanel";
 import { PanelHead } from "@/src/components/common";
@@ -42,7 +41,7 @@ export default function SettingsView() {
           <PanelHead kicker="数据备份" title="数据备份" />
           <div className="hx-panel-body">
             <p>
-              导出完整 JSON 备份，包含坚持、复盘、训练、账户、账单、笔记、标签、关联和版本历史。
+              导出完整 JSON 备份，包含坚持、复盘、训练、账户、账单等业务数据。
             </p>
             <div className="hx-settings-actions">
               <button
@@ -50,9 +49,8 @@ export default function SettingsView() {
                 className="hx-btn primary"
                 onClick={async () => {
                   try {
-                    const notesBackup = await noteApi.backup();
                     download(
-                      JSON.stringify({ ...backup, notesBackup }, null, 2),
+                      JSON.stringify(backup, null, 2),
                       "life-trace-backup.json",
                     );
                   } catch (error) {
@@ -82,10 +80,6 @@ export default function SettingsView() {
                       await file.text(),
                     ) as Record<string, unknown>;
                     await store.restoreBackup(data);
-                    if (data.notesBackup)
-                      await noteApi.restoreBackup(
-                        data.notesBackup as Record<string, unknown>,
-                      );
                     setMessage("完整备份已恢复到 SQLite");
                   } catch (error) {
                     setMessage(error instanceof Error ? error.message : "恢复失败");

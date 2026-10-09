@@ -1,0 +1,97 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+
+const read = (file: string) => readFileSync(file, "utf8");
+
+test("album opens the native Pictures library by default without a legacy imported-album tab", () => {
+  const tabs = read("src/components/PhotoSyncModule.tsx");
+  const gallery = read("src/components/LocalPhotoLibrary.tsx");
+  assert.match(tabs, /useState<AlbumMode>\("local"\)/);
+  assert.match(tabs, /<LocalPhotoLibrary\/>/);
+  assert.doesNotMatch(tabs, /<PhotoSyncDashboard\/>/);
+  assert.match(tabs, /<LocalVaultModule\/>/);
+  assert.match(gallery, /desktopPhotoLibrary\.scan\(\)/);
+  assert.doesNotMatch(gallery, /desktopPhotoLibrary\.addFolder\(\)/);
+  assert.match(gallery, /desktopPhotoLibrary\.image\(photo\.path, "thumbnail"\)/);
+  assert.match(gallery, /THUMB_CONCURRENCY = 4/);
+});
+
+test("native Pictures scanner is read-only and restricts preview paths to configured roots", () => {
+  const rust = read("src-tauri/src/photo_library.rs");
+  const lib = read("src-tauri/src/lib.rs");
+  const bridge = read("tauri-ui/apiBridge.ts");
+  assert.match(rust, /fn system_picture_folders\(/);
+  assert.match(rust, /fn library_scan\(/);
+  assert.match(rust, /fn image_from_library\(/);
+  assert.match(rust, /canonical\.starts_with\(Path::new\(&root\.path\)\)/);
+  assert.match(rust, /fn index_snapshot\(/);
+  assert.match(rust, /read_exif_metadata_from_path/);
+  assert.match(rust, /storage_type=\x27local\x27/);
+  assert.match(rust, /sha256_file/);
+  assert.match(rust, /remove_matching_managed_copy/);
+  assert.match(rust, /footprint_entry_photos/);
+  assert.doesNotMatch(rust.split("#[cfg(test)]")[0], /fs::copy\(/);
+  assert.match(lib, /photo_library::photo_library_scan/);
+  assert.match(lib, /photo_library::photo_library_image/);
+  assert.match(bridge, /photo_library_scan/);
+  assert.match(bridge, /photo_library_add_folder/);
+  assert.match(bridge, /photo_library_image/);
+});
+
+test("the album has no LAN upload, pairing or QR workflow", () => {
+  const server = read("src-tauri/src/server.rs");
+  const photoBackend = read("src-tauri/src/server/photo.rs");
+  const savedAlbum = read("src/components/PhotoSyncDashboard.tsx");
+  const bridge = read("tauri-ui/apiBridge.ts");
+  assert.doesNotMatch(server, /serve_lan|serve_compatibility/);
+  assert.doesNotMatch(photoBackend, /lan_dispatch|serve_lan|serve_compatibility|pairings/);
+  assert.doesNotMatch(savedAlbum, /QRCode|createPairing|cancelPairing|扫描二维码/);
+  assert.doesNotMatch(bridge, /photo_create_pairing|photo_set_compatibility/);
+  assert.equal(existsSync("src-tauri/src/server/photo-upload.html"), false);
+});
+
+test("photo database retains local metadata and serves authorized local files", () => {
+  const backend = read("src-tauri/src/server/photo.rs");
+  assert.match(backend, /local_file_path TEXT/);
+  assert.match(backend, /local_modified_at/);
+  assert.match(backend, /storage_type/);
+  assert.match(backend, /original_bytes_from_library/);
+  assert.match(backend, /preview_bytes_from_library/);
+});
+
+test("local photo lightbox displays full portrait and landscape images inside the viewport", () => {
+  const gallery = read("src/components/LocalPhotoLibrary.tsx");
+  const css = read("app/photo-sync.css");
+  assert.match(gallery, /createPortal\(/);
+  assert.match(gallery, /document\.body/);
+  assert.match(gallery, /className="hx-overlay photo-preview local-photo-preview"/);
+  const modalStyles = css.slice(css.indexOf("/* Keep the local gallery's lightbox"));
+  assert.match(modalStyles, /height:min\(900px,calc\(100dvh - 32px\)\)/);
+  assert.match(modalStyles, /flex:1 1 0;min-width:0;min-height:0;overflow:hidden/);
+  assert.match(modalStyles, /width:100%;height:100%;min-width:0;min-height:0/);
+  assert.match(modalStyles, /object-fit:contain;object-position:center/);
+  assert.match(modalStyles, /@media\(max-width:620px\)/);
+});
+
+test("gallery removes the add-folder button and leaves search, refresh and existing roots", () => {
+  const gallery = read("src/components/LocalPhotoLibrary.tsx");
+  assert.doesNotMatch(gallery, /photo-sync-hero|电脑本地图库|在这里查看电脑中的照片/);
+  assert.doesNotMatch(gallery, /addFolder\(|添加照片文件夹/);
+  assert.match(gallery, /desktopPhotoLibrary\.removeFolder\(path\)/);
+  assert.match(gallery, /className="local-photo-folders"/);
+  const toolbar = gallery.slice(gallery.indexOf('className="photo-section-actions"'));
+  assert.match(toolbar, /搜索照片/);
+  assert.match(toolbar, /刷新/);
+});
+
+test("album mode tabs stay pinned while gallery outer card is removed", () => {
+  const tabs = read("src/components/PhotoSyncModule.tsx");
+  const tabStyles = read("app/local-vault.css");
+  const galleryStyles = read("app/photo-sync.css");
+  assert.match(tabs, /className="photo-album-tabs"/);
+  assert.match(tabStyles, /\.photo-album-shell>\.photo-album-tabs\{/);
+  assert.match(tabStyles, /position:sticky;top:0;z-index:15/);
+  assert.match(galleryStyles, /\.photo-album-shell>\.local-photo-library>\.photo-timeline/);
+  assert.match(galleryStyles, /background:transparent;border:0;border-radius:0;box-shadow:none/);
+});

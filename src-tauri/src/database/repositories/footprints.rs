@@ -102,6 +102,9 @@ pub struct PhotoRecord {
     pub imported_at: String,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Unix seconds from the local library's last-modified time, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -540,6 +543,7 @@ pub fn list_entry_photos(connection: &Connection, entry_id: &str) -> Result<Vec<
                 imported_at: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                modified_at: None,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -699,11 +703,18 @@ pub fn list_photos(
         .map_err(|error| error.to_string())?;
     let mut statement = connection
         .prepare(
-            "SELECT id,original_file_name,media_type,captured_at,imported_at,latitude,longitude
+            "SELECT id,original_file_name,media_type,captured_at,imported_at,latitude,longitude,
+                    CASE WHEN storage_type='local' THEN local_modified_at / 1000000000 END
              FROM photos
              WHERE deleted_at IS NULL AND processing_status='completed' AND media_type='image'
                AND (?1='' OR original_file_name LIKE ?2)
-             ORDER BY COALESCE(captured_at,imported_at) DESC
+             ORDER BY COALESCE(
+                 CASE WHEN storage_type='local' THEN local_modified_at / 1000000000 END,
+                 CAST(strftime('%s',captured_at) AS INTEGER),
+                 CAST(strftime('%s',imported_at) AS INTEGER),
+                 0
+             ) DESC,
+             COALESCE(local_file_path,original_file_name) ASC,id ASC
              LIMIT ?3 OFFSET ?4",
         )
         .map_err(|error| error.to_string())?;
@@ -717,6 +728,7 @@ pub fn list_photos(
                 imported_at: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                modified_at: row.get(7)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -881,6 +893,7 @@ pub fn photo_suggestions(
                 imported_at: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                modified_at: None,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -1033,6 +1046,56 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM footprint_entry_photos", [], |row| row.get(0))
             .unwrap();
         assert_eq!(link_count, 0);
+    }
+
+    #[test]
+    fn photo_picker_matches_local_library_modified_time_and_keeps_legacy_fallback() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::server::photo::ensure_schema(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO photos(
+                id,content_hash,original_file_name,stored_file_name,original_path,
+                media_type,file_size,captured_at,imported_at,processing_status,
+                storage_type,local_file_path,local_modified_at
+             ) VALUES
+               ('local-new','hash-local-new','new.jpg','new.jpg','',
+                'image',100,'2020-01-01T10:00:00','2026-10-08T00:00:00Z','completed',
+                'local','C:/Pictures/B.jpg',1800000000000000000),
+               ('local-tie','hash-local-tie','tie.jpg','tie.jpg','',
+                'image',100,NULL,'2026-10-08T00:00:00Z','completed',
+                'local','C:/Pictures/A.jpg',1800000000000000000),
+               ('managed','hash-managed','managed.jpg','managed.jpg','originals/managed.jpg',
+                'image',100,'2025-05-05T12:00:00','2026-10-08T00:00:00Z','completed',
+                'managed',NULL,NULL),
+               ('fallback-imported','hash-fallback','imported.jpg','imported.jpg','originals/imported.jpg',
+                'image',100,NULL,'2024-02-03T12:00:00Z','completed',
+                'managed',NULL,NULL),
+               ('local-old','hash-local-old','old.jpg','old.jpg','',
+                'image',100,'2030-01-01T00:00:00','2026-10-08T00:00:00Z','completed',
+                'local','C:/Pictures/old.jpg',1500000000000000000);
+            "
+        ).unwrap();
+
+        let (photos, total) = list_photos(&db, 1, 100, None).unwrap();
+        assert_eq!(total, 5);
+        assert_eq!(
+            photos.iter().map(|photo| photo.id.as_str()).collect::<Vec<_>>(),
+            ["local-tie", "local-new", "managed", "fallback-imported", "local-old"]
+        );
+        assert_eq!(photos[0].modified_at, Some(1_800_000_000));
+        assert_eq!(photos[1].modified_at, Some(1_800_000_000));
+        assert_eq!(photos[2].modified_at, None);
+        assert_eq!(photos[4].modified_at, Some(1_500_000_000));
+
+        // Pagination must not reshuffle ties; filtering must preserve the same order.
+        let first = list_photos(&db, 1, 2, None).unwrap().0;
+        let second = list_photos(&db, 2, 2, None).unwrap().0;
+        assert_eq!(first[0].id, "local-tie");
+        assert_eq!(first[1].id, "local-new");
+        assert_eq!(second[0].id, "managed");
+        let filtered = list_photos(&db, 1, 10, Some("new.jpg")).unwrap();
+        assert_eq!(filtered.1, 1);
+        assert_eq!(filtered.0[0].id, "local-new");
     }
 
     #[test]

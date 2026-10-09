@@ -33,13 +33,11 @@ declare global {
       importMarkdown():Promise<{ok:boolean;canceled?:boolean;error?:string;title?:string;content?:string}>;
       onCommand(listener:(command:string)=>void):()=>void;
     };
-    photoSyncApi?: {
-      status():Promise<PhotoSyncDesktopResponse>;
-      createPairing():Promise<PhotoSyncDesktopResponse>;
-      cancelPairing(pairCode:string):Promise<PhotoSyncDesktopResponse>;
-      recover():Promise<PhotoSyncDesktopResponse>;
-      exportCertificate():Promise<PhotoSyncDesktopResponse>;
-      setCompatibilityMode(enabled:boolean,confirmed?:boolean):Promise<PhotoSyncDesktopResponse>;
+    photoLibraryApi?: {
+      scan(): Promise<import("@/src/desktop/photoSyncAdapter").LibrarySnapshot>;
+      addFolder(): Promise<{ canceled: boolean }>;
+      removeFolder(path: string): Promise<void>;
+      image(path: string, kind: "thumbnail" | "preview"): Promise<import("@/src/desktop/photoSyncAdapter").LibraryImage>;
     };
     vaultApi?: {
       status():Promise<VaultStatus>;
@@ -131,35 +129,4 @@ declare global {
     dataBase64:string;
   };
 
-  type PhotoSyncStatus = {
-    available:boolean;
-    active:boolean;
-    managed:boolean;
-    port:number;
-    urls:string[];
-    photoSyncUrls?:string[];
-    computerName?:string;
-    bindAddress?:string;
-    mediaUrl?:string;
-    certificateReady?:boolean;
-    certificateAddresses?:string[];
-    certificateExported?:boolean;
-    certificateExportPath?:string;
-    certificateCommonName?:string;
-    allowInsecureHttp?:boolean;
-    transportProtocol?:"http"|"https";
-  };
-
-  type PhotoSyncPairing = {
-    success:boolean;
-    pairCode:string;
-    expiresAt:string;
-    entryUrl:string;
-  };
-
-  type PhotoSyncDesktopResponse = {
-    ok:boolean;
-    status?:PhotoSyncStatus & { pairing?:PhotoSyncPairing };
-    error?:string;
-  };
 }
