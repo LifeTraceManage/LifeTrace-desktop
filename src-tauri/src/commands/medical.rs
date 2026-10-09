@@ -662,7 +662,7 @@ mod tests {
     #[test]
     fn preserves_png_and_webp_raw_bytes_and_rejects_pdf() {
         let sources = [
-            ("image/png", [b"\\x89PNG\\r\\n\\x1a\\n".as_slice(), b"data".as_slice()].concat()),
+            ("image/png", [b"\x89PNG\r\n\x1a\n".as_slice(), b"data".as_slice()].concat()),
             ("image/webp", [b"RIFF".as_slice(), &[0u8; 4], b"WEBP".as_slice()].concat()),
         ];
         for (index, (mime, data)) in sources.into_iter().enumerate() {
