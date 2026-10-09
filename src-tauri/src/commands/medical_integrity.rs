@@ -31,10 +31,10 @@ fn is_safe_archive_filename(name: &str) -> bool {
     };
     !stem.is_empty()
         && stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        && matches!(ext, "jpg" | "png" | "webp" | "pdf")
+        && matches!(ext, "jpg" | "png" | "webp")
 }
 
-/// Streaming hashing keeps large backups and original PDFs out of memory.
+/// Streaming hashing keeps uploaded original images out of memory.
 fn matching_sha256(path: &Path, expected: &str) -> Result<bool, std::io::Error> {
     let mut file = fs::File::open(path)?;
     let mut hash = Sha256::new();
