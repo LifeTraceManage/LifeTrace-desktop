@@ -363,6 +363,85 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exports_and_restores_plaintext_report_with_exact_original_and_revision() {
+        use crate::database::migration_runner::{Migration, MigrationContext};
+        use crate::database::migrations::{M0022MedicalReports, M0023MedicalReportRevisions};
+        let parent=std::env::temp_dir().join(format!("lifetrace-medical-backup-test-{}",Uuid::new_v4()));
+        let origin=parent.join("origin");
+        let target=parent.join("target");
+        let backup_folder=parent.join("backups");
+        for dir in [&origin,&target,&backup_folder] {fs::create_dir_all(dir).unwrap();}
+        for root in [&origin,&target] {
+            let mut db=open_db(root).unwrap();
+            db.execute_batch("PRAGMA foreign_keys=ON;
+                CREATE TABLE local_profiles(id TEXT PRIMARY KEY);
+                INSERT INTO local_profiles VALUES('local');").unwrap();
+            let tx=db.transaction().unwrap();
+            M0022MedicalReports.up(&tx,&MigrationContext::new(root.clone())).unwrap();
+            M0023MedicalReportRevisions.up(&tx,&MigrationContext::new(root.clone())).unwrap();
+            tx.commit().unwrap();
+        }
+        let original=vec![0xff,0xd8,0xff,0xe0,1,2,3,4];
+        let hash=format!("{:x}",Sha256::digest(&original));
+        fs::create_dir_all(origin.join("medical/originals")).unwrap();
+        fs::write(origin.join("medical/originals/original.jpg"),&original).unwrap();
+        let current=serde_json::json!({"title":"血常规","reportType":"laboratory",
+            "sourceAssetIds":["asset-1"],"sections":[
+                {"kind":"conclusion","titleRaw":"结论","textRaw":"正常","sourceAssetId":"asset-1","pageIndex":0}],
+            "observations":[{"nameRaw":"ALT","kind":"numeric","valueRaw":"36","valueNumber":36.0,
+                "unitRaw":"U/L","sourceAssetId":"asset-1","pageIndex":0}]});
+        let previous=serde_json::json!({"title":"血常规","reportType":"laboratory",
+            "sourceAssetIds":["asset-1"],"sections":[],
+            "observations":[{"nameRaw":"ALT","kind":"numeric","valueRaw":"89","valueNumber":89.0,
+                "unitRaw":"U/L","sourceAssetId":"asset-1","pageIndex":0}]});
+        {
+            let db=open_db(&origin).unwrap();
+            db.execute("INSERT INTO medical_import_batches VALUES('batch','local','request-key','now')",[]).unwrap();
+            db.execute("INSERT INTO medical_reports VALUES('report','local','batch','血常规','laboratory','2026-10-08',
+                '测试医院',?1,'now')",[current.to_string()]).unwrap();
+            db.execute("INSERT INTO medical_report_assets VALUES('asset-1','local','batch','src-1',
+                'report.jpg','image/jpeg',8,?1,'original.jpg')",[&hash]).unwrap();
+            db.execute("INSERT INTO medical_report_asset_links VALUES('report','asset-1')",[]).unwrap();
+            db.execute("INSERT INTO medical_report_sections VALUES('sec','report',0,?1)",
+                [current["sections"][0].to_string()]).unwrap();
+            db.execute("INSERT INTO medical_observations VALUES('obs','report',0,'ALT',NULL,36.0,
+                'U/L',?1)",[current["observations"][0].to_string()]).unwrap();
+            db.execute("INSERT INTO medical_report_revisions VALUES('revision','report','rev-key',?1,?2,'now')",
+                params![previous.to_string(),current.to_string()]).unwrap();
+        }
+        let backup=export_backup(&origin,&backup_folder).unwrap();
+        assert_eq!(backup.reports,1);
+        assert_eq!(backup.files,1);
+        let restored=import_backup(&target,Path::new(&backup.path)).unwrap();
+        assert_eq!((restored.reports,restored.files),(1,1));
+        assert!(import_backup(&target,Path::new(&backup.path))
+            .unwrap_err().contains("已存在"));
+        let db=open_db(&target).unwrap();
+        let row:(String,String)=db.query_row(
+            "SELECT id,content_json FROM medical_reports LIMIT 1",[],
+            |r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+        let imported:Value=serde_json::from_str(&row.1).unwrap();
+        assert_eq!(imported["observations"][0]["valueNumber"],36.0);
+        let new_id:String=db.query_row("SELECT id FROM medical_report_assets LIMIT 1",[],|r|r.get(0)).unwrap();
+        assert_eq!(imported["observations"][0]["sourceAssetId"],new_id);
+        assert_eq!(imported["sourceAssetIds"][0],new_id);
+        let path:String=db.query_row("SELECT relative_path FROM medical_report_assets LIMIT 1",[],|r|r.get(0)).unwrap();
+        assert_eq!(fs::read(target.join("medical/originals").join(path)).unwrap(),original);
+        let rev:String=db.query_row("SELECT old_content_json FROM medical_report_revisions LIMIT 1",[],|r|r.get(0)).unwrap();
+        let old:Value=serde_json::from_str(&rev).unwrap();
+        assert_eq!(old["observations"][0]["valueNumber"],89.0);
+        assert_eq!(old["observations"][0]["sourceAssetId"],new_id);
+        drop(db);
+
+        fs::write(Path::new(&backup.path).join("files/original.jpg"),b"tampered").unwrap();
+        let another=parent.join("tampered-target");
+        fs::create_dir(&another).unwrap();
+        let err=import_backup(&another,Path::new(&backup.path)).unwrap_err();
+        assert!(err.contains("完整性"));
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
     fn rejects_filename_escape_and_unknown_versions() {
         assert!(!safe_filename("../test.pdf"));
         assert!(!safe_filename("..\\test.pdf"));
