@@ -83,7 +83,7 @@ pub fn workout_from_legacy_json(
         .ok_or_else(|| format!("训练记录缺少 id: {}", value))?;
     let occurred_at = json_parser::string_field(object, "occurredAt")
         .ok_or_else(|| format!("训练记录 {id} 缺少 occurredAt"))?;
-    let local_date = crate::database::repositories::finance::local_date_of(occurred_at)?;
+    let local_date = crate::database::repositories::dates::local_date_of(occurred_at)?;
     let exercise_values = object
         .get("exercises")
         .and_then(Value::as_array)

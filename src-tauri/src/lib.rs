@@ -3,7 +3,6 @@
 mod application;
 mod cloud_api;
 mod cloud_auth;
-pub mod contracts;
 mod commands;
 mod database;
 mod desktop;

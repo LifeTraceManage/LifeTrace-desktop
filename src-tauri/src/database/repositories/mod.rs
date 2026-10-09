@@ -16,3 +16,5 @@ pub mod state_compat;
 pub mod workouts;
 
 pub mod footprints;
+
+pub mod dates;
