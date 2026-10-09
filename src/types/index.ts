@@ -38,55 +38,6 @@ export interface ActivityLog {
   updatedAt: string;
 }
 
-export interface Transaction {
-  id: string;
-  userId: string;
-  type: "expense" | "income" | "transfer";
-  amount: number;
-  category: string;
-  categoryId?: string;
-  account: string;
-  accountId?: string;
-  toAccount?: string;
-  toAccountId?: string;
-  counterparty?: string;
-  item?: string;
-  note?: string;
-  occurredAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FinanceCategory {
-  id: string;
-  userId: string;
-  name: string;
-  type: "expense" | "income" | "transfer" | "refund" | "fee";
-  parentId?: string;
-  icon?: string;
-  color?: string;
-  isSystem: boolean;
-  isArchived: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FinanceAccount {
-  id: string;
-  userId: string;
-  name: string;
-  type: "cash" | "bank" | "wechat" | "alipay" | "investment" | "other";
-  /** Balance at balanceAt; transactions after this point determine the current balance. */
-  balance: number | null;
-  balanceAt?: string;
-  last4?: string;
-  color: string;
-  icon: string;
-  isArchived: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface WorkoutHistorySet {
   weight: number;
   reps: number;
@@ -167,7 +118,7 @@ export interface DailyReview {
   updatedAt: string;
 }
 
-export type ViewId = "today" | "calendar" | "activities" | "finance" | "statistics" | "review" | "settings";
+export type ViewId = "today" | "calendar" | "activities" | "statistics" | "review" | "settings";
 
 export type NoteType =
   | "quick"
@@ -175,7 +126,6 @@ export type NoteType =
   | "daily"
   | "habit_log"
   | "workout_review"
-  | "expense_note"
   | "weekly_review"
   | "monthly_review";
 

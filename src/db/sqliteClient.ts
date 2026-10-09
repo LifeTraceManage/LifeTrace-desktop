@@ -1,15 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Activity, ActivityLog, DailyReview, FinanceAccount, FinanceCategory, Transaction, WorkoutHistory } from "@/src/types";
+import type { Activity, ActivityLog, DailyReview, WorkoutHistory } from "@/src/types";
 import { createId } from "@/src/utils/id";
 
 export interface LifeData {
   activities: Activity[];
   logs: ActivityLog[];
-  transactions: Transaction[];
-  categories?: FinanceCategory[];
   reviews: DailyReview[];
   settings: LifeSettings;
-  accounts: FinanceAccount[];
   workoutHistory: WorkoutHistory[];
 }
 
@@ -21,9 +18,9 @@ export interface LifeSettings {
 }
 
 export type SQLiteMutation =
-  | { operation: "put"; table: "activities" | "logs" | "transactions" | "reviews" | "settings" | "accounts" | "categories" | "workoutHistory"; value: Activity | ActivityLog | Transaction | DailyReview | LifeSettings | FinanceAccount | FinanceCategory | WorkoutHistory }
-  | { operation: "patch"; table: "activities" | "accounts"; id: string; patch: Record<string, unknown> }
-  | { operation: "delete"; table: "transactions" | "accounts" | "categories" | "workoutHistory"; id: string }
+  | { operation: "put"; table: "activities" | "logs" | "reviews" | "settings" | "workoutHistory"; value: Activity | ActivityLog | DailyReview | LifeSettings | WorkoutHistory }
+  | { operation: "patch"; table: "activities"; id: string; patch: Record<string, unknown> }
+  | { operation: "delete"; table: "workoutHistory"; id: string }
   | { operation: "restore"; data: Omit<LifeData, "settings"> };
 
 function isTauriRuntime(): boolean {
