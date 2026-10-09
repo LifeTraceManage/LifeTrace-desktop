@@ -79,3 +79,22 @@ test("PDF.js viewport coordinates preserve increasing transaction row order", ()
   assert.equal(result[1].y, 89);
   assert.ok(result[0].y < result[1].y);
 });
+
+test("footer transaction count ignores extra numbers on the same text line", () => {
+  const words = [
+    {x: 101, y: 24, text: "交易日期"},
+    {x: 435, y: 24, text: "收入/支出金额"},
+    {x: 100, y: 100, text: "2026-06-01"},
+    {x: 100, y: 105, text: "08:00:00"},
+    {x: 150, y: 103.5, text: "BANK1234"},
+    {x: 450, y: 103.5, text: "-5.00"},
+    {x: 520, y: 103.5, text: "95.00"},
+    {x: 80, y: 548, text: "本页交易笔数：1"},
+    {x: 90, y: 548, text: "161601539"},
+    {x: 300, y: 548, text: "本页支出算术合计：5.00"},
+    {x: 560, y: 548, text: "本页收入算术合计：0.00"},
+  ];
+  const result = parseIcbcPages([words]);
+  assert.equal(result.pages[0].expectedCount, 1);
+  assert.equal(result.valid, true);
+});
