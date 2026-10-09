@@ -3,6 +3,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use base64::Engine;
 use sha2::{Digest, Sha256};
 use tauri::State;
 use crate::desktop::DesktopState;
@@ -26,6 +27,7 @@ pub struct SaveStatementRequest {
     pub filename: String,
     pub file_sha256: String,
     pub file_size: usize,
+    pub file_base64: String,
     pub verified: bool,
     pub validation: Value,
     pub rows: Vec<StatementRow>,
@@ -46,6 +48,7 @@ fn schema(db: &Connection) -> Result<(), String> {
             source TEXT NOT NULL,
             filename TEXT NOT NULL,
             sha256 TEXT NOT NULL,
+            original_file BLOB NOT NULL,
             file_size INTEGER NOT NULL,
             verified INTEGER NOT NULL,
             validation_json TEXT NOT NULL,
@@ -73,6 +76,9 @@ fn validate(req: &SaveStatementRequest) -> Result<(), String> {
        req.filename.is_empty() || req.filename.len() > 512 {
         return Err("文件大小或名称不合法".into());
     }
+    if req.file_base64.len() > (MAX_FILE_BYTES * 4 / 3 + 16) {
+        return Err("来源文件过大".into());
+    }
     if req.file_sha256.len() != 64 || !req.file_sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err("文件 SHA-256 不合法".into());
     }
@@ -99,6 +105,11 @@ fn validate(req: &SaveStatementRequest) -> Result<(), String> {
 }
 pub fn save(db: &mut Connection, req: &SaveStatementRequest) -> Result<SaveStatementResult, String> {
     validate(req)?;
+    let original_file = base64::engine::general_purpose::STANDARD
+        .decode(&req.file_base64).map_err(|_| "文件内容编码错误")?;
+    if original_file.len() != req.file_size || format!("{:x}",Sha256::digest(&original_file)) != req.file_sha256.to_ascii_lowercase() {
+        return Err("来源文件大小或哈希校验失败".into());
+    }
     schema(db)?;
     let key = format!("{}:{}", req.source, req.file_sha256.to_ascii_lowercase());
     let batch_id = format!("{:x}", Sha256::digest(key.as_bytes()));
@@ -115,10 +126,10 @@ pub fn save(db: &mut Connection, req: &SaveStatementRequest) -> Result<SaveState
         return Ok(SaveStatementResult{batch_id,inserted:0,existing:true,persisted:actual as usize});
     }
     tx.execute("INSERT INTO statement_import_batches
-        (id,source,filename,sha256,file_size,verified,validation_json,row_count,imported_at)
-        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+        (id,source,filename,sha256,original_file,file_size,verified,validation_json,row_count,imported_at)
+        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
         params![batch_id,req.source,req.filename,req.file_sha256.to_ascii_lowercase(),
-            req.file_size as i64,req.verified,req.validation.to_string(),req.rows.len() as i64,
+            original_file,req.file_size as i64,req.verified,req.validation.to_string(),req.rows.len() as i64,
             chrono::Utc::now().to_rfc3339()]
     ).map_err(|e| e.to_string())?;
     for row in &req.rows {
@@ -177,7 +188,8 @@ mod tests {
     fn request() -> SaveStatementRequest {
         SaveStatementRequest {
             source:"icbc".into(), filename:"bank.pdf".into(),
-            file_sha256:"a".repeat(64),file_size:1024,verified:true,
+            file_sha256:format!("{:x}",Sha256::digest(b"fixture")),file_size:7,
+            file_base64:base64::engine::general_purpose::STANDARD.encode(b"fixture"),verified:true,
             validation:serde_json::json!({"transactions":2}),
             rows:vec![
                 StatementRow{ordinal:1,source_id:None,payload:serde_json::json!({"amount":"-1.00","balance":"9.00"}),status:"parsed".into()},
