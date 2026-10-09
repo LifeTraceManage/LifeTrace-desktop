@@ -30,18 +30,16 @@ export function reconcileSources(rows: readonly ReconcileRow[]): ReconcileResult
       if (bank.amountCents <= 0 || payment.amountCents <= 0 ||
           bank.amountCents !== payment.amountCents || bank.direction !== payment.direction ||
           !Number.isFinite(bank.epochMs) || !Number.isFinite(payment.epochMs)) return false;
-      // A known card mismatch is authoritative negative evidence.
+      // A known card mismatch or a contradictory explicit channel rules out a link.
       if (bank.cardLast4 && payment.cardLast4 && bank.cardLast4 !== payment.cardLast4) return false;
-      // A payment channel must be supported by bank statement metadata.
-      if (!bank.channel || bank.channel !== payment.source) return false;
-      // Require the exact four-digit card identity. Absent metadata is review-only.
-      if (!bank.cardLast4 || !payment.cardLast4 || bank.cardLast4 !== payment.cardLast4) {
-        if (Math.abs(bank.epochMs - payment.epochMs) <= 30 * 60_000) {
-          review.add(bank.id); review.add(payment.id);
-        }
+      if (bank.channel && bank.channel !== payment.source) return false;
+      const lag = Math.abs(bank.epochMs - payment.epochMs);
+      if (!bank.channel || !bank.cardLast4 || !payment.cardLast4) {
+        // Incomplete evidence is a possible duplicate, never an automatic match.
+        if (lag <= 30 * 60_000) { review.add(bank.id); review.add(payment.id); }
         return false;
       }
-      return Math.abs(bank.epochMs - payment.epochMs) <= 10 * 60_000;
+      return lag <= 10 * 60_000;
     });
     candidates.set(bank.id, possible.map(row => row.id));
     for (const payment of possible) reverse.set(payment.id, [...(reverse.get(payment.id) ?? []), bank.id]);
