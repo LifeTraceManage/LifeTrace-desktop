@@ -8,6 +8,7 @@ import {
   type Reminder,
 } from "@/src/services/executionApi";
 import {
+  calendarItemsWithTasks,
   calendarPeriodLabel,
   calendarRange,
   enumerateCalendarDays,
@@ -98,39 +99,7 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
   const [anchor, setAnchor] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const range = useMemo(() => calendarRange(view, anchor), [view, anchor]);
-  const calendarItems = useMemo(() => {
-    const linked = new Set(events.filter(event => event.status === "scheduled").map(event => event.sourceTaskId).filter(Boolean));
-    const synthetic: CalendarEvent[] = [];
-    for (const task of tasks) {
-      if (task.status === "cancelled" || task.status === "done" || linked.has(task.id)) continue;
-      const start = task.scheduledStartAt ? new Date(task.scheduledStartAt) : null;
-      if (start && !Number.isNaN(start.getTime())) {
-        const endValue = task.scheduledEndAt ? new Date(task.scheduledEndAt) : null;
-        const end = endValue && !Number.isNaN(endValue.getTime()) && endValue > start
-          ? endValue : new Date(start.getTime() + Math.max(15, task.estimatedMinutes ?? 60) * 60_000);
-        if (start < range.endExclusive && end > range.start) {
-          synthetic.push({
-            id: `planned-task:${task.id}`, userId: task.userId, title: `任务 · ${task.title}`,
-            description: task.description, isAllDay: false, startAt: start.toISOString(),
-            endAt: end.toISOString(), timezone: task.timezone, status: "scheduled",
-            sourceTaskId: task.id, version: task.version, createdAt: task.createdAt, updatedAt: task.updatedAt,
-          });
-        }
-      } else if (task.dueAt) {
-        const due = new Date(task.dueAt);
-        if (!Number.isNaN(due.getTime()) && due >= range.start && due < range.endExclusive) {
-          const localDate = localDateKey(due);
-          synthetic.push({
-            id: `deadline-task:${task.id}`, userId: task.userId, title: `截止 · ${task.title}`,
-            isAllDay: true, startLocalDate: localDate, endLocalDate: localDate,
-            timezone: task.timezone, status: "scheduled", sourceTaskId: task.id,
-            version: task.version, createdAt: task.createdAt, updatedAt: task.updatedAt,
-          });
-        }
-      }
-    }
-    return [...events, ...synthetic];
-  }, [events, tasks, range]);
+  const calendarItems = useMemo(() => calendarItemsWithTasks(events, tasks, range), [events, tasks, range]);
   const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
   const isTaskItem = (event: CalendarEvent) => event.id.startsWith("planned-task:") || event.id.startsWith("deadline-task:");
   const editItem = (event: CalendarEvent) => {
