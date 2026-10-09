@@ -53,6 +53,7 @@ pub fn run() {
             storage::storage_migrate,
             statement_import::statement_save_raw,
             statement_import::statement_list_batches,
+            statement_import::statement_list_raw_rows,
             photo_library::photo_library_scan,
             photo_library::photo_library_add_folder,
             photo_library::photo_library_remove_folder,
