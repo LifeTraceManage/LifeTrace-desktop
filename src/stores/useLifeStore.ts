@@ -61,11 +61,6 @@ export const useLifeStore = create<LifeState>((set, get) => ({
     await mutateSQLite({ operation: "put", table: "logs", value: log });
     set({ logs: [...get().logs, log] });
   },
-    const stamp = now();
-    const transaction: Transaction = { id: uid(), userId: "local-user", occurredAt: data.occurredAt ?? stamp, createdAt: stamp, updatedAt: stamp, ...data };
-    await mutateSQLite({ operation: "put", table: "transactions", value: transaction });
-    set({ transactions: [transaction, ...get().transactions] });
-  },
   saveReview: async (data) => {
     const date = dayKey();
     const old = get().reviews.find((item) => item.reviewDate === date);
@@ -90,35 +85,7 @@ export const useLifeStore = create<LifeState>((set, get) => ({
     await mutateSQLite({ operation: "patch", table: "activities", id, patch: { isArchived: true, updatedAt } });
     set({ activities: get().activities.filter((item) => item.id !== id) });
   },
-    const stamp=now(); const existing=data.id?get().accounts.find(item=>item.id===data.id):undefined;
-    const account:FinanceAccount={id:existing?.id??uid(),userId:"local-user",name:data.name,type:data.type,balance:data.balance??existing?.balance??0,balanceAt:data.balanceAt??existing?.balanceAt,last4:data.last4??existing?.last4,color:data.color,icon:data.icon,isArchived:false,createdAt:existing?.createdAt??stamp,updatedAt:stamp};
-    await mutateSQLite({operation:"put",table:"accounts",value:account});
-    set({accounts:existing?get().accounts.map(item=>item.id===account.id?account:item):[...get().accounts,account]});
-  },
   deleteWorkoutHistory: async (id) => { await mutateSQLite({operation:"delete",table:"workoutHistory",id}); set({workoutHistory:get().workoutHistory.filter(item=>item.id!==id)}); },
-    const stamp = now();
-    const existing = data.id ? get().categories.find((item) => item.id === data.id) : undefined;
-    const category: FinanceCategory = {
-      id: existing?.id ?? uid(),
-      userId: "local-user",
-      name: data.name.trim(),
-      type: data.type,
-      parentId: data.parentId,
-      icon: data.icon,
-      color: data.color,
-      isSystem: existing?.isSystem ?? false,
-      isArchived: false,
-      createdAt: existing?.createdAt ?? stamp,
-      updatedAt: stamp,
-    };
-    await mutateSQLite({ operation: "put", table: "categories", value: category });
-    set({ categories: existing
-      ? get().categories.map((item) => item.id === category.id ? category : item)
-      : [...get().categories, category] });
-  },
-    await mutateSQLite({ operation: "delete", table: "categories", id });
-    set({ categories: get().categories.filter((item) => item.id !== id) });
-  },
   startTimer: (activityId) => {
     const current = get().timer;
     const timer = current?.activityId === activityId
