@@ -226,6 +226,23 @@ mod tests {
         assert_eq!((batches[0].expected_rows,batches[0].stored_rows),(2,2));
     }
     #[test]
+    fn verified_reparse_upgrades_prior_unverified_batch() {
+        let mut db=Connection::open_in_memory().unwrap();
+        let mut req=request();
+        req.verified=false;
+        req.rows[0].status="review".into();
+        assert_eq!(save(&mut db,&req).unwrap().inserted,2);
+        req.verified=true;
+        req.rows[0].status="parsed".into();
+        let upgraded=save(&mut db,&req).unwrap();
+        assert!(upgraded.existing);
+        assert_eq!((upgraded.inserted,upgraded.persisted),(2,2));
+        let status:String=db.query_row("SELECT status FROM statement_import_rows WHERE ordinal=1",[],|r|r.get(0)).unwrap();
+        assert_eq!(status,"parsed");
+        let verified:bool=db.query_row("SELECT verified FROM statement_import_batches",[],|r|r.get(0)).unwrap();
+        assert!(verified);
+    }
+    #[test]
     fn invalid_batch_never_partially_imported() {
         let mut db=Connection::open_in_memory().unwrap();
         let mut req=request();
