@@ -55,14 +55,6 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
-function formatMoney(cents: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "CNY",
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
-}
-
 function formatDuration(seconds: number) {
   if (seconds < 60) return `${seconds} 秒`;
   const hours = Math.floor(seconds / 3600);
@@ -333,7 +325,6 @@ export default function AnalyticsModule({ openEntity }: Props) {
           {report ? (
             <>
               <div className="analytics-metrics-grid">
-                <div><span>支出</span><strong>{formatMoney(report.facts.finance.expenseCents)}</strong><small>{report.facts.finance.transactionCount} 笔交易</small></div>
                 <div><span>坚持完成</span><strong>{Math.round(report.facts.habits.completionRate * 100)}%</strong><small>{report.facts.habits.completedCount}/{report.facts.habits.logCount} 条</small></div>
                 <div><span>训练</span><strong>{report.facts.fitness.workoutCount} 次</strong><small>{formatDuration(report.facts.fitness.durationSeconds)}</small></div>
                 <div><span>英语</span><strong>{report.facts.english.sessionCount} 次</strong><small>{formatDuration(report.facts.english.readingTimeSeconds)}</small></div>
@@ -348,7 +339,7 @@ export default function AnalyticsModule({ openEntity }: Props) {
                   ))}
                 </div>
               </div>
-              <p className="analytics-footnote">所有数字由本地 SQLite/Rust 确定性计算，未使用大语言模型进行计数或金额计算。</p>
+              <p className="analytics-footnote">所有数字由本地 SQLite/Rust 确定性计算，未使用大语言模型进行计数。</p>
             </>
           ) : <div className="analytics-empty">正在生成报告……</div>}
         </div>

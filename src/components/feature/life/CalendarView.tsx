@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
-import { dayKey, money, pad } from "@/src/utils/format";
+import { dayKey, pad } from "@/src/utils/format";
 import { EmptyState, PanelHead, StatDisplay } from "@/src/components/common";
 
 export default function CalendarView() {
-  const { activities, logs, transactions, reviews } = useLifeStore();
+  const { activities, logs, reviews } = useLifeStore();
   const now = new Date();
   const [selected, setSelected] = useState(now.getDate());
   const first = (new Date(now.getFullYear(), now.getMonth(), 1).getDay() + 6) % 7;
@@ -20,9 +20,6 @@ export default function CalendarView() {
       (left, right) =>
         new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     );
-  const selectedTx = transactions.filter((item) =>
-    matchesDay(item.occurredAt, selectedKey),
-  );
   const review = reviews.find((item) => item.reviewDate === selectedKey);
 
   return (
@@ -48,11 +45,6 @@ export default function CalendarView() {
                 {logs.some((item) => matchesDay(item.createdAt, key(day))) ? (
                   <i />
                 ) : null}
-                {transactions.some((item) =>
-                  matchesDay(item.occurredAt, key(day)),
-                ) ? (
-                  <i />
-                ) : null}
                 {reviews.some((item) => item.reviewDate === key(day)) ? (
                   <i />
                 ) : null}
@@ -73,15 +65,6 @@ export default function CalendarView() {
               label="项目记录"
               value={`${selectedLogs.length}`}
               sub={`${activities.filter((a) => selectedLogs.some((l) => l.activityId === a.id)).length} 个项目`}
-            />
-            <StatDisplay
-              label="当日支出"
-              value={money(
-                selectedTx
-                  .filter((i) => i.type === "expense")
-                  .reduce((s, i) => s + i.amount, 0),
-              )}
-              sub={`${selectedTx.length} 笔收支`}
             />
             <StatDisplay
               label="每日复盘"
