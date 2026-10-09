@@ -46,10 +46,6 @@ impl Migration for M0008SyncTriggers {
         })?;
 
         let specs = [
-            TriggerSpec { table:"finance_accounts", entity_type:"finance.account", id_new:"NEW.id", id_old:"OLD.id", profile_new:"NEW.user_id", profile_old:"OLD.user_id", delete_new:"NEW.deleted_at IS NOT NULL" },
-            TriggerSpec { table:"transaction_categories", entity_type:"finance.category", id_new:"NEW.id", id_old:"OLD.id", profile_new:"NEW.user_id", profile_old:"OLD.user_id", delete_new:"NEW.deleted_at IS NOT NULL" },
-            TriggerSpec { table:"transactions", entity_type:"finance.transaction", id_new:"NEW.id", id_old:"OLD.id", profile_new:"NEW.user_id", profile_old:"OLD.user_id", delete_new:"NEW.deleted_at IS NOT NULL" },
-            TriggerSpec { table:"transaction_evidence", entity_type:"finance.transaction_evidence", id_new:"NEW.id", id_old:"OLD.id", profile_new:"(SELECT user_id FROM transactions WHERE id=NEW.transaction_id)", profile_old:"(SELECT user_id FROM transactions WHERE id=OLD.transaction_id)", delete_new:"0" },
             TriggerSpec { table:"activities", entity_type:"habit.activity", id_new:"NEW.id", id_old:"OLD.id", profile_new:"NEW.user_id", profile_old:"OLD.user_id", delete_new:"NEW.deleted_at IS NOT NULL" },
             TriggerSpec { table:"activity_logs", entity_type:"habit.log", id_new:"NEW.id", id_old:"OLD.id", profile_new:"NEW.user_id", profile_old:"OLD.user_id", delete_new:"NEW.deleted_at IS NOT NULL" },
             TriggerSpec { table:"daily_reviews", entity_type:"review.daily", id_new:"NEW.id", id_old:"OLD.id", profile_new:"NEW.user_id", profile_old:"OLD.user_id", delete_new:"NEW.deleted_at IS NOT NULL" },
@@ -175,31 +171,21 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        let mut value = json!({"id":"a1","userId":profile,"name":"现金","type":"cash","balance":0});
-        crate::database::repositories::finance::save_account(&connection, &value).unwrap();
-        let count: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='finance.account'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let value = json!({"id":"h1","userId":profile,"name":"阅读","type":"count",
+            "unit":"次","targetPeriod":"daily","isArchived":false,
+            "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"});
+        crate::database::repositories::habits::save_activity(&connection, &value).unwrap();
+        let count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='habits.activity'",
+            [], |row| row.get(0)).unwrap();
         assert_eq!(count, 1);
-        connection
-            .execute(
-                "UPDATE sync_context SET origin='remote' WHERE singleton=1",
-                [],
-            )
-            .unwrap();
-        value["name"] = json!("远端现金");
-        crate::database::repositories::finance::save_account(&connection, &value).unwrap();
-        let count_after: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='finance.account'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        connection.execute("UPDATE sync_context SET origin='remote' WHERE singleton=1", []).unwrap();
+        let mut updated = value.clone();
+        updated["name"] = json!("远端阅读");
+        crate::database::repositories::habits::save_activity(&connection, &updated).unwrap();
+        let count_after: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='habits.activity'",
+            [], |row| row.get(0)).unwrap();
         assert_eq!(count_after, 1);
     }
 }

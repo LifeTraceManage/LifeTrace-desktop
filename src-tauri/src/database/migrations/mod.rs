@@ -4,7 +4,6 @@
 //! 自行创建核心业务表。
 
 mod m0001_framework;
-mod m0002_finance;
 mod m0003_habits_reviews;
 mod m0004_notes;
 mod m0006_workouts;
@@ -23,7 +22,6 @@ mod m0020_footprints;
 mod m0021_sync_registry_alignment;
 
 pub use m0001_framework::M0001Framework;
-pub use m0002_finance::M0002Finance;
 pub use m0003_habits_reviews::M0003HabitsReviews;
 pub use m0004_notes::M0004Notes;
 pub use m0006_workouts::M0006Workouts;
@@ -45,12 +43,11 @@ use crate::database::migration_runner::Migration;
 
 /// 全部已注册 Migration（按 version 升序执行）。
 ///
-/// 18/19 intentionally remain unregistered: those version numbers belonged to
+/// 2 is retired with the finance feature; 18/19 remain unregistered: those version numbers belonged to
 /// the removed Travel migrations and may already exist in user databases.
 pub fn all() -> Vec<Box<dyn Migration>> {
     vec![
         Box::new(M0001Framework),
-        Box::new(M0002Finance),
         Box::new(M0003HabitsReviews),
         Box::new(M0004Notes),
         Box::new(M0006Workouts),

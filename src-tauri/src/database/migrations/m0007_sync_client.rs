@@ -173,9 +173,6 @@ impl Migration for M0007SyncClient {
         })?;
 
         let tables = [
-            "finance_accounts",
-            "transaction_categories",
-            "transactions",
             "activities",
             "activity_logs",
             "daily_reviews",
@@ -218,7 +215,7 @@ mod tests {
     use super::*;
     use crate::database::migration_runner::{run, Migration};
     use crate::database::migrations::{
-        M0001Framework, M0002Finance, M0003HabitsReviews, M0004Notes, M0006Workouts,
+        M0001Framework, M0003HabitsReviews, M0004Notes, M0006Workouts,
     };
     use rusqlite::Connection;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -236,7 +233,6 @@ mod tests {
         let context = MigrationContext::new(data_dir);
         let migrations: Vec<Box<dyn Migration>> = vec![
             Box::new(M0001Framework),
-            Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
             Box::new(M0004Notes),
             Box::new(M0006Workouts),
