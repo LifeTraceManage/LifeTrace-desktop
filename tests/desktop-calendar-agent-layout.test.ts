@@ -4,14 +4,16 @@ import { readFileSync } from "node:fs";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("sidebar calendar preserves life records and scheduled task calendar", () => {
+test("sidebar calendar preserves life records without duplicate planned task tab", () => {
   const route = read("src/components/DesktopNativeRouteContent.tsx");
   const calendar = read("src/components/DesktopCalendarWorkspace.tsx");
   const oldView = read("src/components/feature/life/CalendarView.tsx");
   assert.match(route, /<DesktopCalendarWorkspace onNavigate=\{navigate\}/);
-  assert.match(calendar, /<ExecutionModule onNavigate=\{onNavigate\} initialTab="calendar"/);
+  assert.doesNotMatch(calendar, /ExecutionModule|日程与未来任务/);
   assert.match(calendar, /<CalendarView/);
-  assert.match(calendar, /日程与未来任务/);
+  const execution = read("src/components/feature/execution/ExecutionModule.tsx");
+  assert.match(execution, /CalendarWorkspace/);
+  assert.match(execution, /"planner"/);
   for (const label of ["项目记录", "当日支出", "每日复盘", "生活日志"]) {
     assert.ok(oldView.includes(label), `Life calendar must preserve ${label}`);
   }
@@ -30,4 +32,11 @@ test("AI chat owns independent scroll and keeps the composer outside the scroll 
   assert.ok(agent.indexOf('className="lt-cloud-agent-composer"') > agent.indexOf('className="lt-cloud-agent-messages"'));
   assert.match(agentCss, /\.lt-cloud-agent-messages\{[^}]*overflow-y:auto/);
   assert.match(agentCss, /\.lt-cloud-agent-main\{[^}]*min-height:0/);
+});
+
+test("AI session history is a top-aligned vertical list", () => {
+  const css = read("app/cloud-agent.css");
+  assert.match(css, /\.lt-cloud-agent-history-list\{[^}]*display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start/);
+  assert.match(css, /\.lt-cloud-agent-history-list article\{[^}]*flex:0 0 auto/);
+  assert.match(css, /\.lt-cloud-agent-message\{[^}]*flex:0 0 auto/);
 });
