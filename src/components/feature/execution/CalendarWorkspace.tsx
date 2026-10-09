@@ -99,7 +99,7 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const range = useMemo(() => calendarRange(view, anchor), [view, anchor]);
   const calendarItems = useMemo(() => {
-    const linked = new Set(events.map(event => event.sourceTaskId).filter(Boolean));
+    const linked = new Set(events.filter(event => event.status === "scheduled").map(event => event.sourceTaskId).filter(Boolean));
     const synthetic: CalendarEvent[] = [];
     for (const task of tasks) {
       if (task.status === "cancelled" || task.status === "done" || linked.has(task.id)) continue;
@@ -110,7 +110,7 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
           ? endValue : new Date(start.getTime() + Math.max(15, task.estimatedMinutes ?? 60) * 60_000);
         if (start < range.endExclusive && end > range.start) {
           synthetic.push({
-            id: `planned-task:${task.id}`, userId: task.userId, title: task.title,
+            id: `planned-task:${task.id}`, userId: task.userId, title: `任务 · ${task.title}`,
             description: task.description, isAllDay: false, startAt: start.toISOString(),
             endAt: end.toISOString(), timezone: task.timezone, status: "scheduled",
             sourceTaskId: task.id, version: task.version, createdAt: task.createdAt, updatedAt: task.updatedAt,
@@ -195,7 +195,7 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
     </div>
     <div className="lt-calendar-all-day">
       <span className="gutter">全天</span>
-      {timelineDays.map((day) => <div key={localDateKey(day)}>{eventsForDay(events, day).filter((event) => event.isAllDay).map((event) => <button key={event.id} type="button" className={event.recurrenceRuleId ? "recurring" : ""} onClick={() => editItem(event)}>{event.recurrenceRuleId ? <Repeat2 aria-hidden="true"/> : null}{event.title}</button>)}</div>)}
+      {timelineDays.map((day) => <div key={localDateKey(day)}>{eventsForDay(calendarItems, day).filter((event) => event.isAllDay).map((event) => <button key={event.id} type="button" className={event.recurrenceRuleId ? "recurring" : ""} onClick={() => editItem(event)}>{event.recurrenceRuleId ? <Repeat2 aria-hidden="true"/> : null}{event.title}</button>)}</div>)}
     </div>
     <div className="lt-calendar-scroll">
       <div className="lt-calendar-hours">
@@ -203,7 +203,7 @@ export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onT
       </div>
       <div className="lt-calendar-time-grid" style={{ height: `${24 * 60 * minutePixel}px` }}>
         {timelineDays.map((day) => {
-          const timed = eventsForDay(events, day).filter((event) => !event.isAllDay);
+          const timed = eventsForDay(calendarItems, day).filter((event) => !event.isAllDay);
           const nowMinutes = today.getHours() * 60 + today.getMinutes();
           const key = localDateKey(day);
           return <div
