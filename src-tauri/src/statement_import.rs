@@ -446,6 +446,35 @@ mod tests {
         assert!(validate(&req).unwrap_err().contains("金额或笔数不一致"));
     }
     #[test]
+    fn persistent_matches_enforce_one_to_one_and_idempotence() {
+        let mut db=Connection::open_in_memory().unwrap();
+        let bank=save(&mut db,&request()).unwrap();
+        let mut payment=request();
+        payment.source="wechat".into();
+        payment.verified=false;
+        let wx=save(&mut db,&payment).unwrap();
+        let link=StatementMatch{
+            bank_batch_id:bank.batch_id.clone(),bank_ordinal:1,
+            payment_batch_id:wx.batch_id.clone(),payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert_eq!(save_matches(&mut db,&[link]).unwrap(),1);
+        let duplicate=StatementMatch{
+            bank_batch_id:bank.batch_id.clone(),bank_ordinal:1,
+            payment_batch_id:wx.batch_id.clone(),payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert_eq!(save_matches(&mut db,&[duplicate]).unwrap(),0);
+        let conflict=StatementMatch{
+            bank_batch_id:bank.batch_id,bank_ordinal:2,
+            payment_batch_id:wx.batch_id,payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert!(save_matches(&mut db,&[conflict]).is_err());
+        let count:i64=db.query_row("SELECT COUNT(*) FROM statement_transaction_matches",[],|r|r.get(0)).unwrap();
+        assert_eq!(count,1);
+    }
+    #[test]
     fn invalid_batch_never_partially_imported() {
         let mut db=Connection::open_in_memory().unwrap();
         let mut req=request();
