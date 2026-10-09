@@ -1,9 +1,11 @@
 import type { MedicalExtractReply, MedicalImageInput } from "@/src/services/medicalReportApi";
+import type { MedicalPageSource } from "@/src/services/medicalPdfPages";
 import { AlertTriangle, Check, FileText, RefreshCw, X } from "lucide-react";
 
 type Props = {
   draft: MedicalExtractReply;
   images: MedicalImageInput[];
+  pageSources: Record<string, MedicalPageSource>;
   disabled: boolean;
   onConfirm: () => void;
   onDiscard: () => void;
@@ -13,7 +15,7 @@ type Props = {
 };
 
 /** Review happens locally, never in persistent cloud Agent messages. */
-export default function MedicalImportReview({ draft, images, disabled, onConfirm, onDiscard, onReextract, correction, replaceMode }: Props) {
+export default function MedicalImportReview({ draft, images, pageSources, disabled, onConfirm, onDiscard, onReextract, correction, replaceMode }: Props) {
   return <section className="lt-cloud-agent-approvals" aria-label="医疗检查报告归档预览">
     <header><FileText/><strong>检查报告识别结果 · 待确认归档</strong></header>
     <p>以下内容由视觉模型直接从图片提取，可能存在遗漏或识别错误。请对照原报告核对后再保存。</p>
@@ -23,12 +25,12 @@ export default function MedicalImportReview({ draft, images, disabled, onConfirm
     {draft.reports.map((report, index) => <article key={index}>
       <div style={{ width: "100%", minWidth: 0 }}>
         <strong>{report.title}</strong>
-        <small>{report.examAt || report.issuedAt || "日期未识别"} · {report.facility || "医疗机构未知"} · {report.reportType} · {report.sourceAssetIds.length} 张原图</small>
+        <small>{report.examAt || report.issuedAt || "日期未识别"} · {report.facility || "医疗机构未知"} · {report.reportType} · {report.sourceAssetIds.length} 份原件</small>
         {report.reviewReasons?.length ? <p role="alert">待核对：{report.reviewReasons.join("；")}</p> : null}
         <details>
-          <summary>查看对应原始报告图片（{report.sourceAssetIds.length} 张）</summary>
+          <summary>查看识别用的报告页面（含 PDF 渲染页）</summary>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 10 }}>
-            {images.filter((img) => report.sourceAssetIds.includes(img.assetId)).map((img) =>
+            {images.filter((img) => report.sourceAssetIds.includes(pageSources[img.assetId]?.originalAssetId)).map((img) =>
               <figure key={img.assetId} style={{ margin: 0, minWidth: 0 }}>
                 <img src={"data:" + img.mimeType + ";base64," + img.base64}
                   alt={img.originalName}
