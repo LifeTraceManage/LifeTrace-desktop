@@ -8,7 +8,6 @@ import {
   ChevronRight,
   CircleDot,
   Clock3,
-  Flame,
   Focus,
   FolderKanban,
   Inbox,
@@ -45,7 +44,6 @@ import {
   waitingToTaskInput,
 } from "@/src/components/feature/execution/executionViewModel";
 import { useLifeStore } from "@/src/stores/useLifeStore";
-import { dayKey } from "@/src/utils/format";
 import {
   browserTimezone,
   executionApi,
@@ -71,7 +69,6 @@ const tabs = [
   ["inbox", "收集箱", Inbox],
   ["tasks", "任务", ListTodo],
   ["projects", "项目", FolderKanban],
-  ["habits", "坚持", Flame],
   ["waiting", "等待", Users],
   ["focus", "专注", Focus],
   ["calendar", "日历", CalendarDays],
@@ -304,7 +301,6 @@ function MemoEditor({ value, busy, close, save, remove }: { value?: Memo; busy: 
 export default function ExecutionModule({ onNavigate, initialTab = "today" }: { onNavigate?: (route: string) => void; initialTab?: Tab }) {
   const activities = useLifeStore((value) => value.activities);
   const habitLogs = useLifeStore((value) => value.logs);
-  const addHabitLog = useLifeStore((value) => value.addLog);
   const [tab, setTab] = useState<Tab>(initialTab);
   useEffect(() => { setTab(initialTab); }, [initialTab]);
   const [data, setData] = useState<Data>(emptyData);
@@ -381,7 +377,6 @@ export default function ExecutionModule({ onNavigate, initialTab = "today" }: { 
     () => executionReviewMetrics(data.tasks, activities, habitLogs),
     [data.tasks, activities, habitLogs],
   );
-  const todayKey = dayKey();
   const focusElapsedSeconds = focusAccumulatedSeconds
     + (focusSegmentStartedAt === null ? 0 : Math.max(0, Math.floor((focusTick - focusSegmentStartedAt) / 1000)));
 
@@ -525,22 +520,6 @@ export default function ExecutionModule({ onNavigate, initialTab = "today" }: { 
     );
   };
 
-  const checkHabit = async (activityId: string) => {
-    const activity = activities.find((item) => item.id === activityId);
-    if (!activity) return;
-    const done = habitLogs.some((log) =>
-      log.activityId === activityId
-      && log.createdAt.startsWith(todayKey)
-      && log.status !== "skipped");
-    if (done) return;
-    try {
-      await addHabitLog(activityId, activity.normalTarget ?? 1);
-      toast("坚持记录已完成");
-    } catch (cause) {
-      toast(cause instanceof Error ? cause.message : "坚持记录失败", "error");
-    }
-  };
-
   const menuPosition = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -621,17 +600,6 @@ export default function ExecutionModule({ onNavigate, initialTab = "today" }: { 
     <div className="lt-exec-list">{inboxTasks.length ? inboxTasks.map((task) => <article key={task.id} className="lt-exec-row lt-exec-inbox-row"><Inbox/><button className="lt-exec-row-main" type="button" onClick={() => setInspectTask(task)}><strong>{task.title}</strong><span>{task.description || priorityLabel(task.priority)}</span></button><div className="lt-exec-inbox-actions"><button type="button" onClick={() => moveInboxToday(task)}>今天</button><button type="button" onClick={() => setEditor({ kind: "task", value: task })}>整理</button><button type="button" onClick={() => beginFocus(task.id)}><Play/>开始</button><button type="button" className="danger" title="删除" onClick={() => void run(() => executionApi.tasks.remove(task.id), "任务已删除")}><Trash2/></button></div></article>) : <SectionEmpty>Inbox 已清空，所有任务都已经归位</SectionEmpty>}</div>
   </div>;
 
-  const renderHabits = () => <div className="lt-exec-workspace">
-    <div className="lt-exec-toolbar"><div><strong>{activities.length}</strong><span> 个坚持项目</span></div><button type="button" onClick={() => onNavigate?.("/app/habits")}>打开完整坚持页<ChevronRight/></button></div>
-    <div className="lt-exec-habit-list">{activities.length ? activities.map((activity) => {
-      const todayLogs = habitLogs.filter((log) => log.activityId === activity.id && log.createdAt.startsWith(todayKey) && log.status !== "skipped");
-      const value = todayLogs.reduce((sum, log) => sum + (log.value ?? 1), 0);
-      const target = activity.normalTarget ?? 1;
-      const done = value >= target;
-      return <article key={activity.id}><span className={done ? "done" : ""}>{done ? <Check/> : <Flame/>}</span><div><strong>{activity.name}</strong><small>{value} / {target} {activity.unit}</small></div><div className="lt-exec-progress"><i style={{ width: `${Math.min(100, target ? value / target * 100 : 0)}%` }}/></div><button type="button" disabled={done} onClick={() => void checkHabit(activity.id)}>{done ? "已完成" : "打卡"}</button></article>;
-    }) : <SectionEmpty>还没有坚持项目</SectionEmpty>}</div>
-  </div>;
-
   const renderFocus = () => {
     const task = data.tasks.find((item) => item.id === focusTaskId);
     const hours = String(Math.floor(focusElapsedSeconds / 3600)).padStart(2, "0");
@@ -693,7 +661,6 @@ export default function ExecutionModule({ onNavigate, initialTab = "today" }: { 
     inbox: renderInbox,
     tasks: renderTasks,
     projects: renderProjects,
-    habits: renderHabits,
     waiting: renderWaiting,
     focus: renderFocus,
     calendar: renderCalendar,
