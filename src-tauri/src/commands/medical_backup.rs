@@ -230,7 +230,7 @@ fn import_backup(root:&Path,source:&Path)->Result<MedicalBackupResult,String>{
             let read=reader.read(&mut buffer).map_err(|_|"读取备份附件失败")?;
             if read==0 {break;}
             total+=read as u64;
-            if total>20*1024*1024 {return Err("备份中单个原件超过 20 MiB".into());}
+            if total>5*1024*1024 {return Err("备份中单张原图超过 5 MiB".into());}
             hasher.update(&buffer[..read]);
         }
         if total!=asset.bytes_size||format!("{:x}",hasher.finalize())!=asset.sha256 {
@@ -263,7 +263,7 @@ fn import_backup(root:&Path,source:&Path)->Result<MedicalBackupResult,String>{
         for asset in &backup.assets {
             let new_id=Uuid::new_v4().to_string();
             let ext=asset.filename.rsplit_once('.').map(|x|x.1).ok_or("附件缺少扩展名")?;
-            if !matches!(ext,"pdf"|"png"|"jpg"|"webp") {return Err("备份含不支持的原始文件格式".into());}
+            if !matches!(ext,"png"|"jpg"|"webp") {return Err("备份含不支持的原始文件格式".into());}
             let new_file=format!("{new_id}.{ext}");
             mapped.insert(asset.id.clone(),new_id);
             filenames.push(new_file);
@@ -447,7 +447,7 @@ mod tests {
         assert!(!safe_filename("../test.pdf"));
         assert!(!safe_filename("..\\test.pdf"));
         assert!(!safe_filename("/etc/passwd"));
-        assert!(safe_filename("dbeef.pdf"));
+        assert!(safe_filename("dbeef.jpg"));
         let corrupted=serde_json::json!({"sourceAssetIds":["x"],"sections":[],
           "observations":[{"sourceAssetId":"x"}]});
         assert!(remap_payload(&corrupted,&HashMap::new()).is_err());
