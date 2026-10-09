@@ -12,6 +12,7 @@ const Accounts = lazy(() => import("@/src/components/feature/finance/Accounts"))
 const ImportBills = lazy(() => import("@/src/components/feature/finance/ImportBills"));
 const ReviewView = lazy(() => import("@/src/components/feature/life/ReviewView"));
 const ExecutionModule = lazy(() => import("@/src/components/feature/execution/ExecutionModule"));
+const DesktopCalendarWorkspace = lazy(() => import("@/src/components/DesktopCalendarWorkspace"));
 const SettingsView = lazy(() => import("@/src/components/feature/settings/SettingsView"));
 const PhotoSyncModule = lazy(() => import("@/src/components/PhotoSyncModule"));
 const Footprints = lazy(() => import("@/src/components/feature/footprints/Footprints"));
@@ -96,7 +97,7 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
   } else if (route.startsWith("/app/execution")) {
     content = <ExecutionModule onNavigate={navigate} />;
   } else if (route === "/app/calendar") {
-    content = <ExecutionModule onNavigate={navigate} initialTab="calendar" />;
+    content = <DesktopCalendarWorkspace onNavigate={navigate} />;
   } else if (route === "/app/habits") {
     content = <Habits
       edit={(value) => setModal({ kind: "activity", value })}
