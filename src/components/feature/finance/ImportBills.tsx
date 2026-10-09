@@ -680,7 +680,7 @@ export default function ImportBills() {
                   账户转账 <b>{summary.transfers}</b>
                 </span>
                 <span>
-                  未匹配账户 <b>{summary.unmatched}</b>
+                  未匹配账户 <b>{billSource === "icbc" ? effectiveBankRows.filter(row => !row.accountId).length : summary.unmatched}</b>
                 </span>
                 <span>
                   其他中性交易 <b>{summary.neutral}</b>
