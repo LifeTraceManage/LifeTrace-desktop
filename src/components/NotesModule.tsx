@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import RichMarkdownEditor, { type RichMarkdownEditorHandle } from "./RichMarkdownEditor";
+import CodeMirrorMarkdownEditor, { type MarkdownEditorHandle } from "./CodeMirrorMarkdownEditor";
 import {
   Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
@@ -123,7 +123,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [inspectorTab,setInspectorTab]=useState<"outline"|"properties"|"links"|"relations"|"attachments">("outline");
   const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
   const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
-  const richEditorRef=useRef<RichMarkdownEditorHandle>(null);
+  const richEditorRef=useRef<MarkdownEditorHandle>(null);
   const saveLock=useRef(false);
 
   const updateMarkdown=useCallback((value:string)=>{
@@ -332,7 +332,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         <div className="nt-editor-scroll">
           <input className="nt-title" value={draft.title??""} onChange={e=>patch({title:e.target.value||null})} placeholder={draft.noteType==="quick"?"快速记录无需标题":"无标题笔记"}/>
           <div className="nt-edit-layout nt-mode-rich">
-            <RichMarkdownEditor key={note.id} ref={richEditorRef} value={markdown} onChange={updateMarkdown}/>
+            <CodeMirrorMarkdownEditor key={note.id} ref={richEditorRef} value={markdown} onChange={updateMarkdown}/>
           </div>
         </div>
       </main>
