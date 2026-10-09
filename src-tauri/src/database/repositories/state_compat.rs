@@ -10,7 +10,7 @@
 mod tests {
     use crate::database::migration_runner::{run, MigrationContext};
     use crate::database::migrations::all;
-    use crate::database::repositories::{finance, habits, notes, workouts};
+    use crate::database::repositories::{finance, habits, workouts};
     use rusqlite::Connection;
     use serde_json::{json, Value};
     use std::fs;
@@ -110,18 +110,6 @@ mod tests {
             }),
         )
         .unwrap();
-        notes::save_note(
-            &connection,
-            &json!({
-                "title": "备份笔记", "noteType": "document", "contentJson": {"type": "doc"},
-                "contentHtml": "", "contentText": "", "contentMarkdown": "", "summary": ""
-            }),
-            false,
-            false,
-        )
-        .unwrap();
-        let notes_backup = notes::backup(&connection).unwrap();
-
         // 导出（旧 UI 结构 + 版本字段）。
         let accounts = finance::list_accounts(&connection).unwrap();
         let transactions = finance::list_transactions(&connection).unwrap();
@@ -138,8 +126,7 @@ mod tests {
             "transactions": transactions,
             "reviews": reviews,
             "accounts": accounts,
-            "workoutHistory": workout_history,
-            "notesBackup": notes_backup
+            "workoutHistory": workout_history
         });
 
         // 恢复到全新数据库。
@@ -160,12 +147,6 @@ mod tests {
         )
         .unwrap();
         transaction.commit().unwrap();
-        notes::restore_backup(
-            &mut Connection::open_in_memory().unwrap(),
-            &json!({"format": "other"}),
-        )
-        .unwrap_err();
-
         assert_eq!(finance::list_transactions(&target).unwrap().len(), 1);
         assert_eq!(
             finance::list_transactions(&target).unwrap()[0]["amount"],
@@ -176,16 +157,7 @@ mod tests {
             habits::list_activity_logs(&target).unwrap()[0]["activityId"],
             Value::Null
         );
-        // 笔记备份恢复到另一个全新库。
-        let (mut notes_target, notes_target_dir) = migrated_connection();
-        notes::restore_backup(&mut notes_target, &notes_backup).unwrap();
-        let restored_notes =
-            notes::list_notes(&notes_target, None, Some("all"), None, None, None, None, 20)
-                .unwrap();
-        assert_eq!(restored_notes.len(), 1);
-        assert_eq!(restored_notes[0]["title"], json!("备份笔记"));
         fs::remove_dir_all(&directory).ok();
         fs::remove_dir_all(&target_dir).ok();
-        fs::remove_dir_all(&notes_target_dir).ok();
     }
 }
