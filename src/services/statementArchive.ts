@@ -1,3 +1,4 @@
+import { reconcileArchivedRows } from "@/src/utils/archivedStatementReconciliation";
 import { invoke } from "@tauri-apps/api/core";
 
 type RawStorageResult = { batchId: string; inserted: number; existing: boolean; persisted: number };
@@ -57,4 +58,17 @@ export type PersistedStatementMatch = {
 };
 export async function saveArchivedStatementMatches(matches: PersistedStatementMatch[]): Promise<number> {
   return invoke<number>("statement_save_matches", { matches });
+}
+
+export async function reconcileArchivedStatements() {
+  const rawRows = await listArchivedStatementRows();
+  const result = reconcileArchivedRows(rawRows);
+  const matches: PersistedStatementMatch[] = result.matches.map(match => {
+    const [bankBatchId, bankOrdinal] = match.bankId.split(":");
+    const [paymentBatchId, paymentOrdinal] = match.paymentId.split(":");
+    return {bankBatchId, bankOrdinal:Number(bankOrdinal), paymentBatchId,
+      paymentOrdinal:Number(paymentOrdinal), reason:match.reason};
+  });
+  if (matches.length) await saveArchivedStatementMatches(matches);
+  return { ...result, rawRows };
 }
