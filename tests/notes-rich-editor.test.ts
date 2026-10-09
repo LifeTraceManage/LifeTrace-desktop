@@ -37,3 +37,13 @@ test("rich editor renders safe Markdown and exposes expected formatting tools", 
   assert.match(richSource, /toggleCodeBlock/);
   assert.match(richSource, /TurndownService/);
 });
+
+
+test("desktop notes are full-bleed without the enclosing workspace card", () => {
+  const shell = readFileSync("src/components/DesktopWorkbenchShell.tsx", "utf8");
+  const routeStyle = readFileSync("app/desktop-cloud-workspace.css", "utf8");
+  assert.match(shell, /routeIsActive\(route, "\/app\/notes"\) \? " notes-route"/);
+  assert.match(routeStyle, /\.lt-desk-content\.notes-route\s*\{/);
+  assert.match(routeStyle, /\.lt-desk-content\.notes-route > \.lt-desk-route-content/);
+  assert.match(styles, /\.lt-desk-content\.notes-route \.nt-workspace/);
+});
