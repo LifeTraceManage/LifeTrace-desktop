@@ -124,14 +124,18 @@ export default function ImportBills() {
       if (/\.pdf$/i.test(file.name)) {
         setBillSource("icbc");
         const statement = await parseIcbcPdf(file);
-        if (!statement.valid) throw new Error("银行账单校验未通过，禁止导入：" + statement.errors.slice(0, 3).join("；"));
+        if (statement.transactions.length === 0) throw new Error("未识别到银行交易，无法归档");
         const archived = await archiveBillRows(file, "icbc", statement.transactions.map((tx, i) => ({
-          ordinal: i + 1, payload: tx, status: "parsed" as const,
-        })), true, {
+          ordinal: i + 1, payload: tx, status: statement.valid ? "parsed" as const : "review" as const,
+        })), statement.valid, {
           transactions: statement.transactions.length,
           pages: statement.pages,
           balanceErrors: statement.balanceErrors,
         });
+        if (!statement.valid) {
+          setMessage("原始银行流水已存档 " + archived.persisted + " 行，但未通过校验，禁止生成收支交易：" + statement.errors.join("；"));
+          return;
+        }
         const banks = accounts.filter(account => account.type === "bank");
         const parsed: ImportRow[] = [];
         let unmatched = 0, duplicates = 0, transfers = 0;
