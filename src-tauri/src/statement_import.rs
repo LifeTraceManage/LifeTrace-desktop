@@ -65,7 +65,21 @@ fn schema(db: &Connection) -> Result<(), String> {
             PRIMARY KEY(batch_id, ordinal)
         );
         CREATE INDEX IF NOT EXISTS ix_statement_source_id
-            ON statement_import_rows(external_id) WHERE external_id IS NOT NULL;"
+            ON statement_import_rows(external_id) WHERE external_id IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS statement_transaction_matches (
+            bank_batch_id TEXT NOT NULL,
+            bank_ordinal INTEGER NOT NULL,
+            payment_batch_id TEXT NOT NULL,
+            payment_ordinal INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            matched_at TEXT NOT NULL,
+            PRIMARY KEY(bank_batch_id,bank_ordinal),
+            UNIQUE(payment_batch_id,payment_ordinal),
+            FOREIGN KEY(bank_batch_id,bank_ordinal)
+                REFERENCES statement_import_rows(batch_id,ordinal) ON DELETE CASCADE,
+            FOREIGN KEY(payment_batch_id,payment_ordinal)
+                REFERENCES statement_import_rows(batch_id,ordinal) ON DELETE CASCADE
+        );"
     ).map_err(|e| e.to_string())
 }
 
@@ -260,6 +274,62 @@ pub fn list_batches(db:&Connection)->Result<Vec<StoredBatch>,String>{
     })).map_err(|e|e.to_string())?;
     let batches = rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())?;
     Ok(batches)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementMatch {
+    pub bank_batch_id:String, pub bank_ordinal:i64,
+    pub payment_batch_id:String, pub payment_ordinal:i64,
+    pub reason:String,
+}
+pub fn save_matches(db:&mut Connection, matches:&[StatementMatch])->Result<usize,String>{
+    schema(db)?;
+    let tx=db.transaction().map_err(|e|e.to_string())?;
+    let mut inserted=0;
+    for item in matches {
+        if item.reason!="unique-card-time-channel" || item.bank_ordinal<1 || item.payment_ordinal<1 {
+            return Err("对账匹配依据或序号无效".into());
+        }
+        let (bank_source,payment_source):(String,String)=tx.query_row(
+          "SELECT (SELECT source FROM statement_import_batches WHERE id=?1),
+                  (SELECT source FROM statement_import_batches WHERE id=?2)",
+          params![item.bank_batch_id,item.payment_batch_id],
+          |row|Ok((row.get(0)?,row.get(1)?))).map_err(|e|e.to_string())?;
+        if bank_source!="icbc" || !matches!(payment_source.as_str(),"wechat"|"alipay"){
+            return Err("对账只能关联工商银行及微信或支付宝流水".into());
+        }
+        let existing:Option<(String,i64)>=tx.query_row(
+            "SELECT payment_batch_id,payment_ordinal FROM statement_transaction_matches
+             WHERE bank_batch_id=?1 AND bank_ordinal=?2",
+            params![item.bank_batch_id,item.bank_ordinal],
+            |row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e|e.to_string())?;
+        if let Some((batch,ordinal))=existing {
+            if batch!=item.payment_batch_id || ordinal!=item.payment_ordinal {
+                return Err("同一银行流水已有不同的匹配关系".into());
+            }
+            continue;
+        }
+        tx.execute("INSERT INTO statement_transaction_matches
+            (bank_batch_id,bank_ordinal,payment_batch_id,payment_ordinal,reason,matched_at)
+            VALUES(?1,?2,?3,?4,?5,?6)",
+            params![item.bank_batch_id,item.bank_ordinal,item.payment_batch_id,
+                item.payment_ordinal,item.reason,chrono::Utc::now().to_rfc3339()])
+            .map_err(|e|e.to_string())?;
+        inserted+=1;
+    }
+    tx.commit().map_err(|e|e.to_string())?;
+    Ok(inserted)
+}
+#[tauri::command]
+pub async fn statement_save_matches(state:State<'_,DesktopState>,matches:Vec<StatementMatch>)
+    ->Result<usize,String>{
+    if matches.len()>100_000 {return Err("对账条目过多".into());}
+    let path=state.data_dir.join("lifetrace.db");
+    tauri::async_runtime::spawn_blocking(move ||{
+        let mut db=crate::database::connection::open(&path).map_err(|e|e.to_string())?;
+        save_matches(&mut db,&matches)
+    }).await.map_err(|e|e.to_string())?
 }
 
 #[derive(Debug, Serialize)]
