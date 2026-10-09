@@ -15,7 +15,6 @@ export default function MedicalReportBrowser() {
   const [items, setItems] = useState<MedicalListItem[]>([]);
   const [selected, setSelected] = useState<MedicalReportDetail | null>(null);
   const [preview, setPreview] = useState<MedicalAssetData | null>(null);
-  const [previewPage, setPreviewPage] = useState(1);
   const [revisions, setRevisions] = useState<MedicalReportRevision[] | null>(null);
   const [trend, setTrend] = useState<{
     name: string; unit: string; points: MedicalMetricHistoryPoint[];
@@ -50,8 +49,7 @@ export default function MedicalReportBrowser() {
     try { setRevisions(await medicalReportApi.listRevisions(reportId)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取历史修订"); }
   };
-  const openAsset = async (id: string, pageIndex = 0) => {
-    setPreviewPage(Math.max(1, pageIndex + 1));
+  const openAsset = async (id: string) => {
     setError("");
     try { setPreview(await medicalReportApi.readAsset(id)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取原始图片"); }
@@ -86,7 +84,7 @@ export default function MedicalReportBrowser() {
   const backupAction = async (action: "export" | "import") => {
     if (backupBusy) return;
     if (!window.confirm(action === "export"
-      ? "即将备份当前账号的医疗检查、原始图片和 PDF。备份不会加密，其他有文件权限的程序可读取，是否继续？"
+      ? "即将备份当前账号的医疗检查和原始图片。备份不会加密，其他有文件权限的程序可读取，是否继续？"
       : "即将从备份目录恢复医疗档案。会先校验每份原件，遇到与现有档案重复的文件则中止，不覆盖当前记录。是否继续？")) return;
     setBackupBusy(true);
     setError("");
@@ -121,7 +119,7 @@ export default function MedicalReportBrowser() {
       </div>
     </header>
     <div className="hx-panel-body">
-      <p>在「Agent」中发送医疗报告图片或 PDF 即可识别和归档；此处只负责查看记录和原始文件。医疗资料保存在本机普通文件与 SQLite 中，未加密。</p>
+      <p>在「Agent」中发送医疗报告图片即可识别和归档；此处只负责查看记录和原始文件。医疗资料保存在本机普通文件与 SQLite 中，未加密。</p>
       <input aria-label="搜索检查报告" placeholder="搜索检查名称、医院或日期"
         value={filter} onChange={(event) => setFilter(event.target.value)}
         style={{ padding: 8, width: "100%", borderRadius: 6 }}/>
@@ -160,7 +158,7 @@ export default function MedicalReportBrowser() {
                 <td>{value.valueRaw}</td><td>{value.unitRaw || "—"}</td>
                 <td>{value.referenceRangeRaw || "—"}</td><td>{value.sourceFlag || "—"}</td>
                 <td><button type="button" title="查看该检测值对应的原始报告"
-                  onClick={() => void openAsset(value.sourceAssetId, value.pageIndex)}>查看原图</button></td>
+                  onClick={() => void openAsset(value.sourceAssetId)}>查看原图</button></td>
               </tr>)}</tbody>
           </table>
         </div> : null}
@@ -220,22 +218,16 @@ export default function MedicalReportBrowser() {
             </details>)}
           </details> : null}
         </div>
-        <h4>原始报告文件（图片或 PDF）</h4>
+        <h4>原始报告图片</h4>
         {selected.assets.map((asset) => <button type="button" key={asset.id}
           onClick={() => void openAsset(asset.id)}
           style={{ marginRight: 8, marginBottom: 8 }}>
           <FileImage style={{ width: 15 }}/> {asset.originalName}
         </button>)}
         {preview ? <figure>
-          {preview.mimeType === "application/pdf"
-            ? <object aria-label={preview.originalName}
-                data={"data:application/pdf;base64," + preview.base64 + "#page=" + previewPage}
-                type="application/pdf" style={{ width: "100%", minHeight: 560 }}>
-                <p>当前桌面环境不支持内嵌 PDF 预览，原始 PDF 仍完整保存在本机档案中。</p>
-              </object>
-            : <img alt={preview.originalName} src={"data:" + preview.mimeType + ";base64," + preview.base64}
-                style={{ display: "block", maxHeight: 600, maxWidth: "100%", objectFit: "contain" }}/>}
-          <figcaption>{preview.originalName}{preview.mimeType === "application/pdf" ? " · 第 " + previewPage + " 页" : ""}</figcaption>
+          <img alt={preview.originalName} src={"data:" + preview.mimeType + ";base64," + preview.base64}
+            style={{ display: "block", maxHeight: 600, maxWidth: "100%", objectFit: "contain" }}/>
+          <figcaption>{preview.originalName}</figcaption>
         </figure> : null}
       </div> : null}
     </div>
