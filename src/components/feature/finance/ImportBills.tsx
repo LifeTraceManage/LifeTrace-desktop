@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { FileUp } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Transaction } from "@/src/types";
@@ -21,6 +22,22 @@ type ImportRow = {
   item?: string;
   sourceId?: string;
 };
+
+
+type RawStorageResult = { batchId: string; inserted: number; existing: boolean; persisted: number };
+async function archiveBillRows(
+  file: File,
+  source: "icbc" | "wechat" | "alipay" | "generic",
+  rows: Array<{ordinal: number; sourceId?: string; payload: unknown; status: "parsed" | "review" | "neutral" | "invalid"}>,
+  verified: boolean,
+  validation: Record<string, unknown>,
+): Promise<RawStorageResult> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
+  const fileSha256 = Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+  return invoke<RawStorageResult>("statement_save_raw", {
+    request: {source, filename: file.name, fileSha256, fileSize: file.size, verified, validation, rows},
+  });
+}
 
 export default function ImportBills() {
   const { accounts, transactions, addTransaction } = useLifeStore();
@@ -108,6 +125,13 @@ export default function ImportBills() {
         setBillSource("icbc");
         const statement = await parseIcbcPdf(file);
         if (!statement.valid) throw new Error("银行账单校验未通过，禁止导入：" + statement.errors.slice(0, 3).join("；"));
+        const archived = await archiveBillRows(file, "icbc", statement.transactions.map((tx, i) => ({
+          ordinal: i + 1, payload: tx, status: "parsed" as const,
+        })), true, {
+          transactions: statement.transactions.length,
+          pages: statement.pages,
+          balanceErrors: statement.balanceErrors,
+        });
         const banks = accounts.filter(account => account.type === "bank");
         const parsed: ImportRow[] = [];
         let unmatched = 0, duplicates = 0, transfers = 0;
@@ -143,7 +167,7 @@ export default function ImportBills() {
         }
         setRows(parsed);
         setSummary({source: statement.transactions.length, neutral: 0, transfers, unmatched, duplicates, invalid: 0});
-        setMessage("银行 PDF 通过 " + statement.pages.length + " 页金额与余额校验，已解析 " +
+        setMessage("原始银行流水已保存 " + archived.persisted + " 笔（" + (archived.existing ? "重复文件，无新增" : "新批次") + "）；PDF 通过 " + statement.pages.length + " 页校验，已解析 " +
           statement.transactions.length + " 笔；跳过 " + duplicates + " 笔已存在或疑似重复的记录。" +
           (unmatched || transfers ? "存在未匹配账户或资金流转待确认，暂时禁止批量导入。" : ""));
         return;
@@ -185,6 +209,12 @@ export default function ImportBills() {
           ? ("wechat" as const)
           : ("generic" as const);
       setBillSource(source);
+      const originalRows = matrix.slice(headerRow + 1).filter(row => row.some(value => cellText(value) !== ""));
+      const archived = await archiveBillRows(file, source, originalRows.map((row, ordinal) => ({
+        ordinal: ordinal + 1,
+        payload: {headers, cells: row.map(cellText)},
+        status: "review" as const,
+      })), false, {headerRow: headerRow + 1, rows: originalRows.length});
       const index = (...names: string[]) =>
         headers.findIndex((header) =>
           names.some((name) => header.toLowerCase().includes(name.toLowerCase())),
@@ -347,7 +377,7 @@ export default function ImportBills() {
         invalid,
       });
       setMessage(
-        `已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，自动跳过 ${duplicates} 笔重复账单` : ""}`,
+        `已保存 ${archived.persisted} 行原始账单（${archived.existing ? "已存在的文件" : "新批次"}）；已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，自动跳过 ${duplicates} 笔重复账单` : ""}`,
       );
     } catch (error) {
       setRows([]);
