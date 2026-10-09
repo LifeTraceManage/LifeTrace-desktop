@@ -41,6 +41,13 @@ test("deadline-only task is separate all-day marker, while completed tasks are a
   assert.match(items[0].title, /^截止/);
 });
 
+test("a scheduled task with a separate deadline shows both entries", () => {
+  const twoDaysLater = new Date(2026, 10, 20, 18);
+  const items = calendarItemsWithTasks([], [{ ...task, dueAt: twoDaysLater.toISOString() }], range);
+  assert.deepEqual(items.map(item => item.id), ["planned-task:scheduled-1", "deadline-task:scheduled-1"]);
+  assert.deepEqual(eventsForDay(items, twoDaysLater).map(item => item.id), ["deadline-task:scheduled-1"]);
+});
+
 test("tasks outside visible date range are not rendered", () => {
   const far = { ...task, scheduledStartAt: new Date(2027, 0, 1).toISOString(), scheduledEndAt: new Date(2027, 0, 1, 1).toISOString() };
   assert.equal(calendarItemsWithTasks([], [far], range).length, 0);
