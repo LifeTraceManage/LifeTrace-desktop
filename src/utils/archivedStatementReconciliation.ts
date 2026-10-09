@@ -15,6 +15,7 @@ export function normalizeArchivedRows(rows: readonly ArchivedStatementRow[]): Re
     const v = row.payload as Obj;
     const id = row.batchId + ":" + row.ordinal;
     if (row.source === "icbc") {
+      if (!row.verified) continue;
       const amountText = str(v.amount);
       const amount = currencyCents(amountText.replace(/^[+-]/, ""));
       const time = stamp(str(v.date) + " " + str(v.time));
