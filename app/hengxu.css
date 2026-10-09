@@ -3330,8 +3330,34 @@ textarea {
     padding-inline: var(--ui-space-5);
   }
 
-  .hx-habit-row,
-  @media (max-width: 980px) {
+  .hx-habit-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+
+  .hx-habit-progress {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+
+  .lt-dash-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ai-reset {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
   .hx-shell {
     grid-template-columns: 1fr;
   }
@@ -3373,8 +3399,7 @@ textarea {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .hx-analytics,
-  .hx-import-grid {
+  .hx-analytics {
     grid-template-columns: 1fr;
   }
 
@@ -3409,8 +3434,43 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .hx-habit-row,
-  @media (max-width: 520px) {
+  .hx-habit-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .hx-habit-actions,
+  .hx-account-actions,
+  .hx-habit-progress {
+    grid-column: 1 / -1;
+  }
+
+  .hx-habit-actions {
+    justify-content: stretch;
+  }
+
+  .hx-habit-actions .hx-btn {
+    flex: 1;
+  }
+
+  .hx-form > div {
+    grid-template-columns: 1fr;
+  }
+
+  .hx-choice-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ai-side {
+    grid-template-columns: 1fr;
+  }
+
+  .hx-metrics,
+  .lt-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
   .hx-overlay {
     padding: var(--ui-space-2);
   }
