@@ -179,7 +179,9 @@ export function calendarItemsWithTasks(events: CalendarEvent[], tasks: Execution
             sourceTaskId: task.id, version: task.version, createdAt: task.createdAt, updatedAt: task.updatedAt,
           });
         }
-      } else if (task.dueAt) {
+      }
+      // A deadline is independent of planned work and may fall on another day.
+      if (task.dueAt) {
         const due = new Date(task.dueAt);
         if (!Number.isNaN(due.getTime()) && due >= range.start && due < range.endExclusive) {
           const localDate = localDateKey(due);
