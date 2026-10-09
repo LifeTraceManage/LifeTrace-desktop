@@ -662,6 +662,59 @@ mod tests {
         assert_eq!(validate_report(&report,&ids).unwrap().len(),1);
     }
     #[test]
+    fn keeps_original_pdf_bytes_and_page_index_as_uploaded() {
+        use crate::database::migration_runner::{Migration, MigrationContext};
+        use crate::database::migrations::{M0022MedicalReports,M0023MedicalReportRevisions};
+
+        let root=std::env::temp_dir().join(format!("lifetrace-medical-pdf-{}",Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut db=open_db(&root).unwrap();
+        db.execute_batch("CREATE TABLE local_profiles(id TEXT PRIMARY KEY);
+            INSERT INTO local_profiles VALUES('local');").unwrap();
+        let tx=db.transaction().unwrap();
+        M0022MedicalReports.up(&tx,&MigrationContext::new(root.clone())).unwrap();
+        M0023MedicalReportRevisions.up(&tx,&MigrationContext::new(root.clone())).unwrap();
+        tx.commit().unwrap();
+        drop(db);
+        // This test checks raw-file preservation; PDF rasterization is tested in the client.
+        let original=b"%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n%%EOF".to_vec();
+        let saved=commit(&root,MedicalCommitInput{
+            idempotency_key:"pdf-roundtrip-001".to_owned(),
+            assets:vec![MedicalAssetInput{
+                asset_id:"pdf-1".to_owned(),original_name:"clinic.pdf".to_owned(),
+                mime_type:"application/pdf".to_owned(),base64:STANDARD.encode(&original),
+            }],
+            draft:serde_json::json!({"reports":[{
+                "title":"生化检验","reportType":"laboratory",
+                "sourceAssetIds":["pdf-1"],"examAt":null,"sections":[],
+                "observations":[{
+                    "kind":"numeric","nameRaw":"白蛋白","valueRaw":"42.0",
+                    "valueNumber":42.0,"unitRaw":"g/L","sourceAssetId":"pdf-1",
+                    "pageIndex":2
+                }]
+            }]}),
+        }).unwrap();
+        assert_eq!(saved.len(),1);
+        let db=open_db(&root).unwrap();
+        let (name,mime,relative,id):(String,String,String,String)=db.query_row(
+            "SELECT original_name,mime_type,relative_path,id FROM medical_report_assets LIMIT 1",
+            [],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
+        ).unwrap();
+        assert_eq!(name,"clinic.pdf");
+        assert_eq!(mime,"application/pdf");
+        let content:String=db.query_row(
+            "SELECT content_json FROM medical_reports WHERE id=?1",[&saved[0].id],
+            |r|r.get(0),
+        ).unwrap();
+        let report:Value=serde_json::from_str(&content).unwrap();
+        assert_eq!(report["observations"][0]["pageIndex"],2);
+        assert_eq!(report["observations"][0]["sourceAssetId"],id);
+        assert_eq!(fs::read(root.join("medical/originals").join(relative)).unwrap(),original);
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn commits_original_image_report_and_numeric_results_once() {
         use crate::database::migration_runner::{Migration, MigrationContext};
         use crate::database::migrations::{M0022MedicalReports, M0023MedicalReportRevisions};
