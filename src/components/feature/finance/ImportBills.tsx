@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { archiveBillRows, listArchivedStatementBatches } from "@/src/services/statementArchive";
+import { archiveBillRows, listArchivedStatementBatches, reconcileArchivedStatements } from "@/src/services/statementArchive";
+import { bankChannel } from "@/src/utils/statementReconciliation";
 import type { StoredStatementBatch } from "@/src/services/statementArchive";
 import { FileUp } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
@@ -22,6 +23,8 @@ type ImportRow = {
   counterparty?: string;
   item?: string;
   sourceId?: string;
+  archiveRowKey?: string;
+  review?: boolean;
 };
 
 
@@ -51,7 +54,7 @@ export default function ImportBills() {
   const [savingBank, setSavingBank] = useState(false);
   const bankAccounts = accounts.filter(account => account.type === "bank");
   const isPendingTransfer = (row: ImportRow) =>
-    row.type === "transfer" || row.category === "资金流转（待确认）";
+    row.type === "transfer" || row.review === true || row.category === "资金流转（待确认）";
   const resolvedAccount = bankAccounts.find(account => account.id === bankAccountId);
   const effectiveBankRows = rows.map(row =>
     billSource === "icbc" && !row.accountId && resolvedAccount &&
@@ -62,7 +65,7 @@ export default function ImportBills() {
   const readyRows = effectiveBankRows.filter(row =>
     billSource === "icbc"
       ? Boolean(row.accountId) && !isPendingTransfer(row)
-      : true,
+      : !row.review,
   );
   const pendingRows = billSource === "icbc"
     ? effectiveBankRows.filter(row => !row.accountId || isPendingTransfer(row))
@@ -165,10 +168,13 @@ export default function ImportBills() {
           return;
         }
         refreshArchive();
+        const reconciliation = await reconcileArchivedStatements();
+        const linkedBankRows = new Set(reconciliation.matches.map(item => item.bankId));
+        const uncertainBankRows = new Set(reconciliation.reviewIds);
         const banks = accounts.filter(account => account.type === "bank");
         const parsed: ImportRow[] = [];
         let unmatched = 0, duplicates = 0, transfers = 0;
-        for (const tx of statement.transactions) {
+        for (const [rowIndex, tx] of statement.transactions.entries()) {
           const timestamp = Date.parse(tx.date + "T" + tx.time + "+08:00");
           const signed = toCents(tx.amount);
           const cents = Number(signed < 0n ? -signed : signed);
@@ -180,18 +186,18 @@ export default function ImportBills() {
           const type = signed > 0n ? "income" : "expense";
           const key = ["工商银行流水", tx.date, tx.time, tx.account, tx.amount, tx.balance].join("/");
           const existing = transactions.some(item => item.note?.includes(key));
-          const intermediary = /财付通|支付宝/.test(tx.counterparty);
-          const matched = intermediary && transactions.some(item =>
-            item.type === type && Math.round(item.amount * 100) === cents &&
-            Math.abs(Date.parse(item.occurredAt) - timestamp) <= 5 * 60 * 1000 &&
-            /微信|支付宝/.test((item.note ?? "") + " " + item.account));
-          if (existing || matched) { duplicates++; continue; }
+          const archivedId = archived.batchId + ":" + (rowIndex + 1);
+          if (existing || linkedBankRows.has(archivedId)) { duplicates++; continue; }
+          // Payment-channel bank debits are held until their source can be reconciled.
+          const intermediary = bankChannel(tx.counterparty, tx.summary);
+          const uncertain = Boolean(intermediary) || uncertainBankRows.has(archivedId);
           const internal = /基金购买|理财|余额宝|微信零钱提|跨行汇款|他行汇入/.test(tx.summary);
           if (internal) transfers++;
           parsed.push({
             type, amount: cents / 100, account: account?.name ?? "未匹配银行账户",
             accountId: account?.id, occurredAt: new Date(timestamp).toISOString(),
             category: internal ? "资金流转（待确认）" : type === "income" ? "其他收入" : "日常消费",
+            review: uncertain, archiveRowKey: archivedId,
             counterparty: tx.counterparty || "未识别对方", item: tx.summary,
             note: key + " · 交易渠道：" + tx.channel + " · 交易后余额：" + tx.balance +
               (internal ? " · 待人工确认内部转账" : ""),
@@ -201,7 +207,7 @@ export default function ImportBills() {
         setRows(parsed);
         setSummary({source: statement.transactions.length, neutral: 0, transfers, unmatched, duplicates, invalid: 0});
         setMessage("原始银行流水已保存 " + archived.persisted + " 笔（" + (archived.existing ? "重复文件，无新增" : "新批次") + "）；PDF 通过 " + statement.pages.length + " 页校验，已解析 " +
-          statement.transactions.length + " 笔；跳过 " + duplicates + " 笔已存在或疑似重复的记录。" +
+          statement.transactions.length + " 笔；已有入账或关联 " + duplicates + " 笔；微信/支付宝通道扣款先保留待对账。" +
           (unmatched || transfers ? "可在下方选择银行账户，安全的普通收支可单独入账，资金流转保留待复核。" : ""));
         return;
       }
@@ -238,7 +244,7 @@ export default function ImportBills() {
         (header) => header.includes("收/付款方式") || header.includes("交易订单号"),
       )
         ? ("alipay" as const)
-        : headers.some((header) => header.includes("微信"))
+        : headers.some((header) => header.includes("微信") || header.includes("交易单号") || header.includes("支付方式"))
           ? ("wechat" as const)
           : ("generic" as const);
       setBillSource(source);
@@ -250,6 +256,10 @@ export default function ImportBills() {
       })), false, {headerRow: headerRow + 1, rows: originalRows.length});
       archivedOriginal = true;
       refreshArchive();
+      const reconciliation = await reconcileArchivedStatements();
+      const uncertainPayments = new Set(reconciliation.reviewIds);
+      const linkedPayments = new Map(reconciliation.matches.map(match => [match.paymentId, match.bankId]));
+      const archivedBankRows = new Map(reconciliation.rawRows.map(raw => [raw.batchId + ":" + raw.ordinal, raw]));
       const index = (...names: string[]) =>
         headers.findIndex((header) =>
           names.some((name) => header.toLowerCase().includes(name.toLowerCase())),
@@ -309,7 +319,7 @@ export default function ImportBills() {
           return accounts.find((candidate) => candidate.type === "alipay");
         return undefined;
       };
-      for (const rawRow of matrix.slice(headerRow + 1)) {
+      for (const [rowIndex, rawRow] of matrix.slice(headerRow + 1).entries()) {
         const cells = rawRow.map(cellText);
         if (cells.every((cell) => !cell)) continue;
         const direction = cells[directionIndex] ?? "";
@@ -357,8 +367,15 @@ export default function ImportBills() {
           continue;
         }
         const occurredAt = parsedDate.toISOString();
+        const archiveRowKey = archived.batchId + ":" + (rowIndex + 1);
+        const linkedBankId = linkedPayments.get(archiveRowKey);
+        const linkedBank = linkedBankId ? archivedBankRows.get(linkedBankId) : undefined;
+        const bankPayload = linkedBank?.payload as {date?:string;time?:string;account?:string;amount?:string;balance?:string} | undefined;
+        const bankNoteKey = bankPayload ?
+          ["工商银行流水", bankPayload.date, bankPayload.time, bankPayload.account, bankPayload.amount, bankPayload.balance].join("/") : "";
+        const linkedBankAlreadyPosted = Boolean(bankNoteKey && transactions.some(item => item.note?.includes(bankNoteKey)));
         const sourceId = (cells[sourceIdIndex] ?? "").trim();
-        if (sourceId && existingIds.has(sourceId)) {
+        if (linkedBankAlreadyPosted || (sourceId && existingIds.has(sourceId))) {
           duplicates++;
           continue;
         }
@@ -396,6 +413,8 @@ export default function ImportBills() {
             .filter(Boolean)
             .join(" · "),
           sourceId,
+          archiveRowKey,
+          review: uncertainPayments.has(archiveRowKey),
         };
         if (!row.accountId || (row.type === "transfer" && !row.toAccountId))
           unmatched++;
