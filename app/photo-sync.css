@@ -66,3 +66,16 @@
   .photo-preview.local-photo-preview>article>header{min-height:48px;padding:4px 12px}
   .photo-preview.local-photo-preview>article>footer{min-height:38px}
 }
+
+
+/* Flat gallery: remove the enclosing photo panel, keep individual photo tiles. */
+.photo-album-shell>.local-photo-library{width:100%;min-width:0;gap:12px;padding:0;background:transparent;border:0;box-shadow:none;border-radius:0}
+.photo-album-shell>.local-photo-library>.photo-timeline{
+  flex:1 1 auto;min-width:0;min-height:0;
+  margin:0;padding:8px 0 24px;
+  background:transparent;border:0;border-radius:0;box-shadow:none;
+}
+.photo-album-shell .local-photo-library .photo-section-head{margin-bottom:18px}
+.photo-album-shell .local-photo-library .photo-section-actions{gap:10px}
+.photo-album-shell .local-photo-library .photo-grid{width:100%}
+@media(max-width:620px){.photo-album-shell>.local-photo-library>.photo-timeline{padding:8px 0 20px}}

@@ -10,7 +10,7 @@ use std::{
 
 use base64::Engine;
 use image::ImageFormat;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
 use tauri::State;
@@ -24,7 +24,7 @@ const MAX_IMAGE_BYTES: u64 = 160 * 1024 * 1024;
 const MAX_PIXELS: u64 = 120_000_000;
 static INDEX_LOCK: Mutex<()> = Mutex::new(());
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryRoot {
     path: String,
@@ -32,7 +32,7 @@ pub struct LibraryRoot {
     removable: bool,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryPhoto {
     path: String,
@@ -41,7 +41,7 @@ pub struct LibraryPhoto {
     modified_at: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibrarySnapshot {
     roots: Vec<LibraryRoot>,
@@ -148,6 +148,53 @@ fn roots(data_dir: &Path) -> Result<Vec<LibraryRoot>, String> {
         }
     }
     Ok(result)
+}
+
+// A small on-disk index lets repeat gallery opens avoid a full filesystem walk.
+ // Cache entries are never trusted for file access; photo_library_image still
+ // validates every requested path against currently authorized roots.
+const SNAPSHOT_CACHE_NAME: &str = "photo-library-snapshot-v1.json";
+static SCAN_LOCK: Mutex<()> = Mutex::new(());
+
+fn cached_snapshot(data_dir: &Path) -> Option<LibrarySnapshot> {
+    let bytes = fs::read(data_dir.join(SNAPSHOT_CACHE_NAME)).ok()?;
+    let snapshot: LibrarySnapshot = serde_json::from_slice(&bytes).ok()?;
+    let current = roots(data_dir).ok()?;
+    let cached_roots: HashSet<_> = snapshot.roots.iter().map(|r| &r.path).collect();
+    let current_roots: HashSet<_> = current.iter().map(|r| &r.path).collect();
+    if cached_roots != current_roots { return None; }
+    Some(snapshot)
+}
+
+fn persist_snapshot(data_dir: &Path, snapshot: &LibrarySnapshot) -> Result<(), String> {
+    fs::create_dir_all(data_dir).map_err(|error| error.to_string())?;
+    let target = data_dir.join(SNAPSHOT_CACHE_NAME);
+    let temp = data_dir.join(format!("{SNAPSHOT_CACHE_NAME}-{}.tmp", uuid::Uuid::new_v4()));
+    let bytes = serde_json::to_vec(snapshot).map_err(|error| error.to_string())?;
+    fs::write(&temp, bytes).map_err(|error| error.to_string())?;
+    // On Windows rename won't replace an existing file. Cache is expendable;
+    // failure to persist must never stop a gallery scan.
+    if target.exists() { fs::remove_file(&target).ok(); }
+    if let Err(error) = fs::rename(&temp, &target) {
+        fs::remove_file(&temp).ok();
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+fn refresh_snapshot(data_dir: &Path) -> Result<LibrarySnapshot, String> {
+    let _guard = SCAN_LOCK.lock().map_err(|_| "图库扫描锁不可用".to_owned())?;
+    let snapshot = library_scan(data_dir)?;
+    // Scan is authoritative before it is published. Indexing must not delay
+    // first-screen display, but is kept in the same background task.
+    if let Err(error) = persist_snapshot(data_dir, &snapshot) {
+        eprintln!("LifeTrace photo snapshot cache write failed: {error}");
+    }
+    match index_snapshot(data_dir, &snapshot) {
+        Ok((updated, removed)) => eprintln!("LifeTrace indexed {updated} local photo records; cleaned {removed} verified imported copies"),
+        Err(error) => eprintln!("LifeTrace local photo metadata indexing failed: {error}"),
+    }
+    Ok(snapshot)
 }
 
 fn library_scan(data_dir: &Path) -> Result<LibrarySnapshot, String> {
@@ -500,18 +547,22 @@ fn image_from_library(data_dir: &Path, path: &str, kind: &str) -> Result<Library
 #[tauri::command]
 pub async fn photo_library_scan(state: State<'_, DesktopState>) -> Result<LibrarySnapshot, String> {
     let data_dir = state.data_dir.clone();
-    let snapshot = tauri::async_runtime::spawn_blocking({
+    // Warm path: return immediately, independently of disk scanning or EXIF.
+    // The background refresh updates the snapshot for the next open.
+    if let Some(snapshot) = tauri::async_runtime::spawn_blocking({
         let data_dir = data_dir.clone();
-        move || library_scan(&data_dir)
-    }).await.map_err(|error| error.to_string())??;
-    let to_index = snapshot.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        match index_snapshot(&data_dir, &to_index) {
-            Ok((updated, removed)) => eprintln!("LifeTrace indexed {updated} local photo records; cleaned {removed} verified imported copies"),
-            Err(error) => eprintln!("LifeTrace local photo metadata indexing failed: {error}"),
-        }
-    });
-    Ok(snapshot)
+        move || cached_snapshot(&data_dir)
+    }).await.map_err(|error| error.to_string())? {
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(error) = refresh_snapshot(&data_dir) {
+                eprintln!("LifeTrace photo snapshot refresh failed: {error}");
+            }
+        });
+        return Ok(snapshot);
+    }
+    // Cold path must return the initial scan rather than an empty gallery.
+    tauri::async_runtime::spawn_blocking(move || refresh_snapshot(&data_dir))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -560,6 +611,36 @@ mod tests {
             }
         }).collect();
         library_scan_roots(roots).unwrap()
+    }
+
+    #[test]
+    fn warm_snapshot_round_trip_and_corruption_fallback() {
+        let base = std::env::temp_dir().join(format!("lifetrace-snapshot-{}", uuid::Uuid::new_v4()));
+        let pictures = base.join("local-pictures");
+        let data = base.join("data");
+        fs::create_dir_all(&pictures).unwrap();
+        add_folder(&data, pictures.to_string_lossy().to_string()).unwrap();
+        let snapshot = library_scan(&data).unwrap();
+        persist_snapshot(&data, &snapshot).unwrap();
+        assert_eq!(cached_snapshot(&data).unwrap().photos.len(), snapshot.photos.len());
+        fs::write(data.join(SNAPSHOT_CACHE_NAME), b"not valid json").unwrap();
+        assert!(cached_snapshot(&data).is_none());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn warm_snapshot_invalidated_when_roots_change() {
+        let base = std::env::temp_dir().join(format!("lifetrace-roots-{}", uuid::Uuid::new_v4()));
+        let first = base.join("first");
+        let second = base.join("second");
+        let data = base.join("data");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        add_folder(&data, first.to_string_lossy().to_string()).unwrap();
+        persist_snapshot(&data, &library_scan(&data).unwrap()).unwrap();
+        add_folder(&data, second.to_string_lossy().to_string()).unwrap();
+        assert!(cached_snapshot(&data).is_none());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

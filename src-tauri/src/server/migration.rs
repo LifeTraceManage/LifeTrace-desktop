@@ -172,59 +172,6 @@ fn copy_json_query(
     Ok(copied)
 }
 
-fn migrate_notes(source: &Connection, destination: &mut Connection) -> Result<usize, String> {
-    if !table_exists(source, "notes") {
-        return Ok(0);
-    }
-    if has_column(destination, "notes", "content_json") {
-        // The old notes_d1 importer was removed during the notes rewrite.
-        // Fail explicitly rather than marking a migration as complete while dropping notes.
-        return Err("检测到旧版 D1 笔记数据，但当前版本缺少兼容迁移器；已中止迁移以避免丢失笔记".to_owned());
-    }
-    let mut copied = 0;
-    copied += copy_json_query(
-        source,
-        destination,
-        "SELECT id,json_object(
-          'id',id,'title',title,'noteType',note_type,'folderId',folder_id,
-          'contentJson',json(content_json),'contentHtml',content_html,'contentText',content_text,
-          'contentMarkdown',content_markdown,'summary',summary,'isPinned',json(CASE is_pinned WHEN 1 THEN 'true' ELSE 'false' END),
-          'isFavorite',json(CASE is_favorite WHEN 1 THEN 'true' ELSE 'false' END),
-          'isArchived',json(CASE is_archived WHEN 1 THEN 'true' ELSE 'false' END),
-          'createdAt',created_at,'updatedAt',updated_at,'deletedAt',deleted_at,'version',version,
-          'tags',json(COALESCE((SELECT json_group_array(json_object('id',t.id,'name',t.name,'color',t.color,'createdAt',t.created_at,'updatedAt',t.updated_at)) FROM note_tags t JOIN note_tag_relations tr ON tr.tag_id=t.id WHERE tr.note_id=notes.id),'[]')),
-          'relations',json(COALESCE((SELECT json_group_array(json_object('id',r.id,'noteId',r.note_id,'entityType',r.entity_type,'entityId',r.entity_id,'relationType',r.relation_type,'createdAt',r.created_at)) FROM note_relations r WHERE r.note_id=notes.id),'[]')),
-          'attachments',json(COALESCE((SELECT json_group_array(json_object('id',a.id,'noteId',a.note_id,'fileName',a.file_name,'originalName',a.original_name,'mimeType',a.mime_type,'fileSize',a.file_size,'storagePath',a.storage_path,'createdAt',a.created_at)) FROM note_attachments a WHERE a.note_id=notes.id),'[]'))
-        ),updated_at FROM notes",
-        "notes_v2",
-    )?;
-    if table_exists(source, "note_folders") {
-        copied += copy_json_query(
-            source,
-            destination,
-            "SELECT id,json_object('id',id,'name',name,'icon',icon,'color',color,'sortOrder',sort_order,'createdAt',created_at,'updatedAt',updated_at),updated_at FROM note_folders",
-            "note_folders_v2",
-        )?;
-    }
-    if table_exists(source, "note_tags") {
-        copied += copy_json_query(
-            source,
-            destination,
-            "SELECT id,json_object('id',id,'name',name,'color',color,'createdAt',created_at,'updatedAt',updated_at),updated_at FROM note_tags",
-            "note_tags_v2",
-        )?;
-    }
-    if table_exists(source, "note_revisions") {
-        copied += copy_json_query(
-            source,
-            destination,
-            "SELECT id,json_object('id',id,'noteId',note_id,'version',version,'title',title,'contentJson',json(content_json),'contentHtml',content_html,'contentMarkdown',content_markdown,'createdAt',created_at),created_at FROM note_revisions",
-            "note_revisions_v2",
-        )?;
-    }
-    Ok(copied)
-}
-
 pub fn migrate_once(destination: &mut Connection, data_dir: &Path) -> Result<usize, String> {
     destination
         .execute(
@@ -254,7 +201,6 @@ pub fn migrate_once(destination: &mut Connection, data_dir: &Path) -> Result<usi
         if !JSON_TABLES
             .iter()
             .any(|(table, _)| table_exists(&source, table))
-            && !table_exists(&source, "notes")
         {
             continue;
         }
@@ -267,7 +213,6 @@ pub fn migrate_once(destination: &mut Connection, data_dir: &Path) -> Result<usi
         // 财务：账户必须先于交易导入。
         copied += copy_json_table(&source, destination, "finance_accounts", "finance_accounts")?;
         copied += copy_json_table(&source, destination, "transactions", "transactions")?;
-        copied += migrate_notes(&source, destination)?;
         if copied > 0 {
             break;
         }
