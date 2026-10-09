@@ -4,7 +4,6 @@ import {
   Activity,
   Bot,
   CalendarDays,
-  CheckCircle2,
   CheckSquare2,
   ChevronLeft,
   ChevronRight,
@@ -57,7 +56,6 @@ const NAV_GROUPS: DesktopNavGroup[] = [
       { path: "/app/habits", label: "坚持", icon: Activity },
       { path: "/app/fitness", label: "健身", icon: Dumbbell },
       { path: "/app/health", label: "健康", icon: HeartPulse },
-      { path: "/app/review", label: "复盘", icon: CheckCircle2 },
     ],
   },
   {
