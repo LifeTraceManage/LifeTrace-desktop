@@ -154,8 +154,8 @@ export default function DesktopCloudWorkspace() {
       lastAppliedSync.current = "";
       return;
     }
-    if (!ready || !networkOnline || !boundProfileId) return;
-    const identity = `${user?.id ?? ""}:${boundProfileId}`;
+    if (!ready || !networkOnline) return;
+    const identity = `${user?.id ?? ""}:${boundProfileId ?? "unbound"}`;
     if (initialSyncKey.current !== identity) {
       initialSyncKey.current = identity;
       void refresh();
@@ -163,7 +163,7 @@ export default function DesktopCloudWorkspace() {
   }, [ready, cloudReady, networkOnline, refresh, user?.id, boundProfileId]);
 
   useEffect(() => {
-    if (!ready || !cloudReady || !networkOnline || !boundProfileId || navigation.route !== "/app/habits") return;
+    if (!ready || !cloudReady || !networkOnline || navigation.route !== "/app/habits") return;
     void refresh();
   }, [navigation.route, ready, cloudReady, networkOnline, boundProfileId, refresh]);
 
