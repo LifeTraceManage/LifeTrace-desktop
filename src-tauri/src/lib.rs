@@ -54,6 +54,7 @@ pub fn run() {
             statement_import::statement_save_raw,
             statement_import::statement_list_batches,
             statement_import::statement_list_raw_rows,
+            statement_import::statement_save_matches,
             photo_library::photo_library_scan,
             photo_library::photo_library_add_folder,
             photo_library::photo_library_remove_folder,
