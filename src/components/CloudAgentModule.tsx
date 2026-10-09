@@ -47,7 +47,7 @@ export default function CloudAgentModule() {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   const activeSession = useMemo(
     () => sessions.find((item) => item.id === sessionId) ?? null,
@@ -73,7 +73,8 @@ export default function CloudAgentModule() {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    const container = messagesRef.current;
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
 
   const openSession = async (id: string) => {
@@ -204,7 +205,7 @@ export default function CloudAgentModule() {
           <span className="lt-cloud-agent-trust"><ShieldCheck/>云端受控执行</span>
         </header>
 
-        <div className="lt-cloud-agent-messages" aria-live="polite">
+        <div className="lt-cloud-agent-messages" ref={messagesRef} aria-live="polite" role="log" aria-label="会话详情">
           {messages.length === 0 ? (
             <div className="lt-cloud-agent-empty">
               <Bot/>
@@ -223,7 +224,6 @@ export default function CloudAgentModule() {
             </article>
           ))}
           {loading ? <div className="lt-cloud-agent-pending"><LoaderCircle className="spin"/>正在处理…</div> : null}
-          <div ref={bottomRef}/>
         </div>
 
         {approvals.some((item) => item.status === "pending") ? (
