@@ -22,7 +22,6 @@ import {
   RefreshCw,
   Search,
   Settings,
-  WalletCards,
   WifiOff,
 } from "lucide-react";
 import CommandPalette, { type CommandItem } from "@/src/components/layout/CommandPalette";
@@ -64,7 +63,6 @@ const NAV_GROUPS: DesktopNavGroup[] = [
       { path: "/app/photos", label: "相册", icon: Images },
       { path: "/app/footprints", label: "足迹", icon: MapPinned },
       { path: "/app/mail", label: "邮件", icon: Mail },
-      { path: "/app/finance", label: "财务", icon: WalletCards },
     ],
   },
 ];
@@ -86,10 +84,6 @@ const PAGE_COPY: Record<string, [string, string]> = {
   "/app/photos": ["相册", "管理同步相册与本机私密相册。"],
   "/app/footprints": ["足迹", "用地图、时间与照片整理去过的地方。"],
   "/app/mail": ["邮件", "在桌面端原生处理邮箱、回复、附件与行动转换。"],
-  "/app/finance": ["财务", "管理本机账单、账户与资产数据。"],
-  "/app/finance/transactions": ["账单", "查看和编辑本机账单记录。"],
-  "/app/finance/accounts": ["账户", "管理本机财务账户。"],
-  "/app/finance/import": ["账单导入", "从文件导入账单到本机数据库。"],
   "/app/search": ["全局搜索", "使用本机 SQLite 索引跨模块检索 LifeTrace 数据。"],
   "/app/settings": ["设置", "管理账户、外观、设备与偏好。"],
 };

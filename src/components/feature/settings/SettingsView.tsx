@@ -26,9 +26,7 @@ export default function SettingsView() {
     createdAt: new Date().toISOString(),
     activities: store.activities,
     logs: store.logs,
-    transactions: store.transactions,
     reviews: store.reviews,
-    accounts: store.accounts,
     workoutHistory: store.workoutHistory,
   };
 
@@ -41,7 +39,7 @@ export default function SettingsView() {
           <PanelHead kicker="数据备份" title="数据备份" />
           <div className="hx-panel-body">
             <p>
-              导出完整 JSON 备份，包含坚持、复盘、训练、账户、账单等业务数据。
+              导出完整 JSON 备份，包含坚持、复盘、训练等业务数据。
             </p>
             <div className="hx-settings-actions">
               <button
@@ -103,9 +101,6 @@ export default function SettingsView() {
             </span>
             <span>
               训练历史 <b>{store.workoutHistory.length} 条</b>
-            </span>
-            <span>
-              账户 / 账单 <b>{store.accounts.length} / {store.transactions.length}</b>
             </span>
             <span>
               笔记数据库 <b className="positive">已纳入备份</b>

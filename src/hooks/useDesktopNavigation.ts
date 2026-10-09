@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 
 const LAST_ROUTE_KEY = "lifetrace:desktop:last-route";
 const DEFAULT_ROUTE = "/app/today";
-const ALLOWED_PREFIXES = ["/app/", "/finance/"];
+const ALLOWED_PREFIXES = ["/app/"];
 
 type NavigationHistory = {
   entries: string[];
@@ -11,6 +11,7 @@ type NavigationHistory = {
 
 function normalizeRoute(value: string | null | undefined): string {
   const route = value?.trim() || DEFAULT_ROUTE;
+  if (route.startsWith("/app/finance") || route.startsWith("/finance/")) return DEFAULT_ROUTE;
   return ALLOWED_PREFIXES.some((prefix) => route.startsWith(prefix)) ? route : DEFAULT_ROUTE;
 }
 

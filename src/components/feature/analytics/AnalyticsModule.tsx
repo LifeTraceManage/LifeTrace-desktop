@@ -25,7 +25,6 @@ type Props = {
 };
 
 const DOMAIN_LABELS: Record<string, string> = {
-  finance: "财务",
   habits: "坚持",
   notes: "笔记",
   english: "英语",

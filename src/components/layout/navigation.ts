@@ -3,15 +3,12 @@ import {
   BookOpen,
   CalendarDays,
   Check,
-  CircleDollarSign,
   Dumbbell,
-  FileUp,
   Home,
   Images,
   ListChecks,
   Mail,
   MapPinned,
-  WalletCards,
 } from "lucide-react";
 import type { NavGroup } from "./AppShell";
 
@@ -23,10 +20,6 @@ export type PlatformView =
   | "fitness"
   | "photos"
   | "footprints"
-  | "finance"
-  | "transactions"
-  | "accounts"
-  | "import"
   | "calendar"
   | "review"
   | "analytics"
@@ -57,15 +50,6 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "财务",
-    items: [
-      { id: "finance", label: "概览", icon: BarChart3 },
-      { id: "transactions", label: "账单", icon: CircleDollarSign },
-      { id: "accounts", label: "账户", icon: WalletCards },
-      { id: "import", label: "导入", icon: FileUp },
-    ],
-  },
-  {
     label: "回顾",
     items: [
       { id: "calendar", label: "日历", icon: CalendarDays },
@@ -83,10 +67,6 @@ export const pageTitles: Record<PlatformView, string> = {
   fitness: "健身训练",
   photos: "照片",
   footprints: "足迹",
-  finance: "财务",
-  transactions: "账单",
-  accounts: "账户",
-  import: "导入账单",
   calendar: "生活日历",
   review: "每日复盘",
   analytics: "分析与洞察",

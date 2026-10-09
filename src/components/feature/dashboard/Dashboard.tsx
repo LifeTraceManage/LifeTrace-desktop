@@ -2,8 +2,7 @@ import { useMemo, useState } from "react";
 import { Check, ChevronRight, Plus } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Activity } from "@/src/types";
-import { getTotalAccountBalance } from "@/src/utils/finance";
-import { dayKey, money, transactionAmountText } from "@/src/utils/format";
+import { dayKey } from "@/src/utils/format";
 import { EmptyState } from "@/src/components/common";
 import { Button } from "@/src/components/ui";
 
@@ -12,7 +11,7 @@ type TodayEvent = {
   time: string;
   title: string;
   detail: string;
-  kind: "habit" | "finance" | "workout";
+  kind: "habit" | "workout";
 };
 
 export default function Dashboard({
@@ -22,7 +21,7 @@ export default function Dashboard({
   go: (view: string) => void;
   record: (value: Activity) => void;
 }) {
-  const { activities, logs, transactions, accounts, workoutHistory } = useLifeStore();
+  const { activities, logs, workoutHistory } = useLifeStore();
   const [referenceTime] = useState(() => Date.now());
   const today = dayKey();
   const todayLogs = logs.filter((item) => item.createdAt.startsWith(today));
@@ -31,11 +30,6 @@ export default function Dashboard({
   );
   const pending = activities.filter((item) => !doneIds.has(item.id));
   const done = activities.length - pending.length;
-  const month = today.slice(0, 7);
-  const monthExpense = transactions
-    .filter((item) => item.type === "expense" && item.occurredAt.startsWith(month))
-    .reduce((sum, item) => sum + item.amount, 0);
-  const assets = getTotalAccountBalance(accounts, transactions);
   const weekWorkouts = workoutHistory.filter(
     (item) => referenceTime - new Date(item.occurredAt).getTime() < 7 * 86400000,
   ).length;
@@ -56,15 +50,6 @@ export default function Dashboard({
           kind: "habit" as const,
         };
       });
-    const financeEvents = transactions
-      .filter((item) => item.occurredAt.startsWith(today))
-      .map((item) => ({
-        id: `finance-${item.id}`,
-        time: item.occurredAt,
-        title: item.counterparty || item.category,
-        detail: `${item.category} · ${transactionAmountText(item)}`,
-        kind: "finance" as const,
-      }));
     const workoutEvents = workoutHistory
       .filter((item) => item.occurredAt.startsWith(today))
       .map((item) => ({
@@ -74,10 +59,10 @@ export default function Dashboard({
         detail: `${item.exerciseCount} 个动作 · ${item.setCount} 组`,
         kind: "workout" as const,
       }));
-    return [...habitEvents, ...financeEvents, ...workoutEvents].sort(
+    return [...habitEvents, ...workoutEvents].sort(
       (left, right) => new Date(right.time).getTime() - new Date(left.time).getTime(),
     );
-  }, [activities, todayLogs, transactions, workoutHistory, today]);
+  }, [activities, todayLogs, workoutHistory, today]);
 
   return (
     <div className="hx-view lt-today-view">
@@ -109,12 +94,6 @@ export default function Dashboard({
         </button>
         <button type="button" onClick={() => go("fitness")}>
           <span>本周训练</span><b>{weekWorkouts} 次</b>
-        </button>
-        <button type="button" onClick={() => go("transactions")}>
-          <span>本月支出</span><b>{money(monthExpense)}</b>
-        </button>
-        <button type="button" onClick={() => go("accounts")}>
-          <span>总资产</span><b>{money(assets)}</b>
         </button>
       </div>
 
