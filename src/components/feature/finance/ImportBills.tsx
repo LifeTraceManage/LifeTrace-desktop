@@ -656,6 +656,7 @@ export default function ImportBills() {
                         (row.type === "transfer" && !row.toAccountId)
                           ? " · 未匹配账户"
                           : ""}
+                        {row.review ? " · 待三方对账（暂不入账）" : ""}
                       </small>
                       <strong>{transactionAmountText(row)}</strong>
                     </span>
