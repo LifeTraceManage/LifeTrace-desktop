@@ -62,6 +62,15 @@ function toMarkdown(html: string): string {
   return converter.turndown(html).trimEnd();
 }
 
+export function hasUnsupportedMarkdown(source: string): boolean {
+  return /(?:^|\n)\s*\|[^\n]+\|\s*\n\s*\|\s*:?-{3,}/.test(source)
+    || /attachment:\/\//i.test(source)
+    || /(?:^|\n)\s*\[\^[^\]]+\]:/.test(source)
+    || /(?:^|\n)\s*\$\$/.test(source)
+    || /^---\s*\n[\s\S]*?\n---(?:\n|$)/.test(source)
+    || /(?:^|\n)\s*<\/?[a-z][^>]*>/i.test(source);
+}
+
 /** Rich editing never touches contentMarkdown outside onChange. */
 const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, Props>(function RichMarkdownEditor({ value, onChange }, ref) {
   const onChangeRef = useRef(onChange);
@@ -91,15 +100,15 @@ const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, Props>(function 
 
   useImperativeHandle(ref, () => ({
     insertText(text: string) {
-      editor?.chain().focus().insertContent(text).run();
+      if (!hasUnsupportedMarkdown(value)) editor?.chain().focus().insertContent(text).run();
     },
     selectedText() {
-      if (!editor) return "";
+      if (!editor || hasUnsupportedMarkdown(value)) return "";
       const { from, to } = editor.state.selection;
       return editor.state.doc.textBetween(from, to, "\n").trim();
     },
     focusHeading(text: string) {
-      if (!editor) return;
+      if (!editor || hasUnsupportedMarkdown(value)) return;
       let position: number | null = null;
       editor.state.doc.descendants((node, pos) => {
         if (position === null && node.type.name === "heading" && node.textContent.trim() === text.trim()) {
@@ -110,7 +119,7 @@ const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, Props>(function 
       });
       if (position !== null) editor.chain().focus().setTextSelection(position).scrollIntoView().run();
     },
-  }), [editor]);
+  }), [editor, value]);
 
   useEffect(() => {
     if (!editor || value === lastEmitted.current) return;
@@ -119,6 +128,12 @@ const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, Props>(function 
     lastEmitted.current = value;
   }, [editor, value]);
 
+  if (hasUnsupportedMarkdown(value)) {
+    return <div className="nt-rich-editor nt-rich-protected" data-testid="markdown-rich-editor">
+      <p className="nt-rich-protected-hint">这篇笔记包含暂不支持无损编辑的 Markdown 扩展内容。为避免修改丢失，当前仅展示渲染结果。</p>
+      <div className="nt-rich-content nt-rich-rendered"><ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown></div>
+    </div>;
+  }
   if (!editor) return <div className="nt-rich-loading">正在加载编辑器…</div>;
   return <div className="nt-rich-editor" data-testid="markdown-rich-editor">
     <div className="nt-rich-toolbar" role="toolbar" aria-label="正文格式">
