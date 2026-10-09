@@ -681,6 +681,90 @@ mod tests {
         }]).is_err());
     }
     #[test]
+    fn stores_separate_lab_and_ultrasound_records_with_source_image_evidence() {
+        use crate::database::migration_runner::{Migration, MigrationContext};
+        use crate::database::migrations::{M0022MedicalReports, M0023MedicalReportRevisions};
+
+        let root=std::env::temp_dir().join(format!("lifetrace-multi-medical-{}",Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut db=open_db(&root).unwrap();
+        db.execute_batch("CREATE TABLE local_profiles(id TEXT PRIMARY KEY);
+            INSERT INTO local_profiles VALUES('local');").unwrap();
+        let tx=db.transaction().unwrap();
+        M0022MedicalReports.up(&tx,&MigrationContext::new(root.clone())).unwrap();
+        M0023MedicalReportRevisions.up(&tx,&MigrationContext::new(root.clone())).unwrap();
+        tx.commit().unwrap();
+        drop(db);
+
+        let lab=vec![0xff,0xd8,0xff,0xe0,1,2,3];
+        let ultrasound=b"\x89PNG\r\n\x1a\nultrasound".to_vec();
+        let saved=commit(&root,MedicalCommitInput{
+            idempotency_key:"lab-plus-ultrasound-batch".into(),
+            assets:vec![
+                MedicalAssetInput{asset_id:"lab-img".into(),original_name:"blood.jpg".into(),
+                    mime_type:"image/jpeg".into(),base64:STANDARD.encode(&lab)},
+                MedicalAssetInput{asset_id:"us-img".into(),original_name:"ultrasound.png".into(),
+                    mime_type:"image/png".into(),base64:STANDARD.encode(&ultrasound)},
+            ],
+            draft:serde_json::json!({"reports":[
+                {
+                    "title":"血液生化","reportType":"laboratory","examAt":"2026-10-09",
+                    "sourceAssetIds":["lab-img"],"sections":[],
+                    "observations":[
+                        {"kind":"numeric","nameRaw":"丙氨酸氨基转移酶","valueRaw":"35.0",
+                         "valueNumber":35.0,"unitRaw":"U/L","referenceRangeRaw":"0-40",
+                         "sourceFlag":"normal","sourceAssetId":"lab-img","pageIndex":0},
+                        {"kind":"qualitative","nameRaw":"某抗体","valueRaw":"阴性",
+                         "sourceAssetId":"lab-img","pageIndex":0}
+                    ]
+                },{
+                    "title":"甲状腺彩超","reportType":"ultrasound","examAt":"2026-10-09",
+                    "sourceAssetIds":["us-img"],
+                    "sections":[{"kind":"findings","titleRaw":"超声所见",
+                        "textRaw":"双侧甲状腺轮廓清晰","sourceAssetId":"us-img","pageIndex":0},
+                        {"kind":"conclusion","titleRaw":"超声提示",
+                        "textRaw":"甲状腺结构正常","sourceAssetId":"us-img","pageIndex":0}],
+                    "observations":[]
+                }
+            ]}),
+        }).unwrap();
+        assert_eq!(saved.len(),2);
+
+        let db=open_db(&root).unwrap();
+        let counts:(i64,i64,i64,i64)=db.query_row(
+            "SELECT (SELECT count(*) FROM medical_reports),
+                    (SELECT count(*) FROM medical_observations),
+                    (SELECT count(*) FROM medical_report_sections),
+                    (SELECT count(*) FROM medical_report_assets)",[],
+            |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))
+        ).unwrap();
+        assert_eq!(counts,(2,2,2,2));
+
+        for (report_title,original) in [
+            ("血液生化",lab.as_slice()),("甲状腺彩超",ultrasound.as_slice())
+        ] {
+            let (payload,filename,asset_id):(String,String,String)=db.query_row(
+                "SELECT r.content_json,a.relative_path,a.id FROM medical_reports r
+                 JOIN medical_report_asset_links l ON l.report_id=r.id
+                 JOIN medical_report_assets a ON a.id=l.asset_id
+                 WHERE r.title=?1",[report_title],
+                |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))
+            ).unwrap();
+            let json:Value=serde_json::from_str(&payload).unwrap();
+            assert_eq!(json["sourceAssetIds"][0],asset_id);
+            for section in json["sections"].as_array().unwrap() {
+                assert_eq!(section["sourceAssetId"],asset_id);
+            }
+            for observation in json["observations"].as_array().unwrap() {
+                assert_eq!(observation["sourceAssetId"],asset_id);
+            }
+            assert_eq!(fs::read(root.join("medical/originals").join(filename)).unwrap(),original);
+        }
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn commits_original_image_report_and_numeric_results_once() {
         use crate::database::migration_runner::{Migration, MigrationContext};
         use crate::database::migrations::{M0022MedicalReports, M0023MedicalReportRevisions};
