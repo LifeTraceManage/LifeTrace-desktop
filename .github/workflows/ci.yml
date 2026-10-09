@@ -3,7 +3,7 @@ name: Desktop CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/icbc-pdfjs-statement-import]
 
 permissions:
   contents: read
