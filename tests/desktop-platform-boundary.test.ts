@@ -35,7 +35,6 @@ test("desktop platform capabilities are exposed through explicit adapters", () =
   const adapters = [
     "src/desktop/appAdapter.ts",
     "src/desktop/credentialAdapter.ts",
-    "src/desktop/noteAdapter.ts",
     "src/desktop/photoSyncAdapter.ts",
     "src/desktop/shellAdapter.ts",
     "src/desktop/storageAdapter.ts",

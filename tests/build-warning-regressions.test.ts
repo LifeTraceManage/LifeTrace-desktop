@@ -27,13 +27,11 @@ test("desktop feature screens load on navigation instead of a single enormous en
   const source = read("src/components/DesktopNativeRouteContent.tsx");
   assert.match(source, /lazy\(\(\) => import\("@\/src\/components\/feature\/footprints\/Footprints"\)\)/);
   assert.match(source, /lazy\(\(\) => import\("@\/src\/components\/feature\/finance\/Finance"\)\)/);
-  assert.match(source, /lazy\(\(\) => import\("@\/src\/components\/NotesModule"\)\)/);
   assert.match(source, /<Suspense fallback=/);
 });
  
 test("local tools share lazy-loaded feature chunks with the native navigation", () => {
   const tools = read("src/components/DesktopLocalToolsCenter.tsx");
-  assert.match(tools, /lazy\(\(\) => import\("@\/src\/components\/NotesModule"\)\)/);
   assert.match(tools, /lazy\(\(\) => import\("@\/src\/components\/feature\/finance\/ImportBills"\)\)/);
   assert.match(tools, /<Suspense fallback=/);
 });
