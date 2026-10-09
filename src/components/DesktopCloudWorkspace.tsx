@@ -46,6 +46,7 @@ export default function DesktopCloudWorkspace() {
   const authenticated = useCloudAuthStore((value) => value.authenticated);
   const phase = useCloudAuthStore((value) => value.phase);
   const authError = useCloudAuthStore((value) => value.error);
+  const boundProfileId = useCloudAuthStore((value) => value.binding?.profileId);
   const logoutNative = useCloudAuthStore((value) => value.logout);
   const ready = useLifeStore((value) => value.ready);
   const storageError = useLifeStore((value) => value.storageError);
@@ -63,7 +64,6 @@ export default function DesktopCloudWorkspace() {
   const lastAppliedSync = useRef<string>("");
   const initialSyncKey = useRef<string>("");
 
-
   const reloadLocal = useCallback(async () => {
     await initialize();
   }, [initialize]);
@@ -79,7 +79,7 @@ export default function DesktopCloudWorkspace() {
       // Rust's background scheduler writes SQLite without notifying React.
       // Reload when a new successful cloud sync is observed, including syncs
       // performed by the scheduler while this window remains open.
-      if (status.lastSuccessAt && (status.phase === "up_to_date" || status.phase === "conflict")) {
+      if (!syncFlight.current && status.lastSuccessAt && (status.phase === "up_to_date" || status.phase === "conflict")) {
         const version = `${status.profileId}:${status.lastSuccessAt}`;
         if (lastAppliedSync.current !== version) {
           lastAppliedSync.current = version;
@@ -149,18 +149,23 @@ export default function DesktopCloudWorkspace() {
   // screen also pulls changes authored on the web instead of waiting for the
   // scheduler's five-minute cycle.
   useEffect(() => {
-    if (!ready || !cloudReady || !networkOnline) return;
-    const identity = `${user?.id ?? ""}:${useCloudAuthStore.getState().binding?.profileId ?? ""}`;
+    if (!cloudReady) {
+      initialSyncKey.current = "";
+      lastAppliedSync.current = "";
+      return;
+    }
+    if (!ready || !networkOnline || !boundProfileId) return;
+    const identity = `${user?.id ?? ""}:${boundProfileId}`;
     if (initialSyncKey.current !== identity) {
       initialSyncKey.current = identity;
       void refresh();
     }
-  }, [ready, cloudReady, networkOnline, refresh, user?.id]);
+  }, [ready, cloudReady, networkOnline, refresh, user?.id, boundProfileId]);
 
   useEffect(() => {
-    if (!ready || !cloudReady || !networkOnline || navigation.route !== "/app/habits") return;
+    if (!ready || !cloudReady || !networkOnline || !boundProfileId || navigation.route !== "/app/habits") return;
     void refresh();
-  }, [navigation.route, ready, cloudReady, networkOnline, refresh]);
+  }, [navigation.route, ready, cloudReady, networkOnline, boundProfileId, refresh]);
 
   useEffect(() => {
     const online = () => {
