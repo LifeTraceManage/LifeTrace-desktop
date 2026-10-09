@@ -25,11 +25,12 @@ type ImportRow = {
   sourceId?: string;
   archiveRowKey?: string;
   review?: boolean;
+  replacesTransactionId?: string;
 };
 
 
 export default function ImportBills() {
-  const { accounts, transactions, addTransaction, saveAccount } = useLifeStore();
+  const { accounts, transactions, addTransaction, updateTransaction, saveAccount } = useLifeStore();
   const input = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [rows, setRows] = useState<ImportRow[]>([]);
@@ -374,9 +375,9 @@ export default function ImportBills() {
         const bankPayload = linkedBank?.payload as {date?:string;time?:string;account?:string;amount?:string;balance?:string} | undefined;
         const bankNoteKey = bankPayload ?
           ["工商银行流水", bankPayload.date, bankPayload.time, bankPayload.account, bankPayload.amount, bankPayload.balance].join("/") : "";
-        const linkedBankAlreadyPosted = Boolean(bankNoteKey && transactions.some(item => item.note?.includes(bankNoteKey)));
+        const originalBankTransaction = bankNoteKey ? transactions.find(item => item.note?.includes(bankNoteKey)) : undefined;
         const sourceId = (cells[sourceIdIndex] ?? "").trim();
-        if (linkedBankAlreadyPosted || (sourceId && existingIds.has(sourceId))) {
+        if (sourceId && existingIds.has(sourceId)) {
           duplicates++;
           continue;
         }
@@ -416,6 +417,7 @@ export default function ImportBills() {
           sourceId,
           archiveRowKey,
           review: uncertainPayments.has(archiveRowKey),
+          replacesTransactionId: originalBankTransaction?.id,
         };
         if (!row.accountId || (row.type === "transfer" && !row.toAccountId))
           unmatched++;
@@ -519,7 +521,17 @@ export default function ImportBills() {
             accountId: row.accountId, toAccount: row.toAccount,
             toAccountId: row.toAccountId, counterparty: row.counterparty, item: row.item,
           };
-          await addTransaction(transaction);
+          if (row.replacesTransactionId) {
+            const bank = useLifeStore.getState().transactions.find(item => item.id === row.replacesTransactionId);
+            if (!bank) throw new Error("待替换的银行交易不存在，请重新导入并对账");
+            if (bank.type !== row.type || Math.round(bank.amount * 100) !== Math.round(row.amount * 100)) {
+              throw new Error("原银行流水与支付记录金额或方向不一致，拒绝自动替换");
+            }
+            // Preserve bank origin key in the note for repeat imports and auditability.
+            await updateTransaction(bank.id, { ...transaction, note: [bank.note, transaction.note].filter(Boolean).join(" · ") });
+          } else {
+            await addTransaction(transaction);
+          }
           committed++;
         }
         committedRows.add(row);
