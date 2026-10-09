@@ -198,7 +198,12 @@ fn refresh_snapshot(data_dir: &Path) -> Result<LibrarySnapshot, String> {
 }
 
 fn library_scan(data_dir: &Path) -> Result<LibrarySnapshot, String> {
-    let roots = roots(data_dir)?;
+    library_scan_roots(roots(data_dir)?)
+}
+
+// Production scans system Pictures plus registered folders; tests supply an
+// explicit fixture root list so they cannot index the developer's real photos.
+fn library_scan_roots(roots: Vec<LibraryRoot>) -> Result<LibrarySnapshot, String> {
     let mut photos = Vec::new();
     let mut seen = HashSet::new();
     let mut pending: Vec<(PathBuf, usize)> = roots
@@ -595,6 +600,19 @@ pub async fn photo_library_image(
 mod tests {
     use super::*;
 
+    fn scan_registered_fixture(data_dir: &Path) -> LibrarySnapshot {
+        let folders = registered_folders(data_dir).unwrap();
+        let roots = folders.into_iter().map(|folder| {
+            let path = fs::canonicalize(folder).unwrap();
+            LibraryRoot {
+                name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                path: path.to_string_lossy().into_owned(),
+                removable: true,
+            }
+        }).collect();
+        library_scan_roots(roots).unwrap()
+    }
+
     #[test]
     fn warm_snapshot_round_trip_and_corruption_fallback() {
         let base = std::env::temp_dir().join(format!("lifetrace-snapshot-{}", uuid::Uuid::new_v4()));
@@ -642,9 +660,26 @@ mod tests {
         let file = pictures.join("sample.JPG");
         fs::write(&file, b"unchanged").unwrap();
         add_folder(&data_dir, dir.join("pictures").to_string_lossy().to_string()).unwrap();
-        let snapshot = library_scan(&data_dir).unwrap();
+        let snapshot = scan_registered_fixture(&data_dir);
         assert!(snapshot.photos.iter().any(|image| image.name == "sample.JPG"));
         assert_eq!(fs::read(&file).unwrap(), b"unchanged");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn fixture_scan_does_not_include_unregistered_neighbor_folders() {
+        let dir = std::env::temp_dir().join(format!("lifetrace-gallery-fixture-{}", uuid::Uuid::new_v4()));
+        let data = dir.join("data");
+        let included = dir.join("included");
+        let excluded = dir.join("excluded");
+        fs::create_dir_all(&included).unwrap();
+        fs::create_dir_all(&excluded).unwrap();
+        fs::write(included.join("one.jpg"), b"fixture one").unwrap();
+        fs::write(excluded.join("other.jpg"), b"fixture two").unwrap();
+        add_folder(&data, included.to_string_lossy().to_string()).unwrap();
+        let result = scan_registered_fixture(&data);
+        assert_eq!(result.photos.len(), 1);
+        assert_eq!(result.photos[0].name, "one.jpg");
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -668,7 +703,7 @@ mod tests {
         image::RgbImage::from_pixel(4, 4, image::Rgb([20, 40, 60])).save(&file).unwrap();
         let bytes = fs::read(&file).unwrap();
         add_folder(&data, photos.to_string_lossy().to_string()).unwrap();
-        let snapshot = library_scan(&data).unwrap();
+        let snapshot = scan_registered_fixture(&data);
         assert_eq!(index_snapshot(&data, &snapshot).unwrap(), (1, 0));
         assert_eq!(index_snapshot(&data, &snapshot).unwrap(), (0, 0));
         assert_eq!(fs::read(&file).unwrap(), bytes);
@@ -724,7 +759,7 @@ mod tests {
         drop(db);
 
         add_folder(&data, pictures.to_string_lossy().to_string()).unwrap();
-        let snapshot = library_scan(&data).unwrap();
+        let snapshot = scan_registered_fixture(&data);
         assert_eq!(index_snapshot(&data, &snapshot).unwrap(), (1, 1));
         assert!(source.is_file(), "the local original must remain intact");
         assert!(!old.exists(), "only the verified imported copy is removed");
@@ -767,7 +802,7 @@ mod tests {
         ).unwrap();
         drop(db);
         add_folder(&data, pictures.to_string_lossy().to_string()).unwrap();
-        let snap = library_scan(&data).unwrap();
+        let snap = scan_registered_fixture(&data);
         assert_eq!(index_snapshot(&data, &snap).unwrap(), (1, 0));
         assert!(old.exists());
         fs::remove_dir_all(dir).unwrap();

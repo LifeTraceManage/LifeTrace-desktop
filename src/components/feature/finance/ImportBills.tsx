@@ -1,10 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { archiveBillRows, listArchivedStatementBatches } from "@/src/services/statementArchive";
+import type { StoredStatementBatch } from "@/src/services/statementArchive";
 import { FileUp } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Transaction } from "@/src/types";
 import { PanelHead } from "@/src/components/common";
 import { notify } from "@/src/ui/feedback/toastBus";
 import { pad, transactionAmountText } from "@/src/utils/format";
+import { parseIcbcPdf, toCents } from "@/src/utils/icbcStatement";
 
 type ImportRow = {
   type: Transaction["type"];
@@ -21,6 +24,7 @@ type ImportRow = {
   sourceId?: string;
 };
 
+
 export default function ImportBills() {
   const { accounts, transactions, addTransaction } = useLifeStore();
   const input = useRef<HTMLInputElement>(null);
@@ -28,7 +32,7 @@ export default function ImportBills() {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [message, setMessage] = useState("");
   const [draggingBill, setDraggingBill] = useState(false);
-  const [billSource, setBillSource] = useState<"wechat" | "alipay" | "generic">(
+  const [billSource, setBillSource] = useState<"wechat" | "alipay" | "icbc" | "generic">(
     "generic",
   );
   const [summary, setSummary] = useState({
@@ -40,6 +44,9 @@ export default function ImportBills() {
     invalid: 0,
   });
   const [importing, setImporting] = useState(false);
+  const [archiveBatches, setArchiveBatches] = useState<StoredStatementBatch[]>([]);
+  const refreshArchive = () => { void listArchivedStatementBatches().then(setArchiveBatches).catch(() => undefined); };
+  useEffect(() => { refreshArchive(); }, []);
 
   const parseLine = (line: string) => {
     const result: string[] = [];
@@ -99,9 +106,81 @@ export default function ImportBills() {
   };
 
   const read = async (file: File) => {
+    let archivedOriginal = false;
     try {
       setRows([]);
       setMessage("正在解析账单…");
+
+      if (/\.pdf$/i.test(file.name)) {
+        setBillSource("icbc");
+        let statement;
+        try {
+          statement = await parseIcbcPdf(file);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          await archiveBillRows(file, "icbc", [{
+            ordinal: 1, payload: {error: reason, filename: file.name}, status: "invalid",
+          }], false, {parseError: reason, transactions: 0});
+          archivedOriginal = true;
+          refreshArchive();
+          setMessage("PDF 无法正确解析：已保存原始文件供重新识别，未生成任何财务交易。原因：" + reason);
+          return;
+        }
+        if (statement.transactions.length === 0) throw new Error("未识别到银行交易，无法归档");
+        const archived = await archiveBillRows(file, "icbc", statement.transactions.map((tx, i) => ({
+          ordinal: i + 1, payload: tx, status: statement.valid ? "parsed" as const : "review" as const,
+        })), statement.valid, {
+          transactions: statement.transactions.length,
+          pages: statement.pages,
+          balanceErrors: statement.balanceErrors,
+        });
+        archivedOriginal = true;
+        if (!statement.valid) {
+          refreshArchive();
+          setMessage("原始银行流水已存档 " + archived.persisted + " 行，但未通过校验，禁止生成收支交易：" + statement.errors.join("；"));
+          return;
+        }
+        refreshArchive();
+        const banks = accounts.filter(account => account.type === "bank");
+        const parsed: ImportRow[] = [];
+        let unmatched = 0, duplicates = 0, transfers = 0;
+        for (const tx of statement.transactions) {
+          const timestamp = Date.parse(tx.date + "T" + tx.time + "+08:00");
+          const signed = toCents(tx.amount);
+          const cents = Number(signed < 0n ? -signed : signed);
+          if (!Number.isFinite(timestamp) || !Number.isSafeInteger(cents) || cents <= 0)
+            throw new Error("银行交易时间或金额不合法");
+          const account = banks.find(a => a.last4 && tx.account.endsWith(a.last4))
+            ?? (banks.length === 1 ? banks[0] : undefined);
+          if (!account) unmatched++;
+          const type = signed > 0n ? "income" : "expense";
+          const key = ["工商银行流水", tx.date, tx.time, tx.account, tx.amount, tx.balance].join("/");
+          const existing = transactions.some(item => item.note?.includes(key));
+          const intermediary = /财付通|支付宝/.test(tx.counterparty);
+          const matched = intermediary && transactions.some(item =>
+            item.type === type && Math.round(item.amount * 100) === cents &&
+            Math.abs(Date.parse(item.occurredAt) - timestamp) <= 5 * 60 * 1000 &&
+            /微信|支付宝/.test((item.note ?? "") + " " + item.account));
+          if (existing || matched) { duplicates++; continue; }
+          const internal = /基金购买|理财|余额宝|微信零钱提|跨行汇款|他行汇入/.test(tx.summary);
+          if (internal) transfers++;
+          parsed.push({
+            type, amount: cents / 100, account: account?.name ?? "未匹配银行账户",
+            accountId: account?.id, occurredAt: new Date(timestamp).toISOString(),
+            category: internal ? "资金流转（待确认）" : type === "income" ? "其他收入" : "日常消费",
+            counterparty: tx.counterparty || "未识别对方", item: tx.summary,
+            note: key + " · 交易渠道：" + tx.channel + " · 交易后余额：" + tx.balance +
+              (internal ? " · 待人工确认内部转账" : ""),
+            sourceId: key,
+          });
+        }
+        setRows(parsed);
+        setSummary({source: statement.transactions.length, neutral: 0, transfers, unmatched, duplicates, invalid: 0});
+        setMessage("原始银行流水已保存 " + archived.persisted + " 笔（" + (archived.existing ? "重复文件，无新增" : "新批次") + "）；PDF 通过 " + statement.pages.length + " 页校验，已解析 " +
+          statement.transactions.length + " 笔；跳过 " + duplicates + " 笔已存在或疑似重复的记录。" +
+          (unmatched || transfers ? "存在未匹配账户或资金流转待确认，暂时禁止批量导入。" : ""));
+        return;
+      }
       let matrix: unknown[][];
       if (file.name.toLowerCase().endsWith(".xlsx")) {
         const { readSheet } = await import("read-excel-file/browser");
@@ -139,6 +218,14 @@ export default function ImportBills() {
           ? ("wechat" as const)
           : ("generic" as const);
       setBillSource(source);
+      const originalRows = matrix.slice(headerRow + 1).filter(row => row.some(value => cellText(value) !== ""));
+      const archived = await archiveBillRows(file, source, originalRows.map((row, ordinal) => ({
+        ordinal: ordinal + 1,
+        payload: {headers, cells: row.map(cellText)},
+        status: "review" as const,
+      })), false, {headerRow: headerRow + 1, rows: originalRows.length});
+      archivedOriginal = true;
+      refreshArchive();
       const index = (...names: string[]) =>
         headers.findIndex((header) =>
           names.some((name) => header.toLowerCase().includes(name.toLowerCase())),
@@ -301,11 +388,27 @@ export default function ImportBills() {
         invalid,
       });
       setMessage(
-        `已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，自动跳过 ${duplicates} 笔重复账单` : ""}`,
+        `已保存 ${archived.persisted} 行原始账单（${archived.existing ? "已存在的文件" : "新批次"}）；已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，自动跳过 ${duplicates} 笔重复账单` : ""}`,
       );
     } catch (error) {
       setRows([]);
-      setMessage(error instanceof Error ? error.message : "文件解析失败");
+      const reason = error instanceof Error ? error.message : "文件解析失败";
+      if (!archivedOriginal) {
+        try {
+          const source = /\.pdf$/i.test(file.name) ? "icbc" : "generic";
+          await archiveBillRows(file, source, [{
+            ordinal: 1, payload: {parseError: reason, filename: file.name}, status: "invalid",
+          }], false, {parseError: reason, transactions: 0});
+          refreshArchive();
+          setMessage("已归档待复核原始文件，未生成财务交易。原因：" + reason);
+        } catch (archiveError) {
+          setMessage("解析及原始文件归档均失败：" +
+            (archiveError instanceof Error ? archiveError.message : String(archiveError)) +
+            "；解析原因：" + reason);
+        }
+      } else {
+        setMessage("原始账单已保留，但交易解析失败：" + reason);
+      }
     } finally {
       if (input.current) input.current.value = "";
     }
@@ -313,15 +416,16 @@ export default function ImportBills() {
 
   const acceptBillFile = (file?: File) => {
     if (!file) return;
-    if (!/\.(csv|xlsx)$/i.test(file.name)) {
+    if (!/\.(csv|xlsx|pdf)$/i.test(file.name)) {
       setRows([]);
-      setMessage("仅支持 CSV 或 Excel（.xlsx）账单文件");
+      setMessage("仅支持 CSV、Excel 或工商银行 PDF 账单");
       return;
     }
     void read(file);
   };
 
   const commit = async () => {
+    if (billSource === "icbc" && (summary.unmatched || summary.transfers)) { setMessage("存在待确认资金流转或未匹配账户，禁止批量导入"); return; }
     setImporting(true);
     try {
       for (const row of rows) {
@@ -341,7 +445,7 @@ export default function ImportBills() {
         await addTransaction(transaction);
       }
       const sourceName =
-        billSource === "alipay" ? "支付宝" : billSource === "wechat" ? "微信" : "支付";
+        billSource === "alipay" ? "支付宝" : billSource === "wechat" ? "微信" : billSource === "icbc" ? "工商银行" : "支付";
       setMessage(`已导入 ${rows.length} 笔${sourceName}账单到 SQLite`);
       setRows([]);
       notify(`${sourceName}账单导入完成`);
@@ -356,13 +460,13 @@ export default function ImportBills() {
     <div className="hx-view">
       <div className="hx-import-grid">
         <article className="hx-panel">
-          <PanelHead kicker="微信 / 支付宝" title="导入支付流水" />
+          <PanelHead kicker="工商银行 / 微信 / 支付宝" title="导入交易流水" />
           <div className="hx-panel-body">
             <div
               className={`hx-drop${draggingBill ? " is-dragging" : ""}`}
               role="button"
               tabIndex={0}
-              aria-label="拖放或选择微信、支付宝账单文件"
+              aria-label="拖放或选择工商银行、微信、支付宝账单文件"
               onClick={() => input.current?.click()}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -393,12 +497,12 @@ export default function ImportBills() {
             >
               <FileUp />
               <h3>{draggingBill ? "松开即可解析账单" : "拖动账单文件到这里"}</h3>
-              <p>支持微信 Excel / CSV，以及支付宝导出的 GBK 或 UTF-8 CSV。</p>
+              <p>支持工商银行电子 PDF、微信 Excel / CSV，以及支付宝 GBK 或 UTF-8 CSV。</p>
               <input
                 ref={input}
                 type="file"
                 hidden
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv"
+                accept=".pdf,application/pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv"
                 onChange={(event) => acceptBillFile(event.target.files?.[0])}
               />
               <button
@@ -444,7 +548,7 @@ export default function ImportBills() {
                 <button
                   type="button"
                   className="hx-btn primary"
-                  disabled={importing}
+                  disabled={importing || (billSource === "icbc" && (summary.unmatched > 0 || summary.transfers > 0))}
                   onClick={commit}
                 >
                   {importing ? "正在导入…" : `确认导入 ${rows.length} 笔`}
@@ -490,6 +594,17 @@ export default function ImportBills() {
                 </span>
               </div>
             ) : null}
+            <hr />
+            <strong>已归档的原始账单</strong>
+            {archiveBatches.slice(0, 10).map(batch => (
+              <p key={batch.id}>
+                <b>{batch.filename}</b>
+                <small> · {batch.source} · 已存 {batch.storedRows}/{batch.expectedRows} 行
+                  {batch.verified ? " · 已核验" : " · 待复核"}
+                </small>
+              </p>
+            ))}
+            <small>这里是独立的原始流水档案，不代表已经计入财务收支。</small>
             <hr />
             <small>
               当前已有 {transactions.length} 笔账单，{accounts.length} 个账户。
