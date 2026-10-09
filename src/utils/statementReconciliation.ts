@@ -57,7 +57,7 @@ export function reconcileSources(rows: readonly ReconcileRow[]): ReconcileResult
     }
   }
   const reviewIds = [...review].filter(id => !consumed.has(id));
-  return {matches, reviewIds, unmatchedIds: rows.map(row => row.id).filter(id => !consumed.has(id) && !review.includes(id))};
+  return {matches, reviewIds, unmatchedIds: rows.map(row => row.id).filter(id => !consumed.has(id) && !review.has(id))};
 }
 export function bankChannel(counterparty: string, summary: string): "wechat" | "alipay" | undefined {
   const label = `${counterparty} ${summary}`;
