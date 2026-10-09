@@ -4,8 +4,6 @@ import {
   dayKey,
   dateTimeLocal,
   escapeHtml,
-  money,
-  transactionAmountText,
 } from "../src/utils/format";
 import {
   filterCommandItems,
@@ -27,17 +25,6 @@ test("dayKey formats local date with zero padding", () => {
   assert.equal(dayKey(new Date(2026, 0, 3)), "2026-01-03");
 });
 
-test("money formats cents with ¥ and grouping", () => {
-  assert.equal(money(1234.5), "¥1,234.50");
-  assert.equal(money(0), "¥0.00");
-});
-
-test("transactionAmountText renders direction-aware amounts", () => {
-  assert.equal(transactionAmountText({ type: "expense", amount: 12 }), "-¥12.00");
-  assert.equal(transactionAmountText({ type: "income", amount: 12 }), "+¥12.00");
-  assert.equal(transactionAmountText({ type: "transfer", amount: 12 }), "¥12.00");
-});
-
 test("dateTimeLocal keeps a local date string", () => {
   const value = dateTimeLocal("2026-08-08T00:00:00.000Z");
   assert.match(value, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
@@ -49,7 +36,7 @@ test("escapeHtml escapes angle brackets, ampersands and quotes", () => {
 
 test("command filter matches label, hint and keywords case-insensitively", () => {
   const commands = [
-    item({ id: "a", label: "前往账单管理", hint: "资产与账单", group: "跳转" }),
+    item({ id: "a", label: "前往笔记管理", hint: "笔记与标签", group: "跳转" }),
     item({ id: "b", label: "新建坚持项目", keywords: "habit 习惯", group: "新建" }),
     item({ id: "c", label: "打开设置", group: "操作" }),
   ];
@@ -58,7 +45,7 @@ test("command filter matches label, hint and keywords case-insensitively", () =>
     ["a", "b", "c"],
   );
   assert.deepEqual(
-    filterCommandItems(commands, "账单").map((c) => c.id),
+    filterCommandItems(commands, "笔记").map((c) => c.id),
     ["a"],
   );
   assert.deepEqual(

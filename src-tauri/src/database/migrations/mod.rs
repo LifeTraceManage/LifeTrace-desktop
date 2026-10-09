@@ -43,7 +43,8 @@ use crate::database::migration_runner::Migration;
 
 /// 全部已注册 Migration（按 version 升序执行）。
 ///
-/// 2 is retired with the finance feature; 18/19 remain unregistered: those version numbers belonged to
+/// 2 is retired with the removed finance feature.
+/// 18/19 intentionally remain unregistered: those version numbers belonged to
 /// the removed Travel migrations and may already exist in user databases.
 pub fn all() -> Vec<Box<dyn Migration>> {
     vec![

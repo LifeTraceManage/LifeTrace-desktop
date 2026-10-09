@@ -49,7 +49,7 @@ test("core local state uses tauri commands and shared application service", () =
   assert.match(adapter, /application::state::load/);
   assert.match(adapter, /application::state::mutate/);
   assert.doesNotMatch(adapter, /finance::|habits::|workouts::/);
-  assert.match(application, /finance::save_transaction/);
+  assert.doesNotMatch(application, /finance::|save_transaction/);
   assert.match(application, /habits::save_activity/);
   assert.match(application, /workouts::save_workout/);
 });

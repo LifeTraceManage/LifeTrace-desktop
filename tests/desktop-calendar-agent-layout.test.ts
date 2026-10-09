@@ -14,7 +14,7 @@ test("sidebar calendar preserves life records without duplicate planned task tab
   const execution = read("src/components/feature/execution/ExecutionModule.tsx");
   assert.match(execution, /CalendarWorkspace/);
   assert.match(execution, /"planner"/);
-  for (const label of ["项目记录", "当日支出", "每日复盘", "生活日志"]) {
+  for (const label of ["项目记录", "每日复盘", "生活日志"]) {
     assert.ok(oldView.includes(label), `Life calendar must preserve ${label}`);
   }
 });

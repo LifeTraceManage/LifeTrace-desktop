@@ -26,19 +26,19 @@ test("desktop photos return to the primary navigation without duplicating the lo
   assert.doesNotMatch(localTools, /PhotoSyncModule|id: "photos"/);
 });
 
-test("manual bookkeeping stays absent while finance remains available and fitness import lives in fitness", () => {
+test("finance is absent and fitness import stays in its own module", () => {
   const shell = readFileSync("src/components/DesktopWorkbenchShell.tsx", "utf8");
   const routes = readFileSync("src/components/DesktopNativeRouteContent.tsx", "utf8");
   const localTools = readFileSync("src/components/DesktopLocalToolsCenter.tsx", "utf8");
   const fitness = readFileSync("src/components/feature/fitness/Fitness.tsx", "utf8");
 
   assert.doesNotMatch(shell, /手动记账/);
-  assert.match(shell, /path: "\/app\/finance", label: "财务"/);
-  assert.match(routes, /\/app\/finance\/transactions/);
-  assert.match(routes, /\/app\/finance\/accounts/);
-  assert.match(routes, /\/app\/finance\/import/);
+  assert.doesNotMatch(shell, /\/app\/finance|label: "财务"/);
+  assert.doesNotMatch(routes, /\/app\/finance/);
+  assert.doesNotMatch(routes, /ImportBills/);
+  assert.doesNotMatch(routes, /<Transactions|<Accounts/);
   assert.doesNotMatch(localTools, /训练和账单|健身数据/);
-  assert.match(localTools, /label: "账单导入"/);
+  assert.doesNotMatch(localTools, /ImportBills|账单导入/);
   assert.match(routes, /route === "\/app\/fitness"/);
   assert.match(fitness, /XunjiImportPanel/);
 });
