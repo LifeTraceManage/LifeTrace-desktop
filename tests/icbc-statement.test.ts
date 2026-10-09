@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseIcbcPages, toCents } from "../src/utils/icbcStatement";
+import { parseIcbcPages, toCents, wordsFromPdfJs } from "../src/utils/icbcStatement";
 
 test("money uses integer cents", () => {
   assert.equal(toCents("-1,234.56"), -123456n);
@@ -67,4 +67,15 @@ test("page total mismatch blocks financial import", () => {
     {x: 560, y: 548, text: "本页收入算术合计：0.00"},
   ];
   assert.equal(parseIcbcPages([words]).valid, false);
+});
+
+test("PDF.js viewport coordinates preserve increasing transaction row order", () => {
+  const result = wordsFromPdfJs([
+    {str: "2026-06-01", transform: [7, 0, 0, -7, 100, 78], width: 42},
+    {str: "2026-06-02", transform: [7, 0, 0, -7, 100, 96], width: 42},
+  ], 842, 595);
+  assert.equal(result.length, 2);
+  assert.equal(result[0].y, 71);
+  assert.equal(result[1].y, 89);
+  assert.ok(result[0].y < result[1].y);
 });
