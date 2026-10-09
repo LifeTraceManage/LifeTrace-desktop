@@ -5,7 +5,7 @@ use std::{
     collections::HashSet,
     fs,
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use rusqlite::params;
