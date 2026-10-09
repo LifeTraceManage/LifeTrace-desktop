@@ -274,3 +274,8 @@
 .nt-focus-mode .nt-rich-editor:hover .nt-rich-toolbar,.nt-focus-mode .nt-rich-toolbar:focus-within{opacity:1}
 @media(max-width:1050px){.nt-workspace{grid-template-columns:220px minmax(0,1fr)}.nt-editor-scroll{padding-left:20px;padding-right:20px}.nt-editor-head{padding:0 12px}}
 @media(max-width:750px){.nt-workspace{grid-template-columns:190px minmax(0,1fr)}.nt-editor-status span:last-child{display:none}.nt-editor-head .nt-view-switch button{padding:3px 5px}.nt-title{font-size:24px}}
+
+
+.nt-library-reopen{align-self:flex-start;display:flex;align-items:center;gap:6px;margin:10px 16px;padding:7px 10px;border:0;border-radius:5px;background:transparent;color:var(--hx-muted,#738079);font-size:11px;cursor:pointer}
+.nt-library-reopen:hover{background:var(--hx-soft,#edf1ed);color:var(--hx-accent2,#176b54)}
+.nt-library-reopen svg{width:15px;height:15px}
