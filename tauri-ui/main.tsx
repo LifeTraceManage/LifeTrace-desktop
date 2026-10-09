@@ -18,7 +18,6 @@ import "@/app/globals.css";
 import "@/app/hengxu.css";
 import "@/app/fitness-app.css";
 import "@/app/xunji-import.css";
-import "@/app/notes.css";
 import "@/app/persist-project.css";
 import "@/app/photo-sync.css";
 import "@/app/footprints.css";
@@ -84,7 +83,7 @@ async function start() {
   clientLogger.info("desktop.ui.ready");
 
   // The localhost Axum server is now a compatibility transport for remaining
-  // modules. Core startup, auth, SQLite state, Notes and Search use Tauri IPC
+  // modules. Core startup, auth, SQLite state and Search use Tauri IPC
   // and must not wait for this server.
   void waitForTauriBackend(10_000)
     .then(() => clientLogger.info("desktop.compat_backend.ready"))
