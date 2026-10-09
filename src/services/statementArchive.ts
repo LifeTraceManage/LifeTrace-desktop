@@ -36,3 +36,14 @@ export type StoredStatementBatch = {
 export async function listArchivedStatementBatches(): Promise<StoredStatementBatch[]> {
   return invoke<StoredStatementBatch[]>("statement_list_batches");
 }
+
+export type ArchivedStatementRow = {
+  batchId: string;
+  ordinal: number;
+  source: "icbc" | "wechat" | "alipay" | "generic";
+  status: string;
+  payload: unknown;
+};
+export async function listArchivedStatementRows(): Promise<ArchivedStatementRow[]> {
+  return invoke<ArchivedStatementRow[]>("statement_list_raw_rows");
+}
