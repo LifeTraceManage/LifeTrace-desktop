@@ -432,7 +432,7 @@ export default function ImportBills() {
         invalid,
       });
       setMessage(
-        `已保存 ${archived.persisted} 行原始账单（${archived.existing ? "已存在的文件" : "新批次"}）；已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，自动跳过 ${duplicates} 笔重复账单` : ""}`,
+        `已保存 ${archived.persisted} 行原始账单（${archived.existing ? "已存在的文件" : "新批次"}）；已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，跳过 ${duplicates} 笔已有入账依据的记录` : ""}${parsed.some(row => row.review) ? `，${parsed.filter(row => row.review).length} 笔待对账，暂不入账` : ""}`,
       );
     } catch (error) {
       setRows([]);
