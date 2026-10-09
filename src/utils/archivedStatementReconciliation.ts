@@ -35,7 +35,8 @@ export function normalizeArchivedRows(rows: readonly ArchivedStatementRow[]): Re
     const time = stamp(get("交易时间","日期","date"));
     const method = get("收/付款方式","付款方式","支付方式");
     const tail = cardTail(method);
-    if (!amount || !direction || !Number.isFinite(time) || !tail || /零钱|余额宝|账户余额|花呗/.test(method)) continue;
+    if (!amount || !direction || !Number.isFinite(time) || /零钱|余额宝|账户余额|花呗/.test(method) ||
+      (!tail && !/银行|储蓄卡|信用卡/.test(method))) continue;
     result.push({id,source:row.source,amountCents:amount,direction,epochMs:time,
       cardLast4:tail,orderId:get("交易订单号","交易单号")});
   }
