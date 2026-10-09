@@ -24,6 +24,8 @@ export default function MedicalReportBrowser() {
   const [error, setError] = useState("");
   const [backupStatus, setBackupStatus] = useState("");
   const [backupBusy, setBackupBusy] = useState(false);
+  const [auditing, setAuditing] = useState(false);
+  const [auditResult, setAuditResult] = useState("");
   const [filter, setFilter] = useState("");
   const load = async () => {
     setBusy(true);
@@ -63,6 +65,24 @@ export default function MedicalReportBrowser() {
       setError(cause instanceof Error ? cause.message : "无法读取历史检验数据");
     }
   };
+  const auditArchive = async () => {
+    if (auditing || backupBusy) return;
+    setAuditing(true);
+    setError("");
+    setAuditResult("");
+    try {
+      const result = await medicalReportApi.verifyArchive();
+      const problems = result.missingFiles + result.corruptFiles + result.orphanFiles;
+      setAuditResult("检查了 " + result.checkedReports + " 份报告、" + result.checkedFiles +
+        " 份原件；缺失 " + result.missingFiles + "、校验失败 " + result.corruptFiles +
+        "、未关联文件 " + result.orphanFiles +
+        (problems ? "。没有自动删除或更改任何文件，请核对原始资料或备份。" : "。文件完整性正常。"));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法检查医疗原件完整性");
+    } finally {
+      setAuditing(false);
+    }
+  };
   const backupAction = async (action: "export" | "import") => {
     if (backupBusy) return;
     if (!window.confirm(action === "export"
@@ -94,8 +114,9 @@ export default function MedicalReportBrowser() {
     <header className="hx-panel-head">
       <div><span className="hx-kicker">医疗检查</span><h2>报告归档</h2></div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" disabled={busy || backupBusy} onClick={() => void backupAction("export")}>备份</button>
-        <button type="button" disabled={busy || backupBusy} onClick={() => void backupAction("import")}>恢复</button>
+        <button type="button" disabled={busy || backupBusy || auditing} onClick={() => void auditArchive()}>检查原件</button>
+        <button type="button" disabled={busy || backupBusy || auditing} onClick={() => void backupAction("export")}>备份</button>
+        <button type="button" disabled={busy || backupBusy || auditing} onClick={() => void backupAction("import")}>恢复</button>
         <button type="button" title="刷新医疗检查" disabled={busy || backupBusy} onClick={() => void load()}><RefreshCw/></button>
       </div>
     </header>
@@ -106,6 +127,7 @@ export default function MedicalReportBrowser() {
         style={{ padding: 8, width: "100%", borderRadius: 6 }}/>
       {error ? <p role="alert">{error}</p> : null}
       {backupStatus ? <p role="status" style={{ overflowWrap: "anywhere" }}>{backupStatus}</p> : null}
+      {auditResult ? <p role="status">{auditResult}</p> : null}
       {busy ? <p><LoaderCircle className="spin"/>加载检查记录…</p> : null}
       {!busy && visible.length === 0 ? <p>没有匹配的检查记录。请在 Agent 对话中上传报告照片。</p> : null}
       {visible.map((item) => <button key={item.id} type="button" onClick={() => void open(item.id)}
