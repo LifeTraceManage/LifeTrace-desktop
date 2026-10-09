@@ -340,7 +340,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
          <nav className="nt-inspector-tabs" aria-label="侧栏视图">{(["outline","properties","links","relations","attachments"] as const).map(tab=><button type="button" key={tab} className={inspectorTab===tab?"active":""} aria-pressed={inspectorTab===tab} onClick={()=>setInspectorTab(tab)}>{({outline:"大纲",properties:"属性",links:"链接",relations:"关联",attachments:"附件"} as const)[tab]}</button>)}</nav>
         {inspectorTab==="outline"&&<section className="nt-inspector-section">
           <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
-          <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>focusHeading(heading.index)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
+          <nav className="nt-outline">{headings.length?headings.map(heading=><button key={`${heading.index}:${heading.text}`} style={{paddingLeft:`${8+(heading.level-1)*12}px`}} className={heading.level===1?"level-1":""} onClick={()=>richEditorRef.current?.focusHeading(heading.text)}>{heading.text}</button>):<small>使用标题后，大纲会自动出现。</small>}</nav>
         </section>}
         {inspectorTab==="properties"&&<section className="nt-inspector-section">
           <header><Braces/><strong>属性</strong></header>
