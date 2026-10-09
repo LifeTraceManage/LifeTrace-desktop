@@ -105,7 +105,7 @@ export function parseIcbcPages(pages: PositionedWord[][]): BankStatement {
   return {transactions, pages: checks, balanceErrors, valid: errors.length === 0, errors};
 }
 export async function parseIcbcPdf(file: File): Promise<BankStatement> {
-  const [{ getDocument, GlobalWorkerOptions }, worker] = await Promise.all([import("pdfjs-dist/legacy/build/pdf.mjs"), import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")]);
+  const [{ getDocument, GlobalWorkerOptions, Util }, worker] = await Promise.all([import("pdfjs-dist/legacy/build/pdf.mjs"), import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")]);
   GlobalWorkerOptions.workerSrc = worker.default;
   const data = new Uint8Array(await file.arrayBuffer());
   const task = getDocument({data, useSystemFonts: true, disableFontFace: true, useWorkerFetch: false, isEvalSupported: false});
@@ -116,7 +116,7 @@ export async function parseIcbcPdf(file: File): Promise<BankStatement> {
       const page = await pdf.getPage(pageNo);
       const viewport = page.getViewport({scale: 1});
       const content = await page.getTextContent();
-      pages.push(wordsFromPdfJs(content.items, viewport.width, viewport.height));
+      pages.push(wordsFromPdfJs(content.items.map(item => "transform" in item ? { ...item, transform: Util.transform(viewport.transform, item.transform) } : item), viewport.width, viewport.height));
       page.cleanup();
     }
     return parseIcbcPages(pages);
