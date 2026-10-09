@@ -65,7 +65,7 @@ export default function ImportBills() {
     !canBindStatementAccount(value, resolvedAccount.last4, false)));
   const effectiveBankRows = rows.map(row =>
     billSource === "icbc" && !row.accountId && resolvedAccount &&
-      canBindStatementAccount(statementAccountFromSourceId(row.sourceId), resolvedAccount.last4, confirmCardMismatch)
+      canBindStatementAccount(statementAccountFromSourceId(row.sourceId), resolvedAccount.last4, confirmCardMismatch && statementAccounts.length === 1)
       ? { ...row, account: resolvedAccount.name, accountId: resolvedAccount.id }
       : row,
   );
@@ -658,7 +658,8 @@ export default function ImportBills() {
                 {statementAccounts.length > 0 ? (
                   <p>PDF 流水账户：{statementAccounts.map(value => "尾号 " + value.slice(-4)).join("、")}</p>
                 ) : null}
-                {cardMismatch ? (
+                {statementAccounts.length > 1 ? <p>PDF 存在多个银行账户，请分别使用对应银行卡导入；不能一次强制绑定到同一个账户。</p> : null}
+                {cardMismatch && statementAccounts.length === 1 ? (
                   <label style={{display:"flex",gap:8,alignItems:"flex-start"}}>
                     <input type="checkbox" checked={confirmCardMismatch}
                       onChange={event => setConfirmCardMismatch(event.target.checked)} />
