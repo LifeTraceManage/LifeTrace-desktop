@@ -3,10 +3,12 @@ import { Bell, CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, Plus, Refr
 import {
   executionApi,
   type CalendarEvent,
+  type ExecutionTask,
   type CalendarTimingInput,
   type Reminder,
 } from "@/src/services/executionApi";
 import {
+  calendarItemsWithTasks,
   calendarPeriodLabel,
   calendarRange,
   enumerateCalendarDays,
@@ -26,6 +28,9 @@ const draggedEventMime = "application/x-lifetrace-calendar-event";
 
 type Props = {
   refreshToken: number;
+  tasks: ExecutionTask[];
+  onTaskEdit: (task: ExecutionTask) => void;
+  onTaskMove: (task: ExecutionTask, timing: CalendarTimingInput) => Promise<void> | void;
   onCreate: () => void;
   onEdit: (event: CalendarEvent) => void;
   onMove: (event: CalendarEvent, timing: CalendarTimingInput) => Promise<void> | void;
@@ -89,15 +94,28 @@ function EventBlock({ event, day, onEdit, onReminder, onRecurrence }: { event: C
   </div>;
 }
 
-export default function CalendarWorkspace({ refreshToken, onCreate, onEdit, onMove, onRecurrence, onReminder }: Props) {
+export default function CalendarWorkspace({ refreshToken, tasks, onTaskEdit, onTaskMove, onCreate, onEdit, onMove, onRecurrence, onReminder }: Props) {
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const range = useMemo(() => calendarRange(view, anchor), [view, anchor]);
+  const calendarItems = useMemo(() => calendarItemsWithTasks(events, tasks, range), [events, tasks, range]);
+  const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
+  const isTaskItem = (event: CalendarEvent) => event.id.startsWith("planned-task:") || event.id.startsWith("deadline-task:");
+  const editItem = (event: CalendarEvent) => {
+    const task = event.sourceTaskId && isTaskItem(event) ? taskById.get(event.sourceTaskId) : undefined;
+    if (task) onTaskEdit(task);
+    else onEdit(event);
+  };
+  const moveItem = (event: CalendarEvent, timing: CalendarTimingInput) => {
+    const task = event.sourceTaskId && isTaskItem(event) ? taskById.get(event.sourceTaskId) : undefined;
+    if (task) return onTaskMove(task, timing);
+    return onMove(event, timing);
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dragTarget, setDragTarget] = useState<string | null>(null);
 
-  const range = useMemo(() => calendarRange(view, anchor), [view, anchor]);
   const days = useMemo(() => enumerateCalendarDays(range), [range]);
 
   const load = useCallback(async () => {
@@ -126,12 +144,12 @@ export default function CalendarWorkspace({ refreshToken, onCreate, onEdit, onMo
   const renderMonth = () => <div className="lt-calendar-month">
     <div className="lt-calendar-weekdays">{weekdayLabels.map((label) => <span key={label}>周{label}</span>)}</div>
     <div className="lt-calendar-month-grid">{days.map((day) => {
-      const dayEvents = eventsForDay(events, day);
+      const dayEvents = eventsForDay(calendarItems, day);
       const inMonth = day.getMonth() === anchor.getMonth();
       const isToday = sameLocalDay(day, today);
       return <section key={localDateKey(day)} className={`${inMonth ? "" : "outside"} ${isToday ? "today" : ""}`}>
         <header><span>{day.getDate()}</span>{isToday ? <small>今天</small> : null}</header>
-        <div>{dayEvents.slice(0, 4).map((event) => <button key={event.id} type="button" className={`${event.isAllDay ? "all-day" : "timed"} ${event.recurrenceRuleId ? "recurring" : ""}`} onClick={() => onEdit(event)} title={event.title}>
+        <div>{dayEvents.slice(0, 4).map((event) => <button key={event.id} type="button" className={`${event.isAllDay ? "all-day" : "timed"} ${event.recurrenceRuleId ? "recurring" : ""}`} onClick={() => editItem(event)} title={event.title}>
           <time>{eventTimeLabel(event)}</time><strong>{event.recurrenceRuleId ? <Repeat2 aria-hidden="true"/> : null}{event.title}</strong>
         </button>)}{dayEvents.length > 4 ? <span className="lt-calendar-more">还有 {dayEvents.length - 4} 项</span> : null}</div>
       </section>;
@@ -146,7 +164,7 @@ export default function CalendarWorkspace({ refreshToken, onCreate, onEdit, onMo
     </div>
     <div className="lt-calendar-all-day">
       <span className="gutter">全天</span>
-      {timelineDays.map((day) => <div key={localDateKey(day)}>{eventsForDay(events, day).filter((event) => event.isAllDay).map((event) => <button key={event.id} type="button" className={event.recurrenceRuleId ? "recurring" : ""} onClick={() => onEdit(event)}>{event.recurrenceRuleId ? <Repeat2 aria-hidden="true"/> : null}{event.title}</button>)}</div>)}
+      {timelineDays.map((day) => <div key={localDateKey(day)}>{eventsForDay(calendarItems, day).filter((event) => event.isAllDay).map((event) => <button key={event.id} type="button" className={event.recurrenceRuleId ? "recurring" : ""} onClick={() => editItem(event)}>{event.recurrenceRuleId ? <Repeat2 aria-hidden="true"/> : null}{event.title}</button>)}</div>)}
     </div>
     <div className="lt-calendar-scroll">
       <div className="lt-calendar-hours">
@@ -154,7 +172,7 @@ export default function CalendarWorkspace({ refreshToken, onCreate, onEdit, onMo
       </div>
       <div className="lt-calendar-time-grid" style={{ height: `${24 * 60 * minutePixel}px` }}>
         {timelineDays.map((day) => {
-          const timed = eventsForDay(events, day).filter((event) => !event.isAllDay);
+          const timed = eventsForDay(calendarItems, day).filter((event) => !event.isAllDay);
           const nowMinutes = today.getHours() * 60 + today.getMinutes();
           const key = localDateKey(day);
           return <div
@@ -166,17 +184,23 @@ export default function CalendarWorkspace({ refreshToken, onCreate, onEdit, onMo
               dropEvent.preventDefault();
               setDragTarget(null);
               const eventId = dropEvent.dataTransfer.getData(draggedEventMime) || dropEvent.dataTransfer.getData("text/plain");
-              const source = events.find((item) => item.id === eventId);
+              const source = calendarItems.find((item) => item.id === eventId);
               if (!source) return;
               const rect = dropEvent.currentTarget.getBoundingClientRect();
               const minutes = snapCalendarMinutes((dropEvent.clientY - rect.top) / minutePixel);
               const timing = moveTimedEventToSlot(source, day, minutes);
-              if (timing) void onMove(source, timing);
+              if (timing) void moveItem(source, timing);
             }}
           >
             {hourLabels.map((_, hour) => <i key={hour} style={{ top: `${hour * 60 * minutePixel}px` }}/>) }
             {sameLocalDay(day, today) ? <span className="lt-calendar-now" style={{ top: `${nowMinutes * minutePixel}px` }}/>: null}
-            {timed.map((event) => <EventBlock key={event.id} event={event} day={day} onEdit={onEdit} onReminder={onReminder} onRecurrence={onRecurrence}/>) }
+            {timed.map((event) => <EventBlock key={event.id} event={event} day={day} onEdit={editItem} onReminder={(subject) => {
+              if (event.sourceTaskId && isTaskItem(event)) {
+                onReminder({ subjectType: "task", subjectId: event.sourceTaskId, title: taskById.get(event.sourceTaskId)?.title ?? event.title });
+              } else {
+                onReminder(subject);
+              }
+            }} onRecurrence={onRecurrence}/>) }
           </div>;
         })}
       </div>

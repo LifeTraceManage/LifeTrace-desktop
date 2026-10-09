@@ -301,11 +301,12 @@ function MemoEditor({ value, busy, close, save, remove }: { value?: Memo; busy: 
   return <div className="lt-exec-editor" role="dialog" aria-modal="true" aria-label="Memo"><header><div><strong>{value ? "编辑 Memo" : "快速记一下"}</strong><span>临时信息，不要求行动</span></div><button type="button" onClick={close} aria-label="关闭"><X/></button></header><div className="lt-exec-form"><label>内容<textarea autoFocus rows={9} value={content} onChange={(e) => setContent(e.target.value)} placeholder="先记下来，之后再决定是否转成任务或日历"/></label><label>标签<input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="工作, 生活"/></label><label>上下文<input value={context} onChange={(e) => setContext(e.target.value)} placeholder="可选"/></label></div><footer>{value ? <button className="lt-exec-danger" type="button" onClick={() => void remove()}><Trash2/>删除</button> : <span/>}<div><button type="button" onClick={close}>取消</button><button className="hx-btn primary" type="button" disabled={busy || !content.trim()} onClick={() => void save({ content, context: context || undefined, tags: tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean) })}>保存</button></div></footer></div>;
 }
 
-export default function ExecutionModule({ onNavigate }: { onNavigate?: (route: string) => void }) {
+export default function ExecutionModule({ onNavigate, initialTab = "today" }: { onNavigate?: (route: string) => void; initialTab?: Tab }) {
   const activities = useLifeStore((value) => value.activities);
   const habitLogs = useLifeStore((value) => value.logs);
   const addHabitLog = useLifeStore((value) => value.addLog);
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTab] = useState<Tab>(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
   const [data, setData] = useState<Data>(emptyData);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -653,6 +654,17 @@ export default function ExecutionModule({ onNavigate }: { onNavigate?: (route: s
 
   const renderCalendar = () => <CalendarWorkspace
     refreshToken={calendarRefreshToken}
+    tasks={data.tasks}
+    onTaskEdit={(task) => setInspectTask(task)}
+    onTaskMove={(task, timing) => {
+      if (!timing.startAt || !timing.endAt) return;
+      return run(() => executionApi.tasks.update(task.id, preserveTaskUpdateFields(task, {
+        title: task.title,
+        scheduledStartAt: timing.startAt,
+        scheduledEndAt: timing.endAt,
+        timezone: timing.timezone,
+      })), "任务时间已调整");
+    }}
     onCreate={() => setEditor({ kind: "calendar" })}
     onEdit={(value) => setEditor({ kind: "calendar", value })}
     onMove={(value, timing) => guardCalendarAction(value.title, timing, value.id, () => executionApi.calendar.move(value.id, timing), "事件时间已调整")}
