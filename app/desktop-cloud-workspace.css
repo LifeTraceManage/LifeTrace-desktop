@@ -560,3 +560,26 @@
     transition: none;
   }
 }
+
+
+/* Notes is a full-bleed desktop workspace, not a card inside page padding. */
+.lt-desk-content.notes-route {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--lt-color-surface, #fff);
+}
+.lt-desk-content.notes-route > .lt-desk-error {
+  flex: 0 0 auto;
+}
+.lt-desk-content.notes-route > .lt-desk-route-content {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
