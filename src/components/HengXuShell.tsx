@@ -22,10 +22,6 @@ import {
 import Dashboard from "@/src/components/feature/dashboard/Dashboard";
 import Habits from "@/src/components/feature/habits/Habits";
 import Fitness from "@/src/components/feature/fitness/Fitness";
-import Finance from "@/src/components/feature/finance/Finance";
-import Transactions from "@/src/components/feature/finance/Transactions";
-import Accounts from "@/src/components/feature/finance/Accounts";
-import ImportBills from "@/src/components/feature/finance/ImportBills";
 import CalendarView from "@/src/components/feature/life/CalendarView";
 import ReviewView from "@/src/components/feature/life/ReviewView";
 import AnalyticsModule from "@/src/components/feature/analytics/AnalyticsModule";
@@ -60,9 +56,6 @@ export default function HengXuShell() {
 
   const openAnalyticsEntity = (entityType: string, entityId: string) => {
     switch (entityType) {
-      case "transaction":
-        setView("transactions");
-        return;
       case "habit":
       case "activity_log":
         setView("habits");
@@ -199,26 +192,6 @@ export default function HengXuShell() {
       },
     },
     {
-      id: "new-transaction",
-      label: "手动记账",
-      icon: Plus,
-      group: "新建",
-      execute: () => {
-        setView("transactions");
-        setModal({ kind: "transaction" });
-      },
-    },
-    {
-      id: "new-account",
-      label: "添加账户",
-      icon: Plus,
-      group: "新建",
-      execute: () => {
-        setView("accounts");
-        setModal({ kind: "account" });
-      },
-    },
-    {
       id: "toggle-density",
       label:
         document.documentElement.dataset.density === "compact"
@@ -269,18 +242,6 @@ export default function HengXuShell() {
         {view === "photos" ? <PhotoSyncModule /> : null}
         {view === "footprints" ? <Footprints /> : null}
         
-        {view === "finance" ? <Finance /> : null}
-        {view === "transactions" ? (
-          <Transactions
-            edit={(value) => setModal({ kind: "transaction", value })}
-          />
-        ) : null}
-        {view === "accounts" ? (
-          <Accounts
-            edit={(value) => setModal({ kind: "account", value })}
-          />
-        ) : null}
-        {view === "import" ? <ImportBills /> : null}
         {view === "calendar" ? <CalendarView /> : null}
         {view === "review" ? <ReviewView /> : null}
         {view === "analytics" ? <AnalyticsModule openEntity={openAnalyticsEntity} /> : null}
