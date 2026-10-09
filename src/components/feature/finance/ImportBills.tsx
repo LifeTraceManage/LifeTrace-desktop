@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { archiveBillRows, listArchivedStatementBatches } from "@/src/services/statementArchive";
+import { archiveBillRows, listArchivedStatementBatches, reconcileArchivedStatements } from "@/src/services/statementArchive";
+import { bankChannel } from "@/src/utils/statementReconciliation";
+import { findSafeLedgerCorrections } from "@/src/utils/paymentLedgerPriority";
 import type { StoredStatementBatch } from "@/src/services/statementArchive";
 import { FileUp } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
@@ -22,11 +24,14 @@ type ImportRow = {
   counterparty?: string;
   item?: string;
   sourceId?: string;
+  archiveRowKey?: string;
+  review?: boolean;
+  replacesTransactionId?: string;
 };
 
 
 export default function ImportBills() {
-  const { accounts, transactions, addTransaction, saveAccount } = useLifeStore();
+  const { accounts, transactions, addTransaction, updateTransaction, deleteTransaction, saveAccount } = useLifeStore();
   const input = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [rows, setRows] = useState<ImportRow[]>([]);
@@ -44,6 +49,7 @@ export default function ImportBills() {
     invalid: 0,
   });
   const [importing, setImporting] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [bankAccountId, setBankAccountId] = useState("");
   const [newBankName, setNewBankName] = useState("工商银行储蓄卡");
   const [newBankLast4, setNewBankLast4] = useState("");
@@ -51,7 +57,7 @@ export default function ImportBills() {
   const [savingBank, setSavingBank] = useState(false);
   const bankAccounts = accounts.filter(account => account.type === "bank");
   const isPendingTransfer = (row: ImportRow) =>
-    row.type === "transfer" || row.category === "资金流转（待确认）";
+    row.type === "transfer" || row.review === true || row.category === "资金流转（待确认）";
   const resolvedAccount = bankAccounts.find(account => account.id === bankAccountId);
   const effectiveBankRows = rows.map(row =>
     billSource === "icbc" && !row.accountId && resolvedAccount &&
@@ -62,7 +68,7 @@ export default function ImportBills() {
   const readyRows = effectiveBankRows.filter(row =>
     billSource === "icbc"
       ? Boolean(row.accountId) && !isPendingTransfer(row)
-      : true,
+      : !row.review,
   );
   const pendingRows = billSource === "icbc"
     ? effectiveBankRows.filter(row => !row.accountId || isPendingTransfer(row))
@@ -165,10 +171,13 @@ export default function ImportBills() {
           return;
         }
         refreshArchive();
+        const reconciliation = await reconcileArchivedStatements();
+        const linkedBankRows = new Set(reconciliation.matches.map(item => item.bankId));
+        const uncertainBankRows = new Set(reconciliation.reviewIds);
         const banks = accounts.filter(account => account.type === "bank");
         const parsed: ImportRow[] = [];
         let unmatched = 0, duplicates = 0, transfers = 0;
-        for (const tx of statement.transactions) {
+        for (const [rowIndex, tx] of statement.transactions.entries()) {
           const timestamp = Date.parse(tx.date + "T" + tx.time + "+08:00");
           const signed = toCents(tx.amount);
           const cents = Number(signed < 0n ? -signed : signed);
@@ -180,19 +189,20 @@ export default function ImportBills() {
           const type = signed > 0n ? "income" : "expense";
           const key = ["工商银行流水", tx.date, tx.time, tx.account, tx.amount, tx.balance].join("/");
           const existing = transactions.some(item => item.note?.includes(key));
-          const intermediary = /财付通|支付宝/.test(tx.counterparty);
-          const matched = intermediary && transactions.some(item =>
-            item.type === type && Math.round(item.amount * 100) === cents &&
-            Math.abs(Date.parse(item.occurredAt) - timestamp) <= 5 * 60 * 1000 &&
-            /微信|支付宝/.test((item.note ?? "") + " " + item.account));
-          if (existing || matched) { duplicates++; continue; }
+          const archivedId = archived.batchId + ":" + (rowIndex + 1);
+          if (existing || linkedBankRows.has(archivedId)) { duplicates++; continue; }
+          // Payment-channel bank debits are held until their source can be reconciled.
+          const intermediary = bankChannel(tx.counterparty, tx.summary);
+          const uncertain = Boolean(intermediary) || uncertainBankRows.has(archivedId);
           const internal = /基金购买|理财|余额宝|微信零钱提|跨行汇款|他行汇入/.test(tx.summary);
           if (internal) transfers++;
           parsed.push({
             type, amount: cents / 100, account: account?.name ?? "未匹配银行账户",
             accountId: account?.id, occurredAt: new Date(timestamp).toISOString(),
             category: internal ? "资金流转（待确认）" : type === "income" ? "其他收入" : "日常消费",
-            counterparty: tx.counterparty || "未识别对方", item: tx.summary,
+            review: uncertain, archiveRowKey: archivedId,
+            // Counterparty details belong to the immutable bank source row, not the finance ledger.
+            counterparty: undefined, item: undefined,
             note: key + " · 交易渠道：" + tx.channel + " · 交易后余额：" + tx.balance +
               (internal ? " · 待人工确认内部转账" : ""),
             sourceId: key,
@@ -201,7 +211,7 @@ export default function ImportBills() {
         setRows(parsed);
         setSummary({source: statement.transactions.length, neutral: 0, transfers, unmatched, duplicates, invalid: 0});
         setMessage("原始银行流水已保存 " + archived.persisted + " 笔（" + (archived.existing ? "重复文件，无新增" : "新批次") + "）；PDF 通过 " + statement.pages.length + " 页校验，已解析 " +
-          statement.transactions.length + " 笔；跳过 " + duplicates + " 笔已存在或疑似重复的记录。" +
+          statement.transactions.length + " 笔；已有入账或关联 " + duplicates + " 笔；微信/支付宝通道扣款先保留待对账。" +
           (unmatched || transfers ? "可在下方选择银行账户，安全的普通收支可单独入账，资金流转保留待复核。" : ""));
         return;
       }
@@ -238,7 +248,7 @@ export default function ImportBills() {
         (header) => header.includes("收/付款方式") || header.includes("交易订单号"),
       )
         ? ("alipay" as const)
-        : headers.some((header) => header.includes("微信"))
+        : headers.some((header) => header.includes("微信") || header.includes("交易单号") || header.includes("支付方式"))
           ? ("wechat" as const)
           : ("generic" as const);
       setBillSource(source);
@@ -250,6 +260,10 @@ export default function ImportBills() {
       })), false, {headerRow: headerRow + 1, rows: originalRows.length});
       archivedOriginal = true;
       refreshArchive();
+      const reconciliation = await reconcileArchivedStatements();
+      const uncertainPayments = new Set(reconciliation.reviewIds);
+      const linkedPayments = new Map(reconciliation.matches.map(match => [match.paymentId, match.bankId]));
+      const archivedBankRows = new Map(reconciliation.rawRows.map(raw => [raw.batchId + ":" + raw.ordinal, raw]));
       const index = (...names: string[]) =>
         headers.findIndex((header) =>
           names.some((name) => header.toLowerCase().includes(name.toLowerCase())),
@@ -309,7 +323,7 @@ export default function ImportBills() {
           return accounts.find((candidate) => candidate.type === "alipay");
         return undefined;
       };
-      for (const rawRow of matrix.slice(headerRow + 1)) {
+      for (const [rowIndex, rawRow] of matrix.slice(headerRow + 1).entries()) {
         const cells = rawRow.map(cellText);
         if (cells.every((cell) => !cell)) continue;
         const direction = cells[directionIndex] ?? "";
@@ -357,6 +371,13 @@ export default function ImportBills() {
           continue;
         }
         const occurredAt = parsedDate.toISOString();
+        const archiveRowKey = archived.batchId + ":" + (rowIndex + 1);
+        const linkedBankId = linkedPayments.get(archiveRowKey);
+        const linkedBank = linkedBankId ? archivedBankRows.get(linkedBankId) : undefined;
+        const bankPayload = linkedBank?.payload as {date?:string;time?:string;account?:string;amount?:string;balance?:string} | undefined;
+        const bankNoteKey = bankPayload ?
+          ["工商银行流水", bankPayload.date, bankPayload.time, bankPayload.account, bankPayload.amount, bankPayload.balance].join("/") : "";
+        const originalBankTransaction = bankNoteKey ? transactions.find(item => item.note?.includes(bankNoteKey)) : undefined;
         const sourceId = (cells[sourceIdIndex] ?? "").trim();
         if (sourceId && existingIds.has(sourceId)) {
           duplicates++;
@@ -396,6 +417,9 @@ export default function ImportBills() {
             .filter(Boolean)
             .join(" · "),
           sourceId,
+          archiveRowKey,
+          review: uncertainPayments.has(archiveRowKey),
+          replacesTransactionId: originalBankTransaction?.id,
         };
         if (!row.accountId || (row.type === "transfer" && !row.toAccountId))
           unmatched++;
@@ -412,7 +436,7 @@ export default function ImportBills() {
         invalid,
       });
       setMessage(
-        `已保存 ${archived.persisted} 行原始账单（${archived.existing ? "已存在的文件" : "新批次"}）；已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，自动跳过 ${duplicates} 笔重复账单` : ""}`,
+        `已保存 ${archived.persisted} 行原始账单（${archived.existing ? "已存在的文件" : "新批次"}）；已识别 ${parsed.length} 笔可导入记录${transfers ? `，其中 ${transfers} 笔账户转账` : ""}${unmatched ? `，${unmatched} 笔尚未匹配账户` : ""}${duplicates ? `，跳过 ${duplicates} 笔已有入账依据的记录` : ""}${parsed.some(row => row.review) ? `，${parsed.filter(row => row.review).length} 笔待对账，暂不入账` : ""}`,
       );
     } catch (error) {
       setRows([]);
@@ -448,6 +472,24 @@ export default function ImportBills() {
     void read(file);
   };
 
+  const repairExistingDuplicates = async () => {
+    if (repairing || importing) return;
+    setRepairing(true);
+    let repaired = 0;
+    try {
+      const result = await reconcileArchivedStatements();
+      const candidates = findSafeLedgerCorrections(result.matches, result.rawRows, useLifeStore.getState().transactions);
+      for (const candidate of candidates) {
+        // Exact pair of archived source rows + exact transaction marker/order ID.
+        // Preserve the richer WeChat/Alipay ledger entry and the immutable original bank source.
+        await deleteTransaction(candidate.bankTransactionId);
+        repaired++;
+      }
+      setMessage(`对账完成：已清理 ${repaired} 笔有确切对应支付记录的重复银行收支。未唯一匹配的交易保持不变；原始账单仍完整保留。`);
+    } catch (error) {
+      setMessage(`已处理 ${repaired} 笔；其余未处理。` + (error instanceof Error ? error.message : String(error)));
+    } finally { setRepairing(false); }
+  };
   const createBankAccount = async () => {
     const name = newBankName.trim();
     const last4 = newBankLast4.trim();
@@ -499,7 +541,17 @@ export default function ImportBills() {
             accountId: row.accountId, toAccount: row.toAccount,
             toAccountId: row.toAccountId, counterparty: row.counterparty, item: row.item,
           };
-          await addTransaction(transaction);
+          if (row.replacesTransactionId) {
+            const bank = useLifeStore.getState().transactions.find(item => item.id === row.replacesTransactionId);
+            if (!bank) throw new Error("待替换的银行交易不存在，请重新导入并对账");
+            if (bank.type !== row.type || Math.round(bank.amount * 100) !== Math.round(row.amount * 100)) {
+              throw new Error("原银行流水与支付记录金额或方向不一致，拒绝自动替换");
+            }
+            // Preserve bank origin key in the note for repeat imports and auditability.
+            await updateTransaction(bank.id, { ...transaction, note: [bank.note, transaction.note].filter(Boolean).join(" · ") });
+          } else {
+            await addTransaction(transaction);
+          }
           committed++;
         }
         committedRows.add(row);
@@ -636,6 +688,7 @@ export default function ImportBills() {
                         (row.type === "transfer" && !row.toAccountId)
                           ? " · 未匹配账户"
                           : ""}
+                        {row.review ? " · 待三方对账（暂不入账）" : ""}
                       </small>
                       <strong>{transactionAmountText(row)}</strong>
                     </span>
@@ -695,6 +748,8 @@ export default function ImportBills() {
             ) : null}
             <hr />
             <strong>已归档的原始账单</strong>
+            <p>微信、支付宝账单是重复消费的优先记账来源。只有唯一证据充分时，才清理已经重复入账的银行记录。</p>
+            <button type="button" className="hx-btn" disabled={repairing || importing} onClick={() => void repairExistingDuplicates()}>{repairing ? "正在核对…" : "核对并修正历史重复收支"}</button>
             {archiveBatches.slice(0, 10).map(batch => (
               <p key={batch.id}>
                 <b>{batch.filename}</b>

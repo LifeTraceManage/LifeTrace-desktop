@@ -65,7 +65,21 @@ fn schema(db: &Connection) -> Result<(), String> {
             PRIMARY KEY(batch_id, ordinal)
         );
         CREATE INDEX IF NOT EXISTS ix_statement_source_id
-            ON statement_import_rows(external_id) WHERE external_id IS NOT NULL;"
+            ON statement_import_rows(external_id) WHERE external_id IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS statement_transaction_matches (
+            bank_batch_id TEXT NOT NULL,
+            bank_ordinal INTEGER NOT NULL,
+            payment_batch_id TEXT NOT NULL,
+            payment_ordinal INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            matched_at TEXT NOT NULL,
+            PRIMARY KEY(bank_batch_id,bank_ordinal),
+            UNIQUE(payment_batch_id,payment_ordinal),
+            FOREIGN KEY(bank_batch_id,bank_ordinal)
+                REFERENCES statement_import_rows(batch_id,ordinal) ON DELETE CASCADE,
+            FOREIGN KEY(payment_batch_id,payment_ordinal)
+                REFERENCES statement_import_rows(batch_id,ordinal) ON DELETE CASCADE
+        );"
     ).map_err(|e| e.to_string())
 }
 
@@ -261,6 +275,93 @@ pub fn list_batches(db:&Connection)->Result<Vec<StoredBatch>,String>{
     let batches = rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())?;
     Ok(batches)
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementMatch {
+    pub bank_batch_id:String, pub bank_ordinal:i64,
+    pub payment_batch_id:String, pub payment_ordinal:i64,
+    pub reason:String,
+}
+// Every invocation represents the full set of currently unambiguous inferred links.
+// Remove stale inference when a later statement makes an earlier match ambiguous.
+// Never touch future explicitly confirmed (non-inferred) links.
+pub fn save_matches(db:&mut Connection, matches:&[StatementMatch])->Result<usize,String>{
+    schema(db)?;
+    let tx=db.transaction().map_err(|e|e.to_string())?;
+    tx.execute("DELETE FROM statement_transaction_matches WHERE reason=?1",
+        ["unique-card-time-channel"]).map_err(|e|e.to_string())?;
+    for item in matches {
+        if item.reason!="unique-card-time-channel" || item.bank_ordinal<1 || item.payment_ordinal<1 {
+            return Err("对账匹配依据或序号无效".into());
+        }
+        let (bank_source,payment_source):(String,String)=tx.query_row(
+          "SELECT (SELECT source FROM statement_import_batches WHERE id=?1),
+                  (SELECT source FROM statement_import_batches WHERE id=?2)",
+          params![item.bank_batch_id,item.payment_batch_id],
+          |row|Ok((row.get(0)?,row.get(1)?))).map_err(|e|e.to_string())?;
+        if bank_source!="icbc" || !matches!(payment_source.as_str(),"wechat"|"alipay"){
+            return Err("对账只能关联工商银行及微信或支付宝流水".into());
+        }
+        tx.execute("INSERT INTO statement_transaction_matches
+            (bank_batch_id,bank_ordinal,payment_batch_id,payment_ordinal,reason,matched_at)
+            VALUES(?1,?2,?3,?4,?5,?6)",
+            params![item.bank_batch_id,item.bank_ordinal,item.payment_batch_id,
+                item.payment_ordinal,item.reason,chrono::Utc::now().to_rfc3339()])
+            .map_err(|e|e.to_string())?;
+    }
+    tx.commit().map_err(|e|e.to_string())?;
+    Ok(matches.len())
+}
+#[tauri::command]
+pub async fn statement_save_matches(state:State<'_,DesktopState>,matches:Vec<StatementMatch>)
+    ->Result<usize,String>{
+    if matches.len()>100_000 {return Err("对账条目过多".into());}
+    let path=state.data_dir.join("lifetrace.db");
+    tauri::async_runtime::spawn_blocking(move ||{
+        let mut db=crate::database::connection::open(&path).map_err(|e|e.to_string())?;
+        save_matches(&mut db,&matches)
+    }).await.map_err(|e|e.to_string())?
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchivedStatementRow {
+    pub batch_id: String,
+    pub ordinal: i64,
+    pub source: String,
+    pub status: String,
+    pub verified: bool,
+    pub payload: Value,
+}
+pub fn list_raw_rows(db: &Connection) -> Result<Vec<ArchivedStatementRow>, String> {
+    schema(db)?;
+    let mut stmt=db.prepare(
+        "SELECT r.batch_id,r.ordinal,b.source,r.status,r.payload_json,b.verified
+         FROM statement_import_rows r JOIN statement_import_batches b ON b.id=r.batch_id
+         ORDER BY b.imported_at,r.ordinal"
+    ).map_err(|e|e.to_string())?;
+    let rows=stmt.query_map([],|row|{
+        let payload_json:String=row.get(4)?;
+        Ok((row.get::<_,String>(0)?,row.get::<_,i64>(1)?,
+            row.get::<_,String>(2)?,row.get::<_,String>(3)?,payload_json,row.get::<_,bool>(5)?))
+    }).map_err(|e|e.to_string())?;
+    let values=rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())?;
+    values.into_iter().map(|(batch_id,ordinal,source,status,json,verified)|{
+        Ok(ArchivedStatementRow{batch_id,ordinal,source,status,verified,
+            payload:serde_json::from_str(&json).map_err(|e:serde_json::Error|e.to_string())?})
+    }).collect()
+}
+#[tauri::command]
+pub async fn statement_list_raw_rows(state:State<'_,DesktopState>)
+    ->Result<Vec<ArchivedStatementRow>,String>{
+    let path=state.data_dir.join("lifetrace.db");
+    tauri::async_runtime::spawn_blocking(move ||{
+        let db=crate::database::connection::open(&path).map_err(|e|e.to_string())?;
+        list_raw_rows(&db)
+    }).await.map_err(|e|e.to_string())?
+}
+
 #[tauri::command]
 pub async fn statement_list_batches(state:State<'_,DesktopState>)->Result<Vec<StoredBatch>,String>{
     let path=state.data_dir.join("lifetrace.db");
@@ -308,6 +409,7 @@ mod tests {
         assert_eq!(total,2);
         let batches=list_batches(&db).unwrap();
         assert_eq!((batches[0].expected_rows,batches[0].stored_rows),(2,2));
+        assert_eq!(list_raw_rows(&db).unwrap().len(),2);
     }
     #[test]
     fn verified_reparse_upgrades_prior_unverified_batch() {
@@ -335,6 +437,43 @@ mod tests {
         req.rows[1].payload["balance"]=serde_json::json!("11.00");
         req.validation["pages"][0]["expectedIncome"]=serde_json::json!("99.00");
         assert!(validate(&req).unwrap_err().contains("金额或笔数不一致"));
+    }
+    #[test]
+    fn persistent_matches_enforce_one_to_one_and_idempotence() {
+        let mut db=Connection::open_in_memory().unwrap();
+        let bank=save(&mut db,&request()).unwrap();
+        let mut payment=request();
+        payment.source="wechat".into();
+        payment.verified=false;
+        let wx=save(&mut db,&payment).unwrap();
+        let link=StatementMatch{
+            bank_batch_id:bank.batch_id.clone(),bank_ordinal:1,
+            payment_batch_id:wx.batch_id.clone(),payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert_eq!(save_matches(&mut db,&[link]).unwrap(),1);
+        let duplicate=StatementMatch{
+            bank_batch_id:bank.batch_id.clone(),bank_ordinal:1,
+            payment_batch_id:wx.batch_id.clone(),payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert_eq!(save_matches(&mut db,&[duplicate]).unwrap(),1);
+        let conflict=StatementMatch{
+            bank_batch_id:bank.batch_id,bank_ordinal:2,
+            payment_batch_id:wx.batch_id,payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        let first_again=StatementMatch{
+            bank_batch_id:conflict.bank_batch_id.clone(),bank_ordinal:1,
+            payment_batch_id:conflict.payment_batch_id.clone(),payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert!(save_matches(&mut db,&[first_again,conflict]).is_err());
+        let count:i64=db.query_row("SELECT COUNT(*) FROM statement_transaction_matches",[],|r|r.get(0)).unwrap();
+        assert_eq!(count,1);
+        assert_eq!(save_matches(&mut db,&[]).unwrap(),0);
+        let empty:i64=db.query_row("SELECT COUNT(*) FROM statement_transaction_matches",[],|r|r.get(0)).unwrap();
+        assert_eq!(empty,0);
     }
     #[test]
     fn invalid_batch_never_partially_imported() {

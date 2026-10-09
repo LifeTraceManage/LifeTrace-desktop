@@ -1,3 +1,4 @@
+import { reconcileArchivedRows } from "@/src/utils/archivedStatementReconciliation";
 import { invoke } from "@tauri-apps/api/core";
 
 type RawStorageResult = { batchId: string; inserted: number; existing: boolean; persisted: number };
@@ -35,4 +36,41 @@ export type StoredStatementBatch = {
 };
 export async function listArchivedStatementBatches(): Promise<StoredStatementBatch[]> {
   return invoke<StoredStatementBatch[]>("statement_list_batches");
+}
+
+export type ArchivedStatementRow = {
+  batchId: string;
+  ordinal: number;
+  source: "icbc" | "wechat" | "alipay" | "generic";
+  status: string;
+  verified: boolean;
+  payload: unknown;
+};
+export async function listArchivedStatementRows(): Promise<ArchivedStatementRow[]> {
+  return invoke<ArchivedStatementRow[]>("statement_list_raw_rows");
+}
+
+export type PersistedStatementMatch = {
+  bankBatchId: string;
+  bankOrdinal: number;
+  paymentBatchId: string;
+  paymentOrdinal: number;
+  reason: "unique-card-time-channel";
+};
+export async function saveArchivedStatementMatches(matches: PersistedStatementMatch[]): Promise<number> {
+  return invoke<number>("statement_save_matches", { matches });
+}
+
+export async function reconcileArchivedStatements() {
+  const rawRows = await listArchivedStatementRows();
+  const result = reconcileArchivedRows(rawRows);
+  const matches: PersistedStatementMatch[] = result.matches.map(match => {
+    const [bankBatchId, bankOrdinal] = match.bankId.split(":");
+    const [paymentBatchId, paymentOrdinal] = match.paymentId.split(":");
+    return {bankBatchId, bankOrdinal:Number(bankOrdinal), paymentBatchId,
+      paymentOrdinal:Number(paymentOrdinal), reason:match.reason};
+  });
+  // Also persist an empty snapshot so stale inferred links are cleared.
+  await saveArchivedStatementMatches(matches);
+  return { ...result, rawRows };
 }
