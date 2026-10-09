@@ -26,14 +26,14 @@ test("Tauri core IPC API is not both statically and dynamically imported", () =>
 test("desktop feature screens load on navigation instead of a single enormous entry chunk", () => {
   const source = read("src/components/DesktopNativeRouteContent.tsx");
   assert.match(source, /lazy\(\(\) => import\("@\/src\/components\/feature\/footprints\/Footprints"\)\)/);
-  assert.match(source, /lazy\(\(\) => import\("@\/src\/components\/feature\/finance\/Finance"\)\)/);
+  assert.doesNotMatch(source, /feature\/finance\/|<Finance/);
   assert.match(source, /<Suspense fallback=/);
 });
  
-test("local tools share lazy-loaded feature chunks with the native navigation", () => {
+test("local tools no longer load retired finance import chunks", () => {
   const tools = read("src/components/DesktopLocalToolsCenter.tsx");
-  assert.match(tools, /lazy\(\(\) => import\("@\/src\/components\/feature\/finance\/ImportBills"\)\)/);
-  assert.match(tools, /<Suspense fallback=/);
+  assert.doesNotMatch(tools, /ImportBills|feature\/finance\//);
+  assert.match(tools, /返回工作台/);
 });
 
 test("offline China map GeoJSON stays out of JavaScript chunks", () => {
