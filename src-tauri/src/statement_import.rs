@@ -288,10 +288,10 @@ mod tests {
             source:"icbc".into(), filename:"bank.pdf".into(),
             file_sha256:format!("{:x}",Sha256::digest(b"fixture")),file_size:7,
             file_base64:base64::engine::general_purpose::STANDARD.encode(b"fixture"),verified:true,
-            validation:serde_json::json!({"transactions":2}),
+            validation:serde_json::json!({"transactions":2,"balanceErrors":[],"pages":[{"page":1,"valid":true,"expectedCount":2,"expectedIncome":"2.00","expectedExpense":"1.00"}]}),
             rows:vec![
-                StatementRow{ordinal:1,source_id:None,payload:serde_json::json!({"amount":"-1.00","balance":"9.00"}),status:"parsed".into()},
-                StatementRow{ordinal:2,source_id:None,payload:serde_json::json!({"amount":"+2.00","balance":"11.00"}),status:"review".into()}
+                StatementRow{ordinal:1,source_id:None,payload:serde_json::json!({"page":1,"row":1,"date":"2026-06-01","time":"08:00:00","account":"BANK1234","amount":"-1.00","balance":"9.00"}),status:"parsed".into()},
+                StatementRow{ordinal:2,source_id:None,payload:serde_json::json!({"page":1,"row":2,"date":"2026-06-01","time":"09:00:00","account":"BANK1234","amount":"+2.00","balance":"11.00"}),status:"review".into()}
             ]
         }
     }
@@ -325,6 +325,16 @@ mod tests {
         assert!(verified);
     }
     #[test]
+    fn checked_bank_totals_reject_corrupt_rows() {
+        let mut req=request();
+        assert!(validate(&req).is_ok());
+        req.rows[1].payload["balance"]=serde_json::json!("9.00");
+        assert!(validate(&req).unwrap_err().contains("余额不连续"));
+        req.rows[1].payload["balance"]=serde_json::json!("11.00");
+        req.validation["pages"][0]["expectedIncome"]=serde_json::json!("99.00");
+        assert!(validate(&req).unwrap_err().contains("金额或笔数不一致"));
+    }
+    #[test]
     fn invalid_batch_never_partially_imported() {
         let mut db=Connection::open_in_memory().unwrap();
         let mut req=request();
@@ -334,6 +344,6 @@ mod tests {
         req.verified=false;
         assert_eq!(save(&mut db,&req).unwrap().inserted,2);
         req.verified=true;
-        assert_eq!(save(&mut db,&req).unwrap().inserted,0);
+        assert_eq!(save(&mut db,&req).unwrap().inserted,2);
     }
 }
