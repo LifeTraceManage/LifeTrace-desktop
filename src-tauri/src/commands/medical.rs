@@ -16,8 +16,7 @@ use crate::{database, desktop::DesktopState};
 
 const MAX_FILES: usize = 8;
 const MAX_FILE_BYTES: usize = 5 * 1024 * 1024;
-const MAX_PDF_BYTES: usize = 20 * 1024 * 1024;
-const MAX_TOTAL_BYTES: usize = 30 * 1024 * 1024;
+const MAX_TOTAL_BYTES: usize = 12 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all="camelCase")]
@@ -171,7 +170,7 @@ fn validate_report<'a>(report: &'a Value, sources: &HashSet<&str>) -> Result<&'a
     Ok(results)
 }
 fn decode_assets(inputs: &[MedicalAssetInput]) -> Result<Vec<DecodedAsset>, String> {
-    if inputs.is_empty() || inputs.len()>MAX_FILES {return Err("每批允许 1 至 8 份报告原文件".into());}
+    if inputs.is_empty() || inputs.len()>MAX_FILES {return Err("每批允许 1 至 8 张报告图片".into());}
     let mut seen=HashSet::new();
     let mut total=0usize;
     let mut decoded=Vec::with_capacity(inputs.len());
@@ -184,19 +183,18 @@ fn decode_assets(inputs: &[MedicalAssetInput]) -> Result<Vec<DecodedAsset>, Stri
         if image.original_name.is_empty() || image.original_name.len()>255 {
             return Err("原文件名无效".into());
         }
-        let max_bytes = if image.mime_type == "application/pdf" { MAX_PDF_BYTES } else { MAX_FILE_BYTES };
+        let max_bytes = MAX_FILE_BYTES;
         if image.base64.len()>max_bytes*4/3+8 {return Err("单个原文件超出大小限制".into());}
         let bytes=STANDARD.decode(&image.base64).map_err(|_|"图片编码无效".to_owned())?;
         total += bytes.len();
         if bytes.is_empty() || bytes.len()>max_bytes || total>MAX_TOTAL_BYTES {
-            return Err("原始报告文件总大小超过限制".into());
+            return Err("原始报告图片总大小超过限制".into());
         }
         let ext=match image.mime_type.as_str() {
             "image/jpeg" if bytes.starts_with(&[0xff,0xd8,0xff]) => "jpg",
             "image/png" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => "png",
             "image/webp" if bytes.len()>=12 && bytes.starts_with(b"RIFF") && &bytes[8..12]==b"WEBP" => "webp",
-            "application/pdf" if bytes.starts_with(b"%PDF-") => "pdf",
-            _=>return Err("仅支持 JPG、PNG、WebP、PDF 报告；格式必须匹配文件内容".into()),
+            _=>return Err("仅支持 JPG、PNG、WebP 图片；格式必须匹配文件内容".into()),
         };
         let id=Uuid::new_v4().to_string();
         decoded.push(DecodedAsset {
@@ -662,58 +660,26 @@ mod tests {
         assert_eq!(validate_report(&report,&ids).unwrap().len(),1);
     }
     #[test]
-    fn keeps_original_pdf_bytes_and_page_index_as_uploaded() {
-        use crate::database::migration_runner::{Migration, MigrationContext};
-        use crate::database::migrations::{M0022MedicalReports,M0023MedicalReportRevisions};
-
-        let root=std::env::temp_dir().join(format!("lifetrace-medical-pdf-{}",Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        let mut db=open_db(&root).unwrap();
-        db.execute_batch("CREATE TABLE local_profiles(id TEXT PRIMARY KEY);
-            INSERT INTO local_profiles VALUES('local');").unwrap();
-        let tx=db.transaction().unwrap();
-        M0022MedicalReports.up(&tx,&MigrationContext::new(root.clone())).unwrap();
-        M0023MedicalReportRevisions.up(&tx,&MigrationContext::new(root.clone())).unwrap();
-        tx.commit().unwrap();
-        drop(db);
-        // This test checks raw-file preservation; PDF rasterization is tested in the client.
-        let original=b"%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n%%EOF".to_vec();
-        let saved=commit(&root,MedicalCommitInput{
-            idempotency_key:"pdf-roundtrip-001".to_owned(),
-            assets:vec![MedicalAssetInput{
-                asset_id:"pdf-1".to_owned(),original_name:"clinic.pdf".to_owned(),
-                mime_type:"application/pdf".to_owned(),base64:STANDARD.encode(&original),
-            }],
-            draft:serde_json::json!({"reports":[{
-                "title":"生化检验","reportType":"laboratory",
-                "sourceAssetIds":["pdf-1"],"examAt":null,"sections":[],
-                "observations":[{
-                    "kind":"numeric","nameRaw":"白蛋白","valueRaw":"42.0",
-                    "valueNumber":42.0,"unitRaw":"g/L","sourceAssetId":"pdf-1",
-                    "pageIndex":2
-                }]
-            }]}),
-        }).unwrap();
-        assert_eq!(saved.len(),1);
-        let db=open_db(&root).unwrap();
-        let (name,mime,relative,id):(String,String,String,String)=db.query_row(
-            "SELECT original_name,mime_type,relative_path,id FROM medical_report_assets LIMIT 1",
-            [],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
-        ).unwrap();
-        assert_eq!(name,"clinic.pdf");
-        assert_eq!(mime,"application/pdf");
-        let content:String=db.query_row(
-            "SELECT content_json FROM medical_reports WHERE id=?1",[&saved[0].id],
-            |r|r.get(0),
-        ).unwrap();
-        let report:Value=serde_json::from_str(&content).unwrap();
-        assert_eq!(report["observations"][0]["pageIndex"],2);
-        assert_eq!(report["observations"][0]["sourceAssetId"],id);
-        assert_eq!(fs::read(root.join("medical/originals").join(relative)).unwrap(),original);
-        drop(db);
-        fs::remove_dir_all(root).unwrap();
+    fn preserves_png_and_webp_raw_bytes_and_rejects_pdf() {
+        let sources = [
+            ("image/png", [b"\\x89PNG\\r\\n\\x1a\\n".as_slice(), b"data".as_slice()].concat()),
+            ("image/webp", [b"RIFF".as_slice(), &[0u8; 4], b"WEBP".as_slice()].concat()),
+        ];
+        for (index, (mime, data)) in sources.into_iter().enumerate() {
+            let images = decode_assets(&[MedicalAssetInput {
+                asset_id: format!("source-{index}"),
+                original_name: format!("report-{index}"),
+                mime_type: mime.to_owned(),
+                base64: STANDARD.encode(&data),
+            }]).unwrap();
+            assert_eq!(images[0].bytes, data);
+            assert!(images[0].filename.ends_with(if index == 0 { ".png" } else { ".webp" }));
+        }
+        assert!(decode_assets(&[MedicalAssetInput {
+            asset_id: "pdf".to_owned(), original_name: "report.pdf".to_owned(),
+            mime_type: "application/pdf".to_owned(), base64: STANDARD.encode(b"%PDF-1.7"),
+        }]).is_err());
     }
-
     #[test]
     fn commits_original_image_report_and_numeric_results_once() {
         use crate::database::migration_runner::{Migration, MigrationContext};
