@@ -10,12 +10,6 @@ fn stamp(value: Option<&Value>) -> String {
         .unwrap_or_else(|| Utc::now().to_rfc3339())
 }
 
-fn cents(value: Option<&Value>) -> Option<i64> {
-    value
-        .and_then(Value::as_f64)
-        .map(|amount| (amount * 100.0).round() as i64)
-}
-
 fn text(value: Option<&Value>, fallback: &str) -> String {
     value.and_then(Value::as_str).unwrap_or(fallback).to_owned()
 }
@@ -45,6 +39,7 @@ fn common_meta(
 }
 
 pub fn is_syncable(entity_type: &str) -> bool {
+    if entity_type.starts_with("finance.") { return false; }
     describe(entity_type).is_some_and(|descriptor| {
         descriptor.ownership == EntityOwnership::UserOwned
             && matches!(
@@ -108,56 +103,6 @@ pub fn legacy_to_wire(
             "serverVersion": object.get("serverVersion").cloned()
                 .unwrap_or_else(|| json!(server_version.unwrap_or("0")))
         }),
-        "finance.account" => json!({
-            "meta": meta,
-            "name": text(object.get("name"), "账户"),
-            "accountType": text(object.get("type").or_else(|| object.get("accountType")), "cash"),
-            "openingBalanceCents": object.get("openingBalanceCents").and_then(Value::as_i64)
-                .or_else(|| cents(object.get("balance"))),
-            "balanceAt": object.get("balanceAt").cloned().unwrap_or(Value::Null),
-            "last4": optional_string(object.get("last4")),
-            "color": text(object.get("color"), "#5f7d70"),
-            "icon": text(object.get("icon"), ""),
-            "isArchived": object.get("isArchived").and_then(Value::as_bool).unwrap_or(false),
-            "currency": text(object.get("currency"), "CNY")
-        }),
-        "finance.category" => json!({
-            "meta": meta,
-            "name": text(object.get("name"), "未分类"),
-            "categoryType": text(object.get("categoryType").or_else(|| object.get("type")), "expense"),
-            "parentId": object.get("parentId").cloned().unwrap_or(Value::Null),
-            "icon": object.get("icon").cloned().unwrap_or(Value::Null),
-            "color": object.get("color").cloned().unwrap_or(Value::Null),
-            "isSystem": object.get("isSystem").and_then(Value::as_bool).unwrap_or(false),
-            "isArchived": object.get("isArchived").and_then(Value::as_bool).unwrap_or(false)
-        }),
-        "finance.transaction" => {
-            let occurred = stamp(object.get("occurredAt").or_else(|| object.get("createdAt")));
-            let local_date = object
-                .get("localDate")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_else(|| occurred.get(0..10).unwrap_or("1970-01-01").to_owned());
-            json!({
-                "meta": meta,
-                "transactionType": text(object.get("transactionType").or_else(|| object.get("type")), "expense"),
-                "amountCents": object.get("amountCents").and_then(Value::as_i64)
-                    .or_else(|| cents(object.get("amount"))).unwrap_or(0),
-                "currency": text(object.get("currency"), "CNY"),
-                "accountId": object.get("accountId").cloned().unwrap_or(Value::Null),
-                "toAccountId": object.get("toAccountId").cloned().unwrap_or(Value::Null),
-                "categoryId": object.get("categoryId").cloned().unwrap_or(Value::Null),
-                "counterparty": object.get("counterparty").cloned().unwrap_or(Value::Null),
-                "merchant": object.get("merchant").cloned().unwrap_or(Value::Null),
-                "item": object.get("item").cloned().unwrap_or(Value::Null),
-                "note": object.get("note").cloned().unwrap_or(Value::Null),
-                "occurredAt": occurred,
-                "localDate": local_date,
-                "status": text(object.get("status"), "confirmed"),
-                "sourceType": text(object.get("sourceType"), "manual"),
-                "externalTransactionId": object.get("externalTransactionId").cloned().unwrap_or(Value::Null)
-            })
-        }
         "habit.activity" => json!({
             "meta": meta,
             "name": text(object.get("name"), "习惯"),
@@ -324,20 +269,11 @@ pub fn wire_to_legacy(payload: &Value) -> Result<Value, String> {
         }
     }
     for (wire, local) in [
-        ("accountType", "type"),
-        ("transactionType", "type"),
         ("activityType", "type"),
-        ("openingBalanceCents", "openingBalanceCents"),
     ] {
         if let Some(value) = legacy.remove(wire) {
             legacy.insert(local.to_owned(), value);
         }
-    }
-    if let Some(amount_cents) = legacy.get("amountCents").and_then(Value::as_i64) {
-        legacy.insert("amount".to_owned(), json!(amount_cents as f64 / 100.0));
-    }
-    if let Some(opening) = legacy.get("openingBalanceCents").and_then(Value::as_i64) {
-        legacy.insert("balance".to_owned(), json!(opening as f64 / 100.0));
     }
     Ok(Value::Object(legacy))
 }
@@ -410,20 +346,5 @@ mod tests {
         )).is_ok(), "{focus_wire}");
     }
 
-    #[test]
-    fn finance_transaction_payload_matches_contract() {
-        let legacy = json!({
-            "id":"t1","userId":"local-user","type":"expense","amount":12.34,
-            "occurredAt":"2026-08-05T10:00:00Z","createdAt":"2026-08-05T10:00:00Z",
-            "updatedAt":"2026-08-05T10:00:00Z"
-        });
-        let wire =
-            legacy_to_wire(EntityType::FINANCE_TRANSACTION, &legacy, "profile-1", None).unwrap();
-        let parsed = EntityPayload::try_from((
-            &EntityType::new(EntityType::FINANCE_TRANSACTION),
-            wire.clone().into(),
-        ));
-        assert!(parsed.is_ok(), "{parsed:?}: {wire}");
-        assert_eq!(wire["amountCents"], 1234);
-    }
+
 }

@@ -16,7 +16,7 @@ use lifetrace_sync_client::{
     PersistedConflict, RetryPolicy, SyncError, SyncScope, SyncStatus, SyncStore,
 };
 
-use crate::database::repositories::{finance, habits, workouts};
+use crate::database::repositories::{habits, workouts};
 
 use super::outbox::{enqueue_upsert, MutationOrigin};
 use super::payload::wire_to_legacy;
@@ -61,8 +61,6 @@ impl SqliteSyncStore {
             .map_err(Self::db_error);
         }
         let value = match entity_type {
-            "finance.account" => Self::list_find(finance::list_accounts(connection).map_err(Self::db_error)?, entity_id),
-            "finance.transaction" => Self::list_find(finance::list_transactions(connection).map_err(Self::db_error)?, entity_id),
             "habit.activity" => Self::list_find(habits::list_activities(connection).map_err(Self::db_error)?, entity_id),
             "habit.log" => Self::list_find(habits::list_activity_logs(connection).map_err(Self::db_error)?, entity_id),
             "review.daily" => Self::list_find(habits::list_daily_reviews(connection).map_err(Self::db_error)?, entity_id),
@@ -232,8 +230,6 @@ impl SqliteSyncStore {
                 .map_err(Self::db_error);
         }
         let result = match entity_type {
-            "finance.account" => finance::save_account(connection, &legacy),
-            "finance.transaction" => finance::save_transaction(connection, &legacy),
             "habit.activity" => habits::save_activity(connection, &legacy),
             "habit.log" => habits::save_activity_log(connection, &legacy),
             "review.daily" => habits::save_daily_review(connection, &legacy),
@@ -269,8 +265,6 @@ impl SqliteSyncStore {
                 .map_err(Self::db_error);
         }
         let result = match entity_type {
-            "finance.account" => finance::delete_account(connection, entity_id),
-            "finance.transaction" => finance::delete_transaction(connection, entity_id),
             "workout.workout" => workouts::delete_workout(connection, entity_id),
             "habit.activity" => connection.execute(
                 "UPDATE activities SET deleted_at=?1,updated_at=?1,version=version+1 WHERE id=?2 AND user_id=?3",
