@@ -5,6 +5,7 @@ import type { Transaction } from "@/src/types";
 import { PanelHead } from "@/src/components/common";
 import { notify } from "@/src/ui/feedback/toastBus";
 import { pad, transactionAmountText } from "@/src/utils/format";
+import { parseIcbcPdf, toCents } from "@/src/utils/icbcStatement";
 
 type ImportRow = {
   type: Transaction["type"];
@@ -28,7 +29,7 @@ export default function ImportBills() {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [message, setMessage] = useState("");
   const [draggingBill, setDraggingBill] = useState(false);
-  const [billSource, setBillSource] = useState<"wechat" | "alipay" | "generic">(
+  const [billSource, setBillSource] = useState<"wechat" | "alipay" | "icbc" | "generic">(
     "generic",
   );
   const [summary, setSummary] = useState({
@@ -102,6 +103,51 @@ export default function ImportBills() {
     try {
       setRows([]);
       setMessage("正在解析账单…");
+
+      if (/\.pdf$/i.test(file.name)) {
+        setBillSource("icbc");
+        const statement = await parseIcbcPdf(file);
+        if (!statement.valid) throw new Error("银行账单校验未通过，禁止导入：" + statement.errors.slice(0, 3).join("；"));
+        const banks = accounts.filter(account => account.type === "bank");
+        const parsed: ImportRow[] = [];
+        let unmatched = 0, duplicates = 0, transfers = 0;
+        for (const tx of statement.transactions) {
+          const timestamp = Date.parse(tx.date + "T" + tx.time + "+08:00");
+          const signed = toCents(tx.amount);
+          const cents = Number(signed < 0n ? -signed : signed);
+          if (!Number.isFinite(timestamp) || !Number.isSafeInteger(cents) || cents <= 0)
+            throw new Error("银行交易时间或金额不合法");
+          const account = banks.find(a => a.last4 && tx.account.endsWith(a.last4))
+            ?? (banks.length === 1 ? banks[0] : undefined);
+          if (!account) unmatched++;
+          const type = signed > 0n ? "income" : "expense";
+          const key = ["工商银行流水", tx.date, tx.time, tx.account, tx.amount, tx.balance].join("/");
+          const existing = transactions.some(item => item.note?.includes(key));
+          const intermediary = /财付通|支付宝/.test(tx.counterparty);
+          const matched = intermediary && transactions.some(item =>
+            item.type === type && Math.round(item.amount * 100) === cents &&
+            Math.abs(Date.parse(item.occurredAt) - timestamp) <= 5 * 60 * 1000 &&
+            /微信|支付宝/.test((item.note ?? "") + " " + item.account));
+          if (existing || matched) { duplicates++; continue; }
+          const internal = /基金购买|理财|余额宝|微信零钱提|跨行汇款|他行汇入/.test(tx.summary);
+          if (internal) transfers++;
+          parsed.push({
+            type, amount: cents / 100, account: account?.name ?? "未匹配银行账户",
+            accountId: account?.id, occurredAt: new Date(timestamp).toISOString(),
+            category: internal ? "资金流转（待确认）" : type === "income" ? "其他收入" : "日常消费",
+            counterparty: tx.counterparty || "未识别对方", item: tx.summary,
+            note: key + " · 交易渠道：" + tx.channel + " · 交易后余额：" + tx.balance +
+              (internal ? " · 待人工确认内部转账" : ""),
+            sourceId: key,
+          });
+        }
+        setRows(parsed);
+        setSummary({source: statement.transactions.length, neutral: 0, transfers, unmatched, duplicates, invalid: 0});
+        setMessage("银行 PDF 通过 " + statement.pages.length + " 页金额与余额校验，已解析 " +
+          statement.transactions.length + " 笔；跳过 " + duplicates + " 笔已存在或疑似重复的记录。" +
+          (unmatched || transfers ? "存在未匹配账户或资金流转待确认，暂时禁止批量导入。" : ""));
+        return;
+      }
       let matrix: unknown[][];
       if (file.name.toLowerCase().endsWith(".xlsx")) {
         const { readSheet } = await import("read-excel-file/browser");
@@ -313,15 +359,16 @@ export default function ImportBills() {
 
   const acceptBillFile = (file?: File) => {
     if (!file) return;
-    if (!/\.(csv|xlsx)$/i.test(file.name)) {
+    if (!/\.(csv|xlsx|pdf)$/i.test(file.name)) {
       setRows([]);
-      setMessage("仅支持 CSV 或 Excel（.xlsx）账单文件");
+      setMessage("仅支持 CSV、Excel 或工商银行 PDF 账单");
       return;
     }
     void read(file);
   };
 
   const commit = async () => {
+    if (billSource === "icbc" && (summary.unmatched || summary.transfers)) { setMessage("存在待确认资金流转或未匹配账户，禁止批量导入"); return; }
     setImporting(true);
     try {
       for (const row of rows) {
@@ -341,7 +388,7 @@ export default function ImportBills() {
         await addTransaction(transaction);
       }
       const sourceName =
-        billSource === "alipay" ? "支付宝" : billSource === "wechat" ? "微信" : "支付";
+        billSource === "alipay" ? "支付宝" : billSource === "wechat" ? "微信" : billSource === "icbc" ? "工商银行" : "支付";
       setMessage(`已导入 ${rows.length} 笔${sourceName}账单到 SQLite`);
       setRows([]);
       notify(`${sourceName}账单导入完成`);
@@ -356,7 +403,7 @@ export default function ImportBills() {
     <div className="hx-view">
       <div className="hx-import-grid">
         <article className="hx-panel">
-          <PanelHead kicker="微信 / 支付宝" title="导入支付流水" />
+          <PanelHead kicker="工商银行 / 微信 / 支付宝" title="导入交易流水" />
           <div className="hx-panel-body">
             <div
               className={`hx-drop${draggingBill ? " is-dragging" : ""}`}
@@ -393,12 +440,12 @@ export default function ImportBills() {
             >
               <FileUp />
               <h3>{draggingBill ? "松开即可解析账单" : "拖动账单文件到这里"}</h3>
-              <p>支持微信 Excel / CSV，以及支付宝导出的 GBK 或 UTF-8 CSV。</p>
+              <p>支持工商银行电子 PDF、微信 Excel / CSV，以及支付宝 GBK 或 UTF-8 CSV。</p>
               <input
                 ref={input}
                 type="file"
                 hidden
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv"
+                accept=".pdf,application/pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv"
                 onChange={(event) => acceptBillFile(event.target.files?.[0])}
               />
               <button
@@ -444,7 +491,7 @@ export default function ImportBills() {
                 <button
                   type="button"
                   className="hx-btn primary"
-                  disabled={importing}
+                  disabled={importing || (billSource === "icbc" && (summary.unmatched > 0 || summary.transfers > 0))}
                   onClick={commit}
                 >
                   {importing ? "正在导入…" : `确认导入 ${rows.length} 笔`}
