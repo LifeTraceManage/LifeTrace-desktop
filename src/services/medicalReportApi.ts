@@ -61,6 +61,7 @@ export type MedicalListItem = {
   attachmentCount: number;
 };
 export type SavedMedicalReport = { id: string; title: string };
+export type MedicalBackupResult = { path: string; reports: number; files: number };
 export type MedicalReportRevision = {
   id: string;
   changedAt: string;
@@ -96,6 +97,12 @@ export type MedicalAssetData = {
   base64: string;
 };
 export const medicalReportApi = {
+  exportBackup(directory: string) {
+    return invoke<MedicalBackupResult>("medical_export_backup", { directory });
+  },
+  importBackup(directory: string) {
+    return invoke<MedicalBackupResult>("medical_import_backup", { directory });
+  },
   replaceReport(reportId: string, draft: MedicalExtractReply, idempotencyKey: string) {
     return invoke<SavedMedicalReport>("medical_replace_report", {
       input: { reportId, draft, idempotencyKey },
