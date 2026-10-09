@@ -41,10 +41,10 @@ test("payment metadata normalization", () => {
 
 test("archived WeChat bank-card payment joins corresponding ICBC row", () => {
   const rows = [
-    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",
+    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",verified:true,verified:true,
       payload:{date:"2026-10-09",time:"10:01:00",account:"622200001234",amount:"-25.00",
         counterparty:"财付通支付科技",summary:"二维码消费"}},
-    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",
+    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",verified:false,
       payload:{headers:["交易时间","收/支","金额(元)","支付方式","交易单号"],
         cells:["2026-10-09 10:02:00","支出","¥25.00","工商银行储蓄卡(1234)","W123"]}},
   ];
@@ -55,10 +55,10 @@ test("archived WeChat bank-card payment joins corresponding ICBC row", () => {
 });
 test("wallet payment does not consume an ICBC debit", () => {
   const rows = [
-    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",
+    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",verified:true,
       payload:{date:"2026-10-09",time:"10:01:00",account:"622200001234",amount:"-25.00",
         counterparty:"财付通支付科技",summary:"消费"}},
-    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",
+    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",verified:false,
       payload:{headers:["交易时间","收/支","金额(元)","支付方式"],
         cells:["2026-10-09 10:02:00","支出","25.00","微信零钱"]}},
   ];
@@ -67,10 +67,10 @@ test("wallet payment does not consume an ICBC debit", () => {
 
 test("bank-funded payment without tail stays review, never blindly deduplicated", () => {
   const rows = [
-    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",
+    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",verified:true,
       payload:{date:"2026-10-09",time:"10:01:00",account:"622200001234",amount:"-25.00",
         counterparty:"财付通",summary:"消费"}},
-    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",
+    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",verified:false,
       payload:{headers:["交易时间","收/支","金额(元)","支付方式"],
         cells:["2026-10-09 10:02:00","支出","25.00","工商银行储蓄卡"]}},
   ];
