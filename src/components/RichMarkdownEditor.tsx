@@ -14,6 +14,7 @@ import TaskItem from "@tiptap/extension-task-item";
 export type RichMarkdownEditorHandle = {
   insertText: (text: string) => void;
   selectedText: () => string;
+  focusHeading: (text: string) => void;
 };
 
 type Props = {
@@ -96,6 +97,18 @@ const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, Props>(function 
       if (!editor) return "";
       const { from, to } = editor.state.selection;
       return editor.state.doc.textBetween(from, to, "\n").trim();
+    },
+    focusHeading(text: string) {
+      if (!editor) return;
+      let position: number | null = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (position === null && node.type.name === "heading" && node.textContent.trim() === text.trim()) {
+          position = pos + 1;
+          return false;
+        }
+        return true;
+      });
+      if (position !== null) editor.chain().focus().setTextSelection(position).scrollIntoView().run();
     },
   }), [editor]);
 
