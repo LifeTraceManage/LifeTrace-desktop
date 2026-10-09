@@ -198,7 +198,8 @@ export default function ImportBills() {
             accountId: account?.id, occurredAt: new Date(timestamp).toISOString(),
             category: internal ? "资金流转（待确认）" : type === "income" ? "其他收入" : "日常消费",
             review: uncertain, archiveRowKey: archivedId,
-            counterparty: tx.counterparty || "未识别对方", item: tx.summary,
+            // Counterparty details belong to the immutable bank source row, not the finance ledger.
+            counterparty: undefined, item: undefined,
             note: key + " · 交易渠道：" + tx.channel + " · 交易后余额：" + tx.balance +
               (internal ? " · 待人工确认内部转账" : ""),
             sourceId: key,
