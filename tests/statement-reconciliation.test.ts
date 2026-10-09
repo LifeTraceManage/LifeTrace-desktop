@@ -64,3 +64,23 @@ test("wallet payment does not consume an ICBC debit", () => {
   ];
   assert.equal(reconcileArchivedRows(rows).matches.length,0);
 });
+
+test("bank-funded payment without tail stays review, never blindly deduplicated", () => {
+  const rows = [
+    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",
+      payload:{date:"2026-10-09",time:"10:01:00",account:"622200001234",amount:"-25.00",
+        counterparty:"财付通",summary:"消费"}},
+    {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",
+      payload:{headers:["交易时间","收/支","金额(元)","支付方式"],
+        cells:["2026-10-09 10:02:00","支出","25.00","工商银行储蓄卡"]}},
+  ];
+  const result = reconcileArchivedRows(rows);
+  assert.equal(result.matches.length,0);
+  assert.equal(result.reviewIds.length,2);
+});
+test("no bank channel but matching card is still review only", () => {
+  const bank = {...t("bank","icbc",1,"1234"),channel:undefined};
+  const result = reconcileSources([bank,t("wx","wechat",2,"1234")]);
+  assert.equal(result.matches.length,0);
+  assert.equal(result.reviewIds.length,2);
+});
