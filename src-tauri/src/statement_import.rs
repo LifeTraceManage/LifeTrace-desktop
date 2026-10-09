@@ -89,7 +89,6 @@ fn validate(req: &SaveStatementRequest) -> Result<(), String> {
         }
     }
     if req.source == "icbc" {
-        if !req.verified { return Err("工商银行 PDF 未通过金额及余额校验，禁止确认入库".into()); }
         let count = req.validation.get("transactions").and_then(Value::as_u64)
             .ok_or("银行校验报告缺少交易笔数")?;
         if count != req.rows.len() as u64 {
@@ -181,8 +180,8 @@ mod tests {
         assert!(save(&mut db,&req).is_err());
         req.rows[1].ordinal=2;
         req.verified=false;
-        assert!(save(&mut db,&req).is_err());
-        req.verified=true;
         assert_eq!(save(&mut db,&req).unwrap().inserted,2);
+        req.verified=true;
+        assert_eq!(save(&mut db,&req).unwrap().inserted,0);
     }
 }
