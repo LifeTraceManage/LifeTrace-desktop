@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
-import { archiveBillRows } from "@/src/services/statementArchive";
+import { useEffect, useRef, useState } from "react";
+import { archiveBillRows, listArchivedStatementBatches } from "@/src/services/statementArchive";
+import type { StoredStatementBatch } from "@/src/services/statementArchive";
 import { FileUp } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Transaction } from "@/src/types";
@@ -43,6 +44,9 @@ export default function ImportBills() {
     invalid: 0,
   });
   const [importing, setImporting] = useState(false);
+  const [archiveBatches, setArchiveBatches] = useState<StoredStatementBatch[]>([]);
+  const refreshArchive = () => { void listArchivedStatementBatches().then(setArchiveBatches).catch(() => undefined); };
+  useEffect(() => { refreshArchive(); }, []);
 
   const parseLine = (line: string) => {
     const result: string[] = [];
@@ -128,9 +132,11 @@ export default function ImportBills() {
           balanceErrors: statement.balanceErrors,
         });
         if (!statement.valid) {
+          refreshArchive();
           setMessage("原始银行流水已存档 " + archived.persisted + " 行，但未通过校验，禁止生成收支交易：" + statement.errors.join("；"));
           return;
         }
+        refreshArchive();
         const banks = accounts.filter(account => account.type === "bank");
         const parsed: ImportRow[] = [];
         let unmatched = 0, duplicates = 0, transfers = 0;
@@ -214,6 +220,7 @@ export default function ImportBills() {
         payload: {headers, cells: row.map(cellText)},
         status: "review" as const,
       })), false, {headerRow: headerRow + 1, rows: originalRows.length});
+      refreshArchive();
       const index = (...names: string[]) =>
         headers.findIndex((header) =>
           names.some((name) => header.toLowerCase().includes(name.toLowerCase())),
@@ -438,7 +445,7 @@ export default function ImportBills() {
               className={`hx-drop${draggingBill ? " is-dragging" : ""}`}
               role="button"
               tabIndex={0}
-              aria-label="拖放或选择微信、支付宝账单文件"
+              aria-label="拖放或选择工商银行、微信、支付宝账单文件"
               onClick={() => input.current?.click()}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -566,6 +573,17 @@ export default function ImportBills() {
                 </span>
               </div>
             ) : null}
+            <hr />
+            <strong>已归档的原始账单</strong>
+            {archiveBatches.slice(0, 10).map(batch => (
+              <p key={batch.id}>
+                <b>{batch.filename}</b>
+                <small> · {batch.source} · 已存 {batch.storedRows}/{batch.expectedRows} 行
+                  {batch.verified ? " · 已核验" : " · 待复核"}
+                </small>
+              </p>
+            ))}
+            <small>这里是独立的原始流水档案，不代表已经计入财务收支。</small>
             <hr />
             <small>
               当前已有 {transactions.length} 笔账单，{accounts.length} 个账户。
