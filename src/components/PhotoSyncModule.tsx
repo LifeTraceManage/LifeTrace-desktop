@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import "@/app/photo-gallery-polish.css";
 import { FolderOpen, LockKeyhole } from "lucide-react";
 import LocalPhotoLibrary from "@/src/components/LocalPhotoLibrary";
 import LocalVaultModule from "@/src/components/LocalVaultModule";
