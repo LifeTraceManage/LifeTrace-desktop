@@ -214,3 +214,30 @@
 .nt-rich-content ul[data-type="taskList"] li>div{flex:1;min-width:0}
 .nt-rich-content hr{border:0;border-top:1px solid var(--hx-line,#dfe5e1);margin:1.5em 0}
 .nt-rich-content .is-editor-empty:first-child::before{content:attr(data-placeholder);color:var(--hx-muted,#738079);pointer-events:none;float:left;height:0}
+
+
+/* Borderless note writing surface: no stacked cards above or below the document. */
+.nt-workspace{border-top:0;background:var(--lt-color-surface,#fff)}
+.nt-note-stage,.nt-editor,.nt-editor-main,.nt-editor-scroll,.nt-edit-layout,.nt-rich-editor{background:transparent;border:0;box-shadow:none;border-radius:0}
+.nt-tabs{height:36px;min-height:36px;border-bottom:0;background:transparent;padding-left:clamp(16px,3vw,40px)}
+.nt-tabs>div{border-right:0;border-radius:6px 6px 0 0;box-shadow:none!important}
+.nt-tabs>div.active{background:transparent;box-shadow:none!important;color:var(--hx-ink,var(--lt-color-text,#17211d))}
+.nt-editor-head{height:38px;min-height:38px;padding:0 clamp(16px,3vw,40px);border:0;background:transparent}
+.nt-editor-status{opacity:.68}
+.nt-editor-head>div:last-child{gap:2px}
+.nt-editor-head button{border-radius:6px}
+.nt-editor-scroll{padding:0 clamp(32px,8vw,132px) 0;scroll-padding-top:48px;scroll-padding-bottom:96px}
+.nt-title{padding:52px 0 26px;margin:0;line-height:1.3}
+.nt-view-switch{width:max-content;max-width:100%;padding:0;margin:0 0 8px;border:0;background:transparent}
+.nt-view-switch button{border:0;box-shadow:none}
+.nt-formatbar{border:0;padding:4px 0 10px;background:transparent;box-shadow:none}
+.nt-edit-layout{border:0;box-shadow:none}
+.nt-edit-layout.nt-mode-rich,.nt-edit-layout.nt-mode-source,.nt-edit-layout.nt-mode-preview{max-width:900px}
+.nt-rich-editor{min-height:calc(100vh - 280px)}
+.nt-rich-toolbar{padding:0 0 6px;border:0;background:transparent}
+.nt-rich-content{min-height:calc(100vh - 330px);padding:18px 0 clamp(120px,18vh,240px)}
+.nt-edit-layout .nt-markdown-editor{min-height:calc(100vh - 330px);padding:18px 0 clamp(120px,18vh,240px);border:0}
+.nt-markdown-preview{padding:18px 0 clamp(120px,18vh,240px);border:0;background:transparent}
+.nt-editor-scroll::after{content:"";display:block;height:clamp(48px,10vh,120px);pointer-events:none}
+@media(max-width:1280px){.nt-editor-scroll{padding-left:clamp(24px,5vw,76px);padding-right:clamp(24px,5vw,76px)}}
+@media(max-width:700px){.nt-editor-scroll{padding:0 24px}.nt-title{padding-top:30px;font-size:26px}.nt-editor-head{padding:0 14px}.nt-tabs{padding-left:8px}}
