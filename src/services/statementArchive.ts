@@ -24,3 +24,15 @@ export async function archiveBillRows(
   });
 }
 
+
+export type StoredStatementBatch = {
+  id: string;
+  source: string;
+  filename: string;
+  verified: boolean;
+  expectedRows: number;
+  storedRows: number;
+};
+export async function listArchivedStatementBatches(): Promise<StoredStatementBatch[]> {
+  return invoke<StoredStatementBatch[]>("statement_list_batches");
+}
