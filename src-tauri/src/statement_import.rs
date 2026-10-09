@@ -136,6 +136,29 @@ pub fn save(db: &mut Connection, req: &SaveStatementRequest) -> Result<SaveState
     Ok(SaveStatementResult{batch_id,inserted:req.rows.len(),existing:false,persisted:actual as usize})
 }
 
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredBatch { pub id:String, pub source:String, pub filename:String, pub verified:bool, pub expected_rows:i64, pub stored_rows:i64 }
+pub fn list_batches(db:&Connection)->Result<Vec<StoredBatch>,String>{
+    schema(db)?;
+    let mut stmt=db.prepare("SELECT b.id,b.source,b.filename,b.verified,b.row_count,COUNT(r.ordinal)
+        FROM statement_import_batches b LEFT JOIN statement_import_rows r ON r.batch_id=b.id
+        GROUP BY b.id ORDER BY b.imported_at DESC").map_err(|e|e.to_string())?;
+    stmt.query_map([],|row|Ok(StoredBatch{
+        id:row.get(0)?,source:row.get(1)?,filename:row.get(2)?,
+        verified:row.get(3)?,expected_rows:row.get(4)?,stored_rows:row.get(5)?
+    })).map_err(|e|e.to_string())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())
+}
+#[tauri::command]
+pub async fn statement_list_batches(state:State<'_,DesktopState>)->Result<Vec<StoredBatch>,String>{
+    let path=state.data_dir.join("lifetrace.db");
+    tauri::async_runtime::spawn_blocking(move || {
+        let db=crate::database::connection::open(&path).map_err(|e|e.to_string())?;
+        list_batches(&db)
+    }).await.map_err(|e|e.to_string())?
+}
+
 #[tauri::command]
 pub async fn statement_save_raw(
     state: State<'_, DesktopState>,
@@ -171,6 +194,8 @@ mod tests {
         assert_eq!((again.inserted,again.persisted,again.existing),(0,2,true));
         let total:i64=db.query_row("SELECT COUNT(*) FROM statement_import_rows",[],|r|r.get(0)).unwrap();
         assert_eq!(total,2);
+        let batches=list_batches(&db).unwrap();
+        assert_eq!((batches[0].expected_rows,batches[0].stored_rows),(2,2));
     }
     #[test]
     fn invalid_batch_never_partially_imported() {
