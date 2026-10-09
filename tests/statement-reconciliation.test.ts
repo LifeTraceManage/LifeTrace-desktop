@@ -41,7 +41,7 @@ test("payment metadata normalization", () => {
 
 test("archived WeChat bank-card payment joins corresponding ICBC row", () => {
   const rows = [
-    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",verified:true,verified:true,
+    {batchId:"bankbatch",ordinal:1,source:"icbc" as const,status:"parsed",verified:true,
       payload:{date:"2026-10-09",time:"10:01:00",account:"622200001234",amount:"-25.00",
         counterparty:"财付通支付科技",summary:"二维码消费"}},
     {batchId:"wechatbatch",ordinal:1,source:"wechat" as const,status:"review",verified:false,
