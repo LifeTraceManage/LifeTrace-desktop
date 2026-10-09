@@ -10,7 +10,7 @@ import {
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
   History, ImagePlus, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, ListTree,
   Network, NotebookPen, Paperclip, Pin, Plus, Quote, Save, Search,
-  Star, Strikethrough, Tag, Trash2, X,
+  Star, Strikethrough, Tag, Trash2, X, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
 } from "lucide-react";
 import { noteApi, type NoteGraph, type NoteInputValue } from "@/src/services/noteApi";
 import { noteFileApi, type CloudNoteAttachment } from "@/src/services/noteFileApi";
@@ -115,7 +115,7 @@ function EditorButton({title,active,onClick,children}:{title:string;active?:bool
   return <button type="button" title={title} aria-label={title} className={active?"active":""} onMouseDown={event=>{event.preventDefault();onClick()}}>{children}</button>;
 }
 
-function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMode,registerSave}:{note:Note;folders:NoteFolder[];tags:NoteTag[];onSaved:(note:Note)=>void;onListChanged:()=>void;onOpenNote:(id:string)=>Promise<void>;trashMode:boolean;registerSave:(save:(revision?:boolean)=>Promise<Note|null>)=>()=>void}){
+function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMode,registerSave,focusMode,onToggleFocus,libraryCollapsed,onToggleLibrary}:{note:Note;folders:NoteFolder[];tags:NoteTag[];onSaved:(note:Note)=>void;onListChanged:()=>void;onOpenNote:(id:string)=>Promise<void>;trashMode:boolean;registerSave:(save:(revision?:boolean)=>Promise<Note|null>)=>()=>void;focusMode:boolean;onToggleFocus:()=>void;libraryCollapsed:boolean;onToggleLibrary:()=>void}){
   const store=useLifeStore();
   const [draft,setDraft]=useState(note);
   const [dirty,setDirty]=useState(false);
@@ -382,7 +382,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
       <div>
           {effectiveEditorMode!=="rich"&&<button title="格式工具栏" aria-pressed={showFormatting} className={showFormatting?"active":""} onClick={()=>setShowFormatting(value=>!value)}><Bold/></button>}
           <button title="切换编辑和阅读" onClick={()=>setEditorMode(value=>value==="preview"?"rich":"preview")}><FileText/></button>
-          <button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>
+          <button title={libraryCollapsed?"展开笔记列表":"收起笔记列表"} aria-label={libraryCollapsed?"展开笔记列表":"收起笔记列表"} onClick={onToggleLibrary}>{libraryCollapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
+          <button title={focusMode?"退出专注模式":"专注模式"} aria-label={focusMode?"退出专注模式":"专注模式"} aria-pressed={focusMode} className={focusMode?"active":""} onClick={onToggleFocus}>{focusMode?<Minimize2/>:<Maximize2/>}</button>
+          {!focusMode&&<button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>
         <MoreMenu actions={[{id:"save",label:"保存版本",icon:Save,group:"primary",execute:async()=>{await save(true)}},{id:"favorite",label:draft.isFavorite?"取消收藏":"收藏笔记",icon:Star,group:"primary",execute:()=>patch({isFavorite:!draft.isFavorite})},{id:"pin",label:draft.isPinned?"取消置顶":"置顶笔记",icon:Pin,group:"primary",execute:()=>patch({isPinned:!draft.isPinned})},{id:"task",label:"创建 Task",icon:CheckSquare2,group:"related",execute:()=>createTaskFromNote()},{id:"history",label:"版本历史",icon:History,group:"related",execute:()=>loadHistory()},...editorActions]} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
       </div>
     </header>
@@ -438,7 +440,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
           </div>
         </div>
       </main>
-      {showInspector&&<aside className="nt-inspector" data-testid="notes-inspector">
+      {showInspector&&!focusMode&&<aside className="nt-inspector" data-testid="notes-inspector">
          <nav className="nt-inspector-tabs" aria-label="侧栏视图">{(["outline","properties","links","relations","attachments"] as const).map(tab=><button type="button" key={tab} className={inspectorTab===tab?"active":""} aria-pressed={inspectorTab===tab} onClick={()=>setInspectorTab(tab)}>{({outline:"大纲",properties:"属性",links:"链接",relations:"关联",attachments:"附件"} as const)[tab]}</button>)}</nav>
         {inspectorTab==="outline"&&<section className="nt-inspector-section">
           <header><ListTree/><strong>大纲</strong><span>{headings.length}</span></header>
@@ -482,6 +484,8 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
 export default function NotesModule(){
   const [scope,setScope]=useState("all");
+  const [libraryCollapsed,setLibraryCollapsed]=useState(false);
+  const [focusMode,setFocusMode]=useState(false);
   const [folderId,setFolderId]=useState("");
   const [tagId,setTagId]=useState("");
   const [query,setQuery]=useState("");
@@ -578,8 +582,9 @@ export default function NotesModule(){
 
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
-      if(event.key==="Escape"){setCommandOpen(false);setGraphOpen(false);return}
+      if(event.key==="Escape"){setCommandOpen(false);setGraphOpen(false);setFocusMode(false);return}
       if(!(event.ctrlKey||event.metaKey))return;
+      if(event.shiftKey&&event.key.toLowerCase()==="e"){event.preventDefault();setFocusMode(value=>!value);return}
       if(event.key.toLowerCase()==="p"){event.preventDefault();setCommandOpen(true);return}
       if(event.key.toLowerCase()==="n"){event.preventDefault();void create(event.shiftKey?"quick":"document")}
       if(event.shiftKey&&event.key.toLowerCase()==="f"){event.preventDefault();searchRef.current?.focus()}
@@ -625,8 +630,8 @@ export default function NotesModule(){
   const graphById=new Map(graphPoints.map(point=>[point.id,point]));
   const graphEdges=graph.edges.map(edge=>({source:graphById.get(edge.sourceId),target:graphById.get(edge.targetId)})).filter((edge):edge is {source:(typeof graphPoints)[number];target:(typeof graphPoints)[number]}=>Boolean(edge.source&&edge.target));
 
-  return <><div className="nt-workspace" data-testid="notes-workspace">
-    <aside className="nt-library" data-testid="notes-sidebar">
+  return <><div className={`nt-workspace ${libraryCollapsed?"nt-library-collapsed":""} ${focusMode?"nt-focus-mode":""}`} data-testid="notes-workspace">
+    {!libraryCollapsed&&!focusMode&&<aside className="nt-library" data-testid="notes-sidebar">
       <div className="nt-library-actions">
         <button className="primary" onClick={()=>void create("document")}><Plus/>新建笔记</button>
         <button title="Daily" onClick={()=>void openDailyNote()}><CalendarDays/></button>
@@ -642,10 +647,10 @@ export default function NotesModule(){
       <div className="nt-scope-head"><strong>{activeLabel}</strong><span>{notes.length} 篇</span></div>
       <div className="nt-list-toolbar">{scope==="trash"&&notes.length>0&&<><button title="恢复全部" onClick={()=>void restoreTrash()}><ArchiveRestore/></button><button title="清空回收站" onClick={()=>void emptyTrash()}><Trash2/></button></>}<select value={sort} onChange={e=>setSort(e.target.value)}><option value="updated_desc">最近编辑</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option><option value="title_asc">标题 A–Z</option><option value="title_desc">标题 Z–A</option></select><button title="导入 Markdown" onClick={()=>void importMarkdown()}><FileUp/></button></div>
       <div className="nt-list-scroll">{loading?<p className="nt-list-empty">正在读取笔记…</p>:notes.length===0?<div className="nt-list-empty"><FileText/><strong>{query?"没有匹配的笔记":"这里还没有笔记"}</strong><p>创建一篇笔记，或调整搜索和筛选条件。</p></div>:notes.map(note=><button key={note.id} className={selected?.id===note.id?"active":""} onClick={()=>void open(note.id)}><header><strong>{titleOf(note)}</strong><span>{note.isPinned&&<Pin/>}{note.isFavorite&&<Star/>}</span></header><p>{note.summary||"暂无正文"}</p><footer><time>{formatTime(note.updatedAt)}</time>{note.folderId&&<span>· {folders.find(folder=>folder.id===note.folderId)?.name??"文件夹"}</span>}</footer></button>)}</div>
-    </aside>
+    </aside>}
     <main className="nt-note-stage">
-      {openedIds.length>0&&<div className="nt-tabs">{openedIds.map(id=>{const note=libraryNotes.find(item=>item.id===id)||(selected?.id===id?selected:null);return <div key={id} className={selected?.id===id?"active":""}><button onClick={()=>void open(id)}>{note?titleOf(note):"笔记"}</button><button aria-label="关闭标签" onClick={()=>void closeTab(id)}><X/></button></div>})}</div>}
-      {selected?<NoteEditor key={selected.id} note={selected} folders={folders} tags={tags} trashMode={scope==="trash"} onOpenNote={open} registerSave={save=>{saveBeforeSwitch.current=save;return()=>{if(saveBeforeSwitch.current===save)saveBeforeSwitch.current=null}}} onSaved={saved=>{setSelected(saved);selectedIdRef.current=saved.id;setNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item));setLibraryNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item))}} onListChanged={refresh}/>:<section className="nt-editor nt-empty-editor"><div><NotebookPen/><h2>选择一篇笔记</h2><p>内容会自动保存到本机 SQLite，并通过原生同步引擎同步。</p><button className="hx-btn primary" onClick={()=>void create("document")}><Plus/>新建笔记</button></div></section>}
+      {openedIds.length>0&&!focusMode&&<div className="nt-tabs">{openedIds.map(id=>{const note=libraryNotes.find(item=>item.id===id)||(selected?.id===id?selected:null);return <div key={id} className={selected?.id===id?"active":""}><button onClick={()=>void open(id)}>{note?titleOf(note):"笔记"}</button><button aria-label="关闭标签" onClick={()=>void closeTab(id)}><X/></button></div>})}</div>}
+      {selected?<NoteEditor key={selected.id} note={selected} folders={folders} tags={tags} trashMode={scope==="trash"} focusMode={focusMode} onToggleFocus={()=>setFocusMode(value=>!value)} libraryCollapsed={libraryCollapsed||focusMode} onToggleLibrary={()=>{setFocusMode(false);setLibraryCollapsed(value=>!value)}} onOpenNote={open} registerSave={save=>{saveBeforeSwitch.current=save;return()=>{if(saveBeforeSwitch.current===save)saveBeforeSwitch.current=null}}} onSaved={saved=>{setSelected(saved);selectedIdRef.current=saved.id;setNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item));setLibraryNotes(current=>current.map(item=>item.id===saved.id?{...item,...saved}:item))}} onListChanged={refresh}/>:<section className="nt-editor nt-empty-editor"><div><NotebookPen/><h2>选择一篇笔记</h2><p>内容会自动保存到本机 SQLite，并通过原生同步引擎同步。</p><button className="hx-btn primary" onClick={()=>void create("document")}><Plus/>新建笔记</button></div></section>}
     </main>
   </div>
   {graphOpen&&<div className="nt-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setGraphOpen(false)}}><section className="nt-graph"><header><div><Network/><strong>Notes Graph</strong><small>Wiki Link 关系图 · 最多 80 篇</small></div><button onClick={()=>setGraphOpen(false)}><X/></button></header>{graphLoading?<div className="nt-list-empty"><Network/><strong>正在读取双链索引…</strong></div>:graphPoints.length?<svg viewBox="0 0 760 440" role="img" aria-label="笔记知识图谱"><g className="edges">{graphEdges.map((edge,index)=><line key={index} x1={edge.source.x} y1={edge.source.y} x2={edge.target.x} y2={edge.target.y}/>)}</g>{graphPoints.map(point=><g key={point.id} className="node" onClick={()=>{setGraphOpen(false);void open(point.id)}}><circle cx={point.x} cy={point.y} r={point.favorite?8:6}/><text x={point.x} y={point.y+18} textAnchor="middle">{point.title.length>18?`${point.title.slice(0,17)}…`:point.title}</text></g>)}</svg>:<div className="nt-list-empty"><Network/><strong>知识图谱为空</strong><p>在正文中使用 [[Wiki Link]] 后会形成关系图。</p></div>}</section></div>}
