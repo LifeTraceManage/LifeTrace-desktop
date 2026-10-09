@@ -254,10 +254,12 @@ pub fn list_batches(db:&Connection)->Result<Vec<StoredBatch>,String>{
     let mut stmt=db.prepare("SELECT b.id,b.source,b.filename,b.verified,b.row_count,COUNT(r.ordinal)
         FROM statement_import_batches b LEFT JOIN statement_import_rows r ON r.batch_id=b.id
         GROUP BY b.id ORDER BY b.imported_at DESC").map_err(|e|e.to_string())?;
-    stmt.query_map([],|row|Ok(StoredBatch{
+    let rows = stmt.query_map([],|row|Ok(StoredBatch{
         id:row.get(0)?,source:row.get(1)?,filename:row.get(2)?,
         verified:row.get(3)?,expected_rows:row.get(4)?,stored_rows:row.get(5)?
-    })).map_err(|e|e.to_string())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())
+    })).map_err(|e|e.to_string())?;
+    let batches = rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())?;
+    Ok(batches)
 }
 #[tauri::command]
 pub async fn statement_list_batches(state:State<'_,DesktopState>)->Result<Vec<StoredBatch>,String>{
