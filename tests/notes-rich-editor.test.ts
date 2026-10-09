@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const moduleSource = readFileSync("src/components/NotesModule.tsx", "utf8");
-const richSource = readFileSync("src/components/RichMarkdownEditor.tsx", "utf8");
 const styles = readFileSync("app/notes.css", "utf8");
 
 test("only CodeMirror is used for live Markdown, without a separate source view", () => {
