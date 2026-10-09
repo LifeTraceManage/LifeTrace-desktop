@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Archive,
   Check,
-  NotebookPen,
   Pencil,
   Plus,
 } from "lucide-react";
@@ -19,11 +18,9 @@ import { dayKey } from "@/src/utils/format";
 export default function Habits({
   edit,
   record,
-  note,
 }: {
   edit: (value?: Activity) => void;
   record: (value: Activity) => void;
-  note: (value: Activity) => void;
 }) {
   const { activities, logs, archiveActivity } = useLifeStore();
   const [filter, setFilter] = useState<"all" | "pending" | "done">("all");
@@ -91,13 +88,6 @@ export default function Habits({
               icon: Check,
               group: "primary",
               execute: record,
-            },
-            {
-              id: "note",
-              label: "添加练习笔记",
-              icon: NotebookPen,
-              group: "related",
-              execute: note,
             },
             {
               id: "edit",

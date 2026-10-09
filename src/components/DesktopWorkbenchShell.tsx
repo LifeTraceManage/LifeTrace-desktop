@@ -19,7 +19,6 @@ import {
   LogOut,
   Mail,
   MapPinned,
-  NotebookPen,
   PanelLeftOpen,
   RefreshCw,
   Search,
@@ -64,7 +63,6 @@ const NAV_GROUPS: DesktopNavGroup[] = [
   {
     label: "知识与资产",
     items: [
-      { path: "/app/notes", label: "笔记", icon: NotebookPen },
       { path: "/app/photos", label: "相册", icon: Images },
       { path: "/app/footprints", label: "足迹", icon: MapPinned },
       { path: "/app/mail", label: "邮件", icon: Mail },
@@ -87,7 +85,6 @@ const PAGE_COPY: Record<string, [string, string]> = {
   "/app/fitness": ["健身", "记录训练并查看运动数据。"],
   "/app/health": ["健康", "查看健康相关记录与趋势。"],
   "/app/review": ["复盘", "回顾阶段表现、完成情况与变化趋势。"],
-  "/app/notes": ["笔记", "记录与整理个人知识。"],
   "/app/photos": ["相册", "管理同步相册与本机私密相册。"],
   "/app/footprints": ["足迹", "用地图、时间与照片整理去过的地方。"],
   "/app/mail": ["邮件", "在桌面端原生处理邮箱、回复、附件与行动转换。"],
@@ -324,7 +321,7 @@ export default function DesktopWorkbenchShell({
             </div>
           </header>
 
-          <main className={`lt-desk-content${routeIsActive(route, "/app/mail") ? " mail-route" : ""}${routeIsActive(route, "/app/notes") ? " notes-route" : ""}`}>
+          <main className={`lt-desk-content${routeIsActive(route, "/app/mail") ? " mail-route" : ""}`}>
             {error ? <div className="lt-desk-error" role="alert">{error}</div> : null}
             <div className="lt-desk-route-content">{children}</div>
           </main>

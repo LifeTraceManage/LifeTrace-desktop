@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronRight, NotebookPen, Plus } from "lucide-react";
+import { Check, ChevronRight, Plus } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import type { Activity } from "@/src/types";
 import { getTotalAccountBalance } from "@/src/utils/finance";
@@ -18,11 +18,9 @@ type TodayEvent = {
 export default function Dashboard({
   go,
   record,
-  openNotes,
 }: {
   go: (view: string) => void;
   record: (value: Activity) => void;
-  openNotes: (id?: string) => void;
 }) {
   const { activities, logs, transactions, accounts, workoutHistory } = useLifeStore();
   const [referenceTime] = useState(() => Date.now());
@@ -99,9 +97,6 @@ export default function Dashboard({
           </span>
         </div>
         <div className="lt-today-actions">
-          <Button variant="ghost" icon={<NotebookPen aria-hidden="true" />} onClick={() => openNotes()}>
-            记笔记
-          </Button>
           <Button variant="primary" icon={<Plus aria-hidden="true" />} onClick={() => go("habits")}>
             管理坚持
           </Button>

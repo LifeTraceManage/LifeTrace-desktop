@@ -1,16 +1,10 @@
 import { useState } from "react";
-import { NotebookPen } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
-import type { WorkoutHistory } from "@/src/types";
 import XunjiImportPanel from "@/src/components/XunjiImportPanel";
 import { EmptyState, PanelHead } from "@/src/components/common";
 import { Button } from "@/src/components/ui";
 
-export default function Fitness({
-  note,
-}: {
-  note: (value: WorkoutHistory) => void;
-}) {
+export default function Fitness() {
   const { workoutHistory } = useLifeStore();
   const [referenceTime] = useState(() => Date.now());
   const weekCount = workoutHistory.filter(
@@ -54,13 +48,7 @@ export default function Fitness({
                   {Math.max(1, Math.round(item.durationSeconds / 60))} 分钟
                 </small>
               </div>
-              <Button
-                variant="secondary"
-                icon={<NotebookPen aria-hidden="true" />}
-                onClick={() => note(item)}
-              >
-                训练复盘
-              </Button>
+
             </div>
           ))}
           {!workoutHistory.length ? (

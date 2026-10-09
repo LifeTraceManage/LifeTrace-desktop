@@ -2,9 +2,6 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import type { EditorModalState } from "@/src/components/feature/forms/EditorModal";
 import { ConfirmDialogHost } from "@/src/ui/feedback/confirm";
-import { noteApi } from "@/src/services/noteApi";
-import { dayKey, escapeHtml } from "@/src/utils/format";
-import type { Activity, Transaction, WorkoutHistory } from "@/src/types";
 
 const Dashboard = lazy(() => import("@/src/components/feature/dashboard/Dashboard"));
 const Habits = lazy(() => import("@/src/components/feature/habits/Habits"));
@@ -17,7 +14,6 @@ const CalendarView = lazy(() => import("@/src/components/feature/life/CalendarVi
 const ReviewView = lazy(() => import("@/src/components/feature/life/ReviewView"));
 const ExecutionModule = lazy(() => import("@/src/components/feature/execution/ExecutionModule"));
 const SettingsView = lazy(() => import("@/src/components/feature/settings/SettingsView"));
-const NotesModule = lazy(() => import("@/src/components/NotesModule"));
 const PhotoSyncModule = lazy(() => import("@/src/components/PhotoSyncModule"));
 const Footprints = lazy(() => import("@/src/components/feature/footprints/Footprints"));
 const MailActionCenter = lazy(() => import("@/src/components/feature/mail/MailActionCenter"));
@@ -38,7 +34,6 @@ function routeForLegacyView(view: string): string {
     case "transactions": return "/app/finance/transactions";
     case "accounts": return "/app/finance/accounts";
     case "finance": return "/app/finance";
-    case "notes": return "/app/notes";
     case "mail": return "/app/mail";
     case "calendar": return "/app/calendar";
     case "review": return "/app/review";
@@ -68,49 +63,8 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const makeLinkedNote = async (
-    noteType: "habit_log" | "workout_review" | "expense_note",
-    title: string,
-    entityType: "habit" | "workout" | "transaction",
-    entityId: string,
-    text: string,
-  ) => {
-    const created = await noteApi.create({
-      title,
-      noteType,
-      folderId: null,
-      contentJson: {
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-      },
-      contentHtml: "<p>" + escapeHtml(text).replace(/\n/g, "<br>") + "</p>",
-      contentText: text,
-      contentMarkdown: text,
-      summary: text.replace(/\s+/g, " ").slice(0, 160),
-      isPinned: false,
-      isFavorite: false,
-      isArchived: false,
-      tagIds: [],
-      relations: [{
-        id: crypto.randomUUID(),
-        noteId: "pending",
-        entityType,
-        entityId,
-        relationType: "created_from",
-        createdAt: new Date().toISOString(),
-      }],
-    });
-    window.localStorage.setItem("lifetrace:last-note", created.id);
-    navigate("/app/notes");
-    window.dispatchEvent(new CustomEvent("hengxu-toast", { detail: "关联笔记已创建" }));
-  };
-
   const openEntity = (entityType: string, entityId: string) => {
     switch (entityType) {
-      case "note":
-        window.localStorage.setItem("lifetrace:last-note", entityId);
-        navigate("/app/notes");
-        return;
       case "transaction":
         navigate("/app/finance/transactions");
         return;
@@ -134,47 +88,11 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
     }
   };
 
-  const habitNote = (value: Activity) => void makeLinkedNote(
-    "habit_log",
-    value.name + "练习记录 - " + dayKey(),
-    "habit",
-    value.id,
-    "今天的记录：\n\n问题：\n\n下次重点：",
-  );
-  const workoutNote = (value: WorkoutHistory) => void makeLinkedNote(
-    "workout_review",
-    "训练复盘 - " + dayKey(new Date(value.occurredAt)),
-    "workout",
-    value.id,
-    "训练名称：" + value.name
-      + "\n训练日期：" + dayKey(new Date(value.occurredAt))
-      + "\n训练时长：" + Math.max(1, Math.round(value.durationSeconds / 60)) + " 分钟"
-      + "\n总容量：" + (value.volumeKg ?? "未记录")
-      + "\n动作数量：" + value.exerciseCount
-      + "\n训练来源：" + value.source,
-  );
-  const transactionNote = (value: Transaction) => void makeLinkedNote(
-    "expense_note",
-    "消费记录 - " + (value.counterparty || value.category),
-    "transaction",
-    value.id,
-    "日期：" + dayKey(new Date(value.occurredAt))
-      + "\n金额：¥" + value.amount.toFixed(2)
-      + "\n分类：" + value.category
-      + "\n账户：" + value.account
-      + "\n商户：" + (value.counterparty || "未填写")
-      + "\n消费目的：",
-  );
-
   let content: React.ReactNode = null;
   if (route === "/app/today") {
     content = <Dashboard
       go={(view) => navigate(routeForLegacyView(view))}
       record={(value) => setModal({ kind: "record", value })}
-      openNotes={(id) => {
-        if (id) window.localStorage.setItem("lifetrace:last-note", id);
-        navigate("/app/notes");
-      }}
     />;
   } else if (route.startsWith("/app/execution")) {
     content = <ExecutionModule onNavigate={navigate} />;
@@ -184,16 +102,13 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
     content = <Habits
       edit={(value) => setModal({ kind: "activity", value })}
       record={(value) => setModal({ kind: "record", value })}
-      note={habitNote}
     />;
   } else if (route === "/app/fitness") {
-    content = <Fitness note={workoutNote} />;
+    content = <Fitness />;
   } else if (route === "/app/health") {
     content = <DesktopHealthModule />;
   } else if (route === "/app/review") {
     content = <ReviewView />;
-  } else if (route === "/app/notes") {
-    content = <NotesModule />;
   } else if (route === "/app/photos") {
     content = <PhotoSyncModule />;
   } else if (route === "/app/footprints") {
@@ -201,7 +116,7 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
   } else if (route === "/app/mail") {
     content = <MailActionCenter />;
   } else if (route === "/app/finance/transactions") {
-    content = <Transactions edit={(value) => setModal({ kind: "transaction", value })} note={transactionNote} />;
+    content = <Transactions edit={(value) => setModal({ kind: "transaction", value })} />;
   } else if (route === "/app/finance/accounts") {
     content = <Accounts edit={(value) => setModal({ kind: "account", value })} />;
   } else if (route === "/app/finance/import") {
@@ -218,7 +133,6 @@ export default function DesktopNativeRouteContent({ route, navigate }: Props) {
     content = <Dashboard
       go={(view) => navigate(routeForLegacyView(view))}
       record={(value) => setModal({ kind: "record", value })}
-      openNotes={() => navigate("/app/notes")}
     />;
   }
 
