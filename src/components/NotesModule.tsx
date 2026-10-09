@@ -2,9 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import RichMarkdownEditor, { type RichMarkdownEditorHandle } from "./RichMarkdownEditor";
-import remarkGfm from "remark-gfm";
 import {
   Archive, ArchiveRestore, Bold, Braces, CalendarDays, CheckSquare2, ChevronRight, Command, Copy, Download,
   File, FileJson, FileText, FileUp, Folder, FolderPlus, Heading1, Heading2,
@@ -111,10 +109,6 @@ function useDebounced<T>(value:T,delay:number){
   return result;
 }
 
-function EditorButton({title,active,onClick,children}:{title:string;active?:boolean;onClick:()=>void;children:React.ReactNode}){
-  return <button type="button" title={title} aria-label={title} className={active?"active":""} onMouseDown={event=>{event.preventDefault();onClick()}}>{children}</button>;
-}
-
 function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMode,registerSave,focusMode,onToggleFocus,libraryCollapsed,onToggleLibrary}:{note:Note;folders:NoteFolder[];tags:NoteTag[];onSaved:(note:Note)=>void;onListChanged:()=>void;onOpenNote:(id:string)=>Promise<void>;trashMode:boolean;registerSave:(save:(revision?:boolean)=>Promise<Note|null>)=>()=>void;focusMode:boolean;onToggleFocus:()=>void;libraryCollapsed:boolean;onToggleLibrary:()=>void}){
   const store=useLifeStore();
   const [draft,setDraft]=useState(note);
@@ -125,13 +119,10 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const [linkCandidates,setLinkCandidates]=useState<Note[]>([]);
   const [properties,setProperties]=useState<DesktopNoteProperties>(()=>readNoteProperties(note.contentJson));
   const [markdown,setMarkdown]=useState(()=>markdownSource(note));
-  const [editorMode,setEditorMode]=useState<"rich"|"split"|"source"|"preview">("rich");
-  const [showFormatting,setShowFormatting]=useState(false);
   const [showInspector,setShowInspector]=useState(false);
   const [inspectorTab,setInspectorTab]=useState<"outline"|"properties"|"links"|"relations"|"attachments">("outline");
   const [cloudAttachments,setCloudAttachments]=useState<CloudNoteAttachment[]>([]);
   const [cloudAttachmentLoading,setCloudAttachmentLoading]=useState(false);
-  const editorRef=useRef<HTMLTextAreaElement>(null);
   const richEditorRef=useRef<RichMarkdownEditorHandle>(null);
   const saveLock=useRef(false);
 
@@ -197,37 +188,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
     setDraft(noteValue=>({...noteValue,contentJson:withNoteProperties(noteValue.contentJson,next)}));
     setDirty(true);setStatus("dirty");
   };
-  const editSelection=(prefix:string,suffix=prefix,placeholder="文本")=>{
-    const textarea=editorRef.current;if(!textarea)return;
-    const start=textarea.selectionStart;const end=textarea.selectionEnd;
-    const selected=markdown.slice(start,end)||placeholder;
-    const next=`${markdown.slice(0,start)}${prefix}${selected}${suffix}${markdown.slice(end)}`;
-    updateMarkdown(next);
-    requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+prefix.length,start+prefix.length+selected.length)});
-  };
-  const prefixSelectionLines=(prefix:string)=>{
-    const textarea=editorRef.current;if(!textarea)return;
-    const start=markdown.lastIndexOf("\n",Math.max(0,textarea.selectionStart-1))+1;
-    const nextBreak=markdown.indexOf("\n",textarea.selectionEnd);
-    const end=nextBreak<0?markdown.length:nextBreak;
-    const source=markdown.slice(start,end);
-    const inserted=source.split("\n").map(line=>prefix+line).join("\n");
-    updateMarkdown(markdown.slice(0,start)+inserted+markdown.slice(end));
-    requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+prefix.length,start+inserted.length)});
-  };
-  const insertSnippet=(snippet:string)=>{
-    const textarea=editorRef.current;
-    if(!textarea){
-      if(editorMode==="rich"&&richEditorRef.current){richEditorRef.current.insertText(snippet);return}
-      setEditorMode("source");
-      updateMarkdown(markdown+(markdown&&!markdown.endsWith("\n")?"\n":"")+snippet);
-      return;
-    }
-    const start=textarea.selectionStart;const end=textarea.selectionEnd;
-    const next=markdown.slice(0,start)+snippet+markdown.slice(end);
-    updateMarkdown(next);
-    requestAnimationFrame(()=>{textarea.focus();textarea.setSelectionRange(start+snippet.length,start+snippet.length)});
-  };
+  const insertSnippet=(snippet:string)=>{richEditorRef.current?.insertText(snippet)};
   const toggleTag=(tag:NoteTag)=>patch({tags:draft.tags.some(x=>x.id===tag.id)?draft.tags.filter(x=>x.id!==tag.id):[...draft.tags,tag]});
   const loadHistory=async()=>{setRevisions(await noteApi.revisions(note.id));setHistoryOpen(true)};
   const action=async(kind:"trash"|"restore"|"delete"|"duplicate")=>{
@@ -318,8 +279,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const backlinks=knowledge.backlinks??[];
   const createTaskFromNote=async()=>{
     const sourceText=markdown.trim()||draft.contentText.trim();
-    const textarea=editorRef.current;
-    const selection=textarea?markdown.slice(textarea.selectionStart,textarea.selectionEnd).trim():richEditorRef.current?.selectedText()??"";
+    const selection=richEditorRef.current?.selectedText()??"";
     const selectedText=selection||sourceText;
     const title=(selection?cleanSummary(selection).split("\n")[0]:titleOf(draft)).slice(0,160)||"处理笔记";
     const saved=dirty?await save(false):draft;
@@ -354,25 +314,6 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
   const remoteOnlyAttachments=cloudAttachments.filter(file=>!localAttachmentIds.has(file.id));
   const headings=noteHeadings(markdown);
   const wordCount=plainTextFromMarkdown(markdown).replace(/\s+/g,"").length;
-  // Unsupported extensions must stay in the source editor, never be silently
-  // discarded by the rich-text schema on the first edit.
-  const hasUnsupportedRichSyntax =
-    /(?:^|\n)\s*\|[^\n]+\|\s*\n\s*\|\s*:?-{3,}/.test(markdown) ||
-    /attachment:\/\//i.test(markdown) ||
-    /(?:^|\n)\s*\[\^[^\]]+\]:/.test(markdown) ||
-    /(?:^|\n)\s*\$\$/.test(markdown) ||
-    /^---\s*\n[\s\S]*?\n---(?:\n|$)/.test(markdown) ||
-    /(?:^|\n)\s*<\/?[a-z][^>]*>/i.test(markdown);
-  const effectiveEditorMode=editorMode==="rich"&&hasUnsupportedRichSyntax?"source":editorMode;
-  const focusHeading=(lineIndex:number)=>{
-    const textarea=editorRef.current;if(!textarea)return;
-    const lines=markdown.split(/\r?\n/);
-    const start=lines.slice(0,lineIndex).reduce((sum,line)=>sum+line.length+1,0);
-    const end=start+(lines[lineIndex]?.length??0);
-    textarea.focus();textarea.setSelectionRange(start,end);
-    textarea.scrollTop=Math.max(0,lineIndex*27-textarea.clientHeight/3);
-  };
-
   return <section className="nt-editor">
     <header className="nt-editor-head">
       <div className="nt-editor-status">{focusMode&&<button className="nt-focus-return" type="button" title="退出专注模式" onClick={onToggleFocus}><Minimize2/></button>}
@@ -380,14 +321,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
         <span>{wordCount} 字</span>
       </div>
       <div>
-          {effectiveEditorMode!=="rich"&&<button title="格式工具栏" aria-pressed={showFormatting} className={showFormatting?"active":""} onClick={()=>setShowFormatting(value=>!value)}><Bold/></button>}
-          <button title="切换编辑和阅读" onClick={()=>setEditorMode(value=>value==="preview"?"rich":"preview")}><FileText/></button>
           <button title={libraryCollapsed?"展开笔记列表":"收起笔记列表"} aria-label={libraryCollapsed?"展开笔记列表":"收起笔记列表"} onClick={onToggleLibrary}>{libraryCollapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
           <button title={focusMode?"退出专注模式":"专注模式"} aria-label={focusMode?"退出专注模式":"专注模式"} aria-pressed={focusMode} className={focusMode?"active":""} onClick={onToggleFocus}>{focusMode?<Minimize2/>:<Maximize2/>}</button>
           {!focusMode&&<button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>}
-        {!focusMode&&(<div className="nt-view-switch" role="group" aria-label="编辑显示模式">
-            {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={effectiveEditorMode===mode?"active":""} aria-pressed={effectiveEditorMode===mode} onClick={()=>{if(mode==="rich"&&hasUnsupportedRichSyntax){notify("当前笔记包含扩展 Markdown，请使用源码模式以完整保留原文");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
-          </div>)}
         <MoreMenu actions={[{id:"save",label:"保存版本",icon:Save,group:"primary",execute:async()=>{await save(true)}},{id:"favorite",label:draft.isFavorite?"取消收藏":"收藏笔记",icon:Star,group:"primary",execute:()=>patch({isFavorite:!draft.isFavorite})},{id:"pin",label:draft.isPinned?"取消置顶":"置顶笔记",icon:Pin,group:"primary",execute:()=>patch({isPinned:!draft.isPinned})},{id:"task",label:"创建 Task",icon:CheckSquare2,group:"related",execute:()=>createTaskFromNote()},{id:"history",label:"版本历史",icon:History,group:"related",execute:()=>loadHistory()},...editorActions]} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
       </div>
     </header>
@@ -395,48 +331,8 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
       <main className="nt-editor-main">
         <div className="nt-editor-scroll">
           <input className="nt-title" value={draft.title??""} onChange={e=>patch({title:e.target.value||null})} placeholder={draft.noteType==="quick"?"快速记录无需标题":"无标题笔记"}/>
-          {showFormatting&&effectiveEditorMode!=="rich"&&<div className="nt-formatbar">
-            <EditorButton title="一级标题" onClick={()=>prefixSelectionLines("# ")}><Heading1/></EditorButton>
-            <EditorButton title="二级标题" onClick={()=>prefixSelectionLines("## ")}><Heading2/></EditorButton>
-            <EditorButton title="加粗" onClick={()=>editSelection("**","**","粗体文本")}><Bold/></EditorButton>
-            <EditorButton title="斜体" onClick={()=>editSelection("_","_","斜体文本")}><Italic/></EditorButton>
-            <EditorButton title="删除线" onClick={()=>editSelection("~~","~~","删除线文本")}><Strikethrough/></EditorButton>
-            <EditorButton title="行内代码" onClick={()=>editSelection("`","`","code")}><Braces/></EditorButton>
-            <EditorButton title="引用" onClick={()=>prefixSelectionLines("> ")}><Quote/></EditorButton>
-            <EditorButton title="无序列表" onClick={()=>prefixSelectionLines("- ")}><List/></EditorButton>
-            <EditorButton title="有序列表" onClick={()=>prefixSelectionLines("1. ")}><ListOrdered/></EditorButton>
-            <EditorButton title="待办列表" onClick={()=>prefixSelectionLines("- [ ] ")}><ListChecks/></EditorButton>
-            <EditorButton title="链接" onClick={()=>{const href=prompt("输入链接地址","https://");if(href)editSelection("[",`](${href})`,"链接文字")}}><LinkIcon/></EditorButton>
-            <EditorButton title="图片链接" onClick={()=>{const src=prompt("输入图片的 HTTPS 地址","https://");if(src?.startsWith("https://"))insertSnippet(`![图片](${src})`)}}><ImagePlus/></EditorButton>
-            <EditorButton title="代码块" onClick={()=>editSelection("\`\`\`\n","\n\`\`\`","代码")}><Braces/></EditorButton>
-            <EditorButton title="表格" onClick={()=>insertSnippet("\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")}><ListTree/></EditorButton>
-          </div>}
-          <div className={`nt-edit-layout nt-mode-${effectiveEditorMode}`}>
-          {editorMode==="rich"&&!hasUnsupportedRichSyntax&&<RichMarkdownEditor key={note.id} ref={richEditorRef} value={markdown} onChange={updateMarkdown}/>}
-          {(editorMode==="source"||editorMode==="split"||(editorMode==="rich"&&hasUnsupportedRichSyntax))&&<textarea
-            ref={editorRef}
-            className="nt-markdown-editor"
-            data-testid="markdown-editor"
-            value={markdown}
-            onChange={event=>updateMarkdown(event.target.value)}
-            placeholder="开始写下你的想法…支持 Markdown 与 [[Wiki Link]]"
-            spellCheck
-            onKeyDown={event=>{
-              if(event.key==="Tab"){
-                event.preventDefault();
-                const field=event.currentTarget;
-                const start=field.selectionStart,end=field.selectionEnd;
-                updateMarkdown(markdown.slice(0,start)+"  "+markdown.slice(end));
-                requestAnimationFrame(()=>{field.focus();field.setSelectionRange(start+2,start+2)});
-              }
-            }}
-          />}
-          {(editorMode==="split"||editorMode==="preview")&&<div className="nt-markdown-preview" data-testid="markdown-live-preview" aria-label="Markdown 实时渲染预览">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={url=>/^(https?:|mailto:|attachment:|#|\/)/i.test(url)?url:""} components={{
-              a:({href,children})=>href?.startsWith("attachment:")?<span title={href}>{children}</span>:<a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
-              img:({src,alt})=>src?.startsWith("attachment:")?<span className="nt-preview-attachment">{alt||"附件图片"}（在附件列表查看）</span>:<img src={src} alt={alt||""} loading="lazy" />,
-            }}>{markdown}</ReactMarkdown>
-          </div>}
+          <div className="nt-edit-layout nt-mode-rich">
+            <RichMarkdownEditor key={note.id} ref={richEditorRef} value={markdown} onChange={updateMarkdown}/>
           </div>
         </div>
       </main>
