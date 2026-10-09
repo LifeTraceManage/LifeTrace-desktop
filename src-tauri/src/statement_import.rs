@@ -68,6 +68,94 @@ fn schema(db: &Connection) -> Result<(), String> {
             ON statement_import_rows(external_id) WHERE external_id IS NOT NULL;"
     ).map_err(|e| e.to_string())
 }
+
+fn signed_cents(raw: &str) -> Result<i64, String> {
+    let raw = raw.replace(',', "");
+    let (sign, number) = if let Some(v) = raw.strip_prefix('-') {
+        (-1_i64, v)
+    } else if let Some(v) = raw.strip_prefix('+') {
+        (1_i64, v)
+    } else {
+        (1_i64, raw.as_str())
+    };
+    let (whole, fraction) = number.split_once('.').ok_or("银行金额缺少小数位")?;
+    if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit())
+        || fraction.len() != 2 || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("银行金额格式不合法".into());
+    }
+    let major = whole.parse::<i64>().map_err(|e|e.to_string())?;
+    let minor = fraction.parse::<i64>().map_err(|e|e.to_string())?;
+    major.checked_mul(100).and_then(|v|v.checked_add(minor))
+        .and_then(|v|v.checked_mul(sign)).ok_or("银行金额溢出".into())
+}
+fn bank_text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
+    v.get(key).and_then(Value::as_str).filter(|v|!v.trim().is_empty())
+        .ok_or_else(||format!("银行记录缺少字段 {key}"))
+}
+#[derive(Default)]
+struct PageTotals { count: u64, income: i64, expense: i64 }
+fn validate_verified_bank(req: &SaveStatementRequest) -> Result<(), String> {
+    let reported = req.validation.get("transactions").and_then(Value::as_u64)
+        .ok_or("银行校验报告缺少交易笔数")?;
+    if reported != req.rows.len() as u64 {
+        return Err("银行校验笔数与保存记录数不一致".into());
+    }
+    let reports = req.validation.get("pages").and_then(Value::as_array)
+        .ok_or("银行校验报告缺少逐页校验").and_then(|v|
+            if v.is_empty(){Err("银行校验报告为空".into())}else{Ok(v)})?;
+    if req.validation.get("balanceErrors").and_then(Value::as_array)
+        .is_some_and(|v|!v.is_empty()) {
+        return Err("银行余额校验报告含异常".into());
+    }
+    let mut totals = std::collections::BTreeMap::<u64,PageTotals>::new();
+    let mut prior: Option<(String,i64)> = None;
+    for row in &req.rows {
+        let page=row.payload.get("page").and_then(Value::as_u64)
+            .filter(|v|*v>0).ok_or("银行流水缺少页码")?;
+        let index=row.payload.get("row").and_then(Value::as_u64)
+            .ok_or("银行流水缺少页内序号")?;
+        let account=bank_text(&row.payload,"account")?;
+        let _date=bank_text(&row.payload,"date")?;
+        let _time=bank_text(&row.payload,"time")?;
+        let amount=signed_cents(bank_text(&row.payload,"amount")?)?;
+        let balance=signed_cents(bank_text(&row.payload,"balance")?)?;
+        let entry=totals.entry(page).or_default();
+        if index != entry.count+1 {return Err("银行页内流水不连续".into());}
+        entry.count+=1;
+        if amount>=0 {
+            entry.income=entry.income.checked_add(amount).ok_or("银行合计溢出")?;
+        } else {
+            entry.expense=entry.expense.checked_add(-amount).ok_or("银行合计溢出")?;
+        }
+        if let Some((prev_account,prev_balance))=&prior {
+            if prev_account==account && prev_balance.checked_add(amount)!=Some(balance) {
+                return Err(format!("银行第 {} 页第 {} 笔余额不连续",page,index));
+            }
+        }
+        prior=Some((account.to_owned(),balance));
+    }
+    if totals.len()!=reports.len(){return Err("银行页数与校验报告不一致".into());}
+    for (i,report) in reports.iter().enumerate() {
+        let page=(i+1) as u64;
+        let expected_page=report.get("page").and_then(Value::as_u64)
+            .ok_or("银行报告缺少页码")?;
+        if expected_page!=page || report.get("valid").and_then(Value::as_bool)!=Some(true){
+            return Err("银行页面验收未通过".into());
+        }
+        let sum=totals.get(&page).ok_or("银行缺少交易页")?;
+        let count=report.get("expectedCount").and_then(Value::as_u64)
+            .ok_or("银行报告缺少页内笔数")?;
+        let income=signed_cents(report.get("expectedIncome").and_then(Value::as_str)
+            .ok_or("银行报告缺少收入合计")?)?;
+        let expense=signed_cents(report.get("expectedExpense").and_then(Value::as_str)
+            .ok_or("银行报告缺少支出合计")?)?;
+        if count!=sum.count || income!=sum.income || expense!=sum.expense {
+            return Err(format!("银行第 {page} 页金额或笔数不一致"));
+        }
+    }
+    Ok(())
+}
+
 fn validate(req: &SaveStatementRequest) -> Result<(), String> {
     if !matches!(req.source.as_str(), "icbc" | "wechat" | "alipay" | "generic") {
         return Err("不支持的账单来源".into());
@@ -94,13 +182,7 @@ fn validate(req: &SaveStatementRequest) -> Result<(), String> {
             return Err(format!("第 {} 行序号、状态或数据不合法", i + 1));
         }
     }
-    if req.source == "icbc" && req.verified {
-        let count = req.validation.get("transactions").and_then(Value::as_u64)
-            .ok_or("银行校验报告缺少交易笔数")?;
-        if count != req.rows.len() as u64 {
-            return Err("银行校验笔数与保存记录数不一致".into());
-        }
-    }
+    if req.source == "icbc" && req.verified { validate_verified_bank(req)?; }
     Ok(())
 }
 pub fn save(db: &mut Connection, req: &SaveStatementRequest) -> Result<SaveStatementResult, String> {
