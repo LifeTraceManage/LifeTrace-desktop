@@ -16,7 +16,8 @@ use crate::{database, desktop::DesktopState};
 
 const MAX_FILES: usize = 8;
 const MAX_FILE_BYTES: usize = 5 * 1024 * 1024;
-const MAX_TOTAL_BYTES: usize = 12 * 1024 * 1024;
+const MAX_PDF_BYTES: usize = 20 * 1024 * 1024;
+const MAX_TOTAL_BYTES: usize = 30 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all="camelCase")]
@@ -170,7 +171,7 @@ fn validate_report<'a>(report: &'a Value, sources: &HashSet<&str>) -> Result<&'a
     Ok(results)
 }
 fn decode_assets(inputs: &[MedicalAssetInput]) -> Result<Vec<DecodedAsset>, String> {
-    if inputs.is_empty() || inputs.len()>MAX_FILES {return Err("每批允许 1 至 8 张图片".into());}
+    if inputs.is_empty() || inputs.len()>MAX_FILES {return Err("每批允许 1 至 8 份报告原文件".into());}
     let mut seen=HashSet::new();
     let mut total=0usize;
     let mut decoded=Vec::with_capacity(inputs.len());
@@ -183,17 +184,19 @@ fn decode_assets(inputs: &[MedicalAssetInput]) -> Result<Vec<DecodedAsset>, Stri
         if image.original_name.is_empty() || image.original_name.len()>255 {
             return Err("原文件名无效".into());
         }
-        if image.base64.len()>MAX_FILE_BYTES*4/3+8 {return Err("单张图片超出大小限制".into());}
+        let max_bytes = if image.mime_type == "application/pdf" { MAX_PDF_BYTES } else { MAX_FILE_BYTES };
+        if image.base64.len()>max_bytes*4/3+8 {return Err("单个原文件超出大小限制".into());}
         let bytes=STANDARD.decode(&image.base64).map_err(|_|"图片编码无效".to_owned())?;
         total += bytes.len();
-        if bytes.is_empty() || bytes.len()>MAX_FILE_BYTES || total>MAX_TOTAL_BYTES {
-            return Err("图片总大小超过限制".into());
+        if bytes.is_empty() || bytes.len()>max_bytes || total>MAX_TOTAL_BYTES {
+            return Err("原始报告文件总大小超过限制".into());
         }
         let ext=match image.mime_type.as_str() {
             "image/jpeg" if bytes.starts_with(&[0xff,0xd8,0xff]) => "jpg",
             "image/png" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => "png",
             "image/webp" if bytes.len()>=12 && bytes.starts_with(b"RIFF") && &bytes[8..12]==b"WEBP" => "webp",
-            _=>return Err("仅支持 JPG、PNG 和 WebP 图片；格式必须匹配文件内容".into()),
+            "application/pdf" if bytes.starts_with(b"%PDF-") => "pdf",
+            _=>return Err("仅支持 JPG、PNG、WebP、PDF 报告；格式必须匹配文件内容".into()),
         };
         let id=Uuid::new_v4().to_string();
         decoded.push(DecodedAsset {
