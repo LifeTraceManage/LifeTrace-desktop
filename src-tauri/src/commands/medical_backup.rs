@@ -211,7 +211,7 @@ fn import_backup(root:&Path,source:&Path)->Result<MedicalBackupResult,String>{
     let linked_ids=backup.assets.iter().map(|a|a.id.as_str()).collect::<HashSet<_>>();
     if linked_ids.len()!=backup.assets.len(){return Err("备份存在重复附件 ID".into());}
     let mut seen_hashes=HashSet::new();
-    let mut restored_files=Vec::new();
+    let mut verified_files=Vec::<PathBuf>::new();
     for asset in &backup.assets {
         if !safe_filename(&asset.filename)||!seen_hashes.insert(asset.sha256.as_str()){
             return Err("备份文件名非法或同份报告原件重复".into());
@@ -221,12 +221,22 @@ fn import_backup(root:&Path,source:&Path)->Result<MedicalBackupResult,String>{
         let real=fs::canonicalize(&path).map_err(|_|"备份附件丢失")?;
         let base=fs::canonicalize(source.join("files")).map_err(|_|"备份附件目录损坏")?;
         if !real.starts_with(base) {return Err("备份附件路径不安全".into());}
-        let bytes=fs::read(&real).map_err(|_|"无法读取备份附件")?;
-        if bytes.len() as u64!=asset.bytes_size||
-            format!("{:x}",Sha256::digest(&bytes))!=asset.sha256 {
+        use std::io::Read;
+        let mut reader=fs::File::open(&real).map_err(|_|"无法读取备份附件")?;
+        let mut hasher=Sha256::new();
+        let mut total=0u64;
+        let mut buffer=[0u8;65536];
+        loop {
+            let read=reader.read(&mut buffer).map_err(|_|"读取备份附件失败")?;
+            if read==0 {break;}
+            total+=read as u64;
+            if total>20*1024*1024 {return Err("备份中单个原件超过 20 MiB".into());}
+            hasher.update(&buffer[..read]);
+        }
+        if total!=asset.bytes_size||format!("{:x}",hasher.finalize())!=asset.sha256 {
             return Err("备份附件完整性验证失败".into());
         }
-        restored_files.push(bytes);
+        verified_files.push(real);
     }
     let reports_by_id=backup.reports.iter().map(|r|r.id.as_str()).collect::<HashSet<_>>();
     if reports_by_id.len()!=backup.reports.len(){return Err("备份报告 ID 重复".into());}
@@ -258,14 +268,15 @@ fn import_backup(root:&Path,source:&Path)->Result<MedicalBackupResult,String>{
             mapped.insert(asset.id.clone(),new_id);
             filenames.push(new_file);
         }
-        for (bytes,file) in restored_files.iter().zip(&filenames) {
+        for (source,file) in verified_files.iter().zip(&filenames) {
             let path=target.join(file);
-            use std::io::Write;
-            let mut handle=fs::OpenOptions::new().write(true).create_new(true)
+            let handle=fs::OpenOptions::new().write(true).create_new(true)
                 .open(&path).map_err(|_|"备份还原原图失败")?;
             created.push(path.clone());
-            handle.write_all(bytes).and_then(|_|handle.sync_all())
-                .map_err(|_|"备份原图写入失败")?;
+            drop(handle);
+            fs::copy(source,&path).map_err(|_|"备份原图写入失败")?;
+            fs::File::open(&path).and_then(|f|f.sync_all())
+                .map_err(|_|"备份原图落盘失败")?;
         }
         let tx=db.transaction().map_err(|e|e.to_string())?;
         let batch_id=Uuid::new_v4().to_string();
