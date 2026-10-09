@@ -62,6 +62,13 @@ export type MedicalListItem = {
 };
 export type SavedMedicalReport = { id: string; title: string };
 export type MedicalBackupResult = { path: string; reports: number; files: number };
+export type MedicalArchiveIntegrity = {
+  checkedFiles: number;
+  missingFiles: number;
+  corruptFiles: number;
+  orphanFiles: number;
+  checkedReports: number;
+};
 export type MedicalReportRevision = {
   id: string;
   changedAt: string;
