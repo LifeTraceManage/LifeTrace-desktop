@@ -14,6 +14,7 @@ export default function MedicalReportBrowser() {
   const [items, setItems] = useState<MedicalListItem[]>([]);
   const [selected, setSelected] = useState<MedicalReportDetail | null>(null);
   const [preview, setPreview] = useState<MedicalAssetData | null>(null);
+  const [previewPage, setPreviewPage] = useState(1);
   const [revisions, setRevisions] = useState<MedicalReportRevision[] | null>(null);
   const [trend, setTrend] = useState<{
     name: string; unit: string; points: MedicalMetricHistoryPoint[];
@@ -44,7 +45,8 @@ export default function MedicalReportBrowser() {
     try { setRevisions(await medicalReportApi.listRevisions(reportId)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取历史修订"); }
   };
-  const openAsset = async (id: string) => {
+  const openAsset = async (id: string, pageIndex = 0) => {
+    setPreviewPage(Math.max(1, pageIndex + 1));
     setError("");
     try { setPreview(await medicalReportApi.readAsset(id)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "无法读取原始图片"); }
@@ -104,7 +106,7 @@ export default function MedicalReportBrowser() {
                 <td>{value.valueRaw}</td><td>{value.unitRaw || "—"}</td>
                 <td>{value.referenceRangeRaw || "—"}</td><td>{value.sourceFlag || "—"}</td>
                 <td><button type="button" title="查看该检测值对应的原始报告"
-                  onClick={() => void openAsset(value.sourceAssetId)}>查看原图</button></td>
+                  onClick={() => void openAsset(value.sourceAssetId, value.pageIndex)}>查看原图</button></td>
               </tr>)}</tbody>
           </table>
         </div> : null}
@@ -164,16 +166,22 @@ export default function MedicalReportBrowser() {
             </details>)}
           </details> : null}
         </div>
-        <h4>原始报告图片</h4>
+        <h4>原始报告文件（图片或 PDF）</h4>
         {selected.assets.map((asset) => <button type="button" key={asset.id}
           onClick={() => void openAsset(asset.id)}
           style={{ marginRight: 8, marginBottom: 8 }}>
           <FileImage style={{ width: 15 }}/> {asset.originalName}
         </button>)}
         {preview ? <figure>
-          <img alt={preview.originalName} src={"data:" + preview.mimeType + ";base64," + preview.base64}
-            style={{ display: "block", maxHeight: 600, maxWidth: "100%", objectFit: "contain" }}/>
-          <figcaption>{preview.originalName}</figcaption>
+          {preview.mimeType === "application/pdf"
+            ? <object aria-label={preview.originalName}
+                data={"data:application/pdf;base64," + preview.base64 + "#page=" + previewPage}
+                type="application/pdf" style={{ width: "100%", minHeight: 560 }}>
+                <p>当前桌面环境不支持内嵌 PDF 预览，原始 PDF 仍完整保存在本机档案中。</p>
+              </object>
+            : <img alt={preview.originalName} src={"data:" + preview.mimeType + ";base64," + preview.base64}
+                style={{ display: "block", maxHeight: 600, maxWidth: "100%", objectFit: "contain" }}/>}
+          <figcaption>{preview.originalName}{preview.mimeType === "application/pdf" ? " · 第 " + previewPage + " 页" : ""}</figcaption>
         </figure> : null}
       </div> : null}
     </div>
