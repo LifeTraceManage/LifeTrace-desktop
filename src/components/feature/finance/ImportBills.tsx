@@ -26,7 +26,7 @@ type ImportRow = {
 
 
 export default function ImportBills() {
-  const { accounts, transactions, addTransaction } = useLifeStore();
+  const { accounts, transactions, addTransaction, saveAccount } = useLifeStore();
   const input = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [rows, setRows] = useState<ImportRow[]>([]);
@@ -44,6 +44,29 @@ export default function ImportBills() {
     invalid: 0,
   });
   const [importing, setImporting] = useState(false);
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [newBankName, setNewBankName] = useState("工商银行储蓄卡");
+  const [newBankLast4, setNewBankLast4] = useState("");
+  const [newBankBalance, setNewBankBalance] = useState("");
+  const [savingBank, setSavingBank] = useState(false);
+  const bankAccounts = accounts.filter(account => account.type === "bank");
+  const isPendingTransfer = (row: ImportRow) =>
+    row.type === "transfer" || row.category === "资金流转（待确认）";
+  const resolvedAccount = bankAccounts.find(account => account.id === bankAccountId);
+  const effectiveBankRows = rows.map(row =>
+    billSource === "icbc" && !row.accountId && resolvedAccount &&
+      (!resolvedAccount.last4 || row.sourceId?.split("/")[3]?.endsWith(resolvedAccount.last4))
+      ? { ...row, account: resolvedAccount.name, accountId: resolvedAccount.id }
+      : row,
+  );
+  const readyRows = effectiveBankRows.filter(row =>
+    billSource === "icbc"
+      ? Boolean(row.accountId) && !isPendingTransfer(row)
+      : true,
+  );
+  const pendingRows = billSource === "icbc"
+    ? effectiveBankRows.filter(row => !row.accountId || isPendingTransfer(row))
+    : [];
   const [archiveBatches, setArchiveBatches] = useState<StoredStatementBatch[]>([]);
   const refreshArchive = () => { void listArchivedStatementBatches().then(setArchiveBatches).catch(() => undefined); };
   useEffect(() => { refreshArchive(); }, []);
@@ -113,6 +136,7 @@ export default function ImportBills() {
 
       if (/\.pdf$/i.test(file.name)) {
         setBillSource("icbc");
+        setBankAccountId("");
         let statement;
         try {
           statement = await parseIcbcPdf(file);
@@ -151,7 +175,7 @@ export default function ImportBills() {
           if (!Number.isFinite(timestamp) || !Number.isSafeInteger(cents) || cents <= 0)
             throw new Error("银行交易时间或金额不合法");
           const account = banks.find(a => a.last4 && tx.account.endsWith(a.last4))
-            ?? (banks.length === 1 ? banks[0] : undefined);
+;
           if (!account) unmatched++;
           const type = signed > 0n ? "income" : "expense";
           const key = ["工商银行流水", tx.date, tx.time, tx.account, tx.amount, tx.balance].join("/");
@@ -178,7 +202,7 @@ export default function ImportBills() {
         setSummary({source: statement.transactions.length, neutral: 0, transfers, unmatched, duplicates, invalid: 0});
         setMessage("原始银行流水已保存 " + archived.persisted + " 笔（" + (archived.existing ? "重复文件，无新增" : "新批次") + "）；PDF 通过 " + statement.pages.length + " 页校验，已解析 " +
           statement.transactions.length + " 笔；跳过 " + duplicates + " 笔已存在或疑似重复的记录。" +
-          (unmatched || transfers ? "存在未匹配账户或资金流转待确认，暂时禁止批量导入。" : ""));
+          (unmatched || transfers ? "可在下方选择银行账户，安全的普通收支可单独入账，资金流转保留待复核。" : ""));
         return;
       }
       let matrix: unknown[][];
@@ -424,38 +448,77 @@ export default function ImportBills() {
     void read(file);
   };
 
-  const commit = async () => {
-    if (billSource === "icbc" && (summary.unmatched || summary.transfers)) { setMessage("存在待确认资金流转或未匹配账户，禁止批量导入"); return; }
-    setImporting(true);
+  const createBankAccount = async () => {
+    const name = newBankName.trim();
+    const last4 = newBankLast4.trim();
+    if (!name || !/^\d{4}$/.test(last4)) {
+      setMessage("请填写银行账户名称及卡号后四位（4 位数字）。");
+      return;
+    }
+    if (accounts.some(account => account.type === "bank" && account.last4 === last4)) {
+      setMessage("已存在相同卡号后四位的银行账户，请直接从列表中选择。");
+      return;
+    }
+    const balance = newBankBalance.trim() === "" ? 0 : Number(newBankBalance);
+    if (!Number.isFinite(balance) || !Number.isSafeInteger(Math.round(balance * 100))) {
+      setMessage("账户当前余额格式不正确。");
+      return;
+    }
+    setSavingBank(true);
     try {
-      for (const row of rows) {
-        const transaction: Parameters<typeof addTransaction>[0] = {
-          type: row.type,
-          amount: row.amount,
-          category: row.category,
-          account: row.account,
-          note: row.note,
-          occurredAt: row.occurredAt,
-          accountId: row.accountId,
-          toAccount: row.toAccount,
-          toAccountId: row.toAccountId,
-          counterparty: row.counterparty,
-          item: row.item,
-        };
-        await addTransaction(transaction);
-      }
-      const sourceName =
-        billSource === "alipay" ? "支付宝" : billSource === "wechat" ? "微信" : billSource === "icbc" ? "工商银行" : "支付";
-      setMessage(`已导入 ${rows.length} 笔${sourceName}账单到 SQLite`);
-      setRows([]);
-      notify(`${sourceName}账单导入完成`);
+      await saveAccount({ name, type: "bank", last4, balance,
+        balanceAt: new Date().toISOString(), color: "#247b65", icon: "landmark" });
+      const saved = useLifeStore.getState().accounts.find(account =>
+        account.type === "bank" && account.name === name && account.last4 === last4);
+      if (saved) setBankAccountId(saved.id);
+      setMessage("银行账户已创建。当前余额作为今天的余额基准，历史流水不会重复调整该余额。请核对可入账笔数。");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "账单导入失败");
+      setMessage(error instanceof Error ? error.message : "创建银行账户失败");
+    } finally {
+      setSavingBank(false);
+    }
+  };
+
+  const commit = async () => {
+    if (importing || readyRows.length === 0) {
+      setMessage("没有可安全入账的记录。请先绑定银行账户，资金流转仍需单独核对。");
+      return;
+    }
+    setImporting(true);
+    let committed = 0;
+    const committedRows = new Set<ImportRow>();
+    try {
+      for (const row of readyRows) {
+        const already = row.sourceId && useLifeStore.getState().transactions.some(
+          item => item.note?.includes(row.sourceId!),
+        );
+        if (!already) {
+          const transaction: Parameters<typeof addTransaction>[0] = {
+            type: row.type, amount: row.amount, category: row.category,
+            account: row.account, note: row.note, occurredAt: row.occurredAt,
+            accountId: row.accountId, toAccount: row.toAccount,
+            toAccountId: row.toAccountId, counterparty: row.counterparty, item: row.item,
+          };
+          await addTransaction(transaction);
+          committed++;
+        }
+        committedRows.add(row);
+      }
+      const sourceName = billSource === "alipay" ? "支付宝" :
+        billSource === "wechat" ? "微信" : billSource === "icbc" ? "工商银行" : "支付";
+      const remaining = effectiveBankRows.filter(row => !committedRows.has(row));
+      setRows(remaining);
+      setMessage(`已安全入账 ${committed} 笔${sourceName}流水；${remaining.length} 笔保留待复核。全部原始流水继续保存在账单档案中。`);
+      notify(`${sourceName}已入账 ${committed} 笔`);
+    } catch (error) {
+      // Already committed rows stay in SQLite. Never claim a failed batch was atomic.
+      setRows(effectiveBankRows.filter(row => !committedRows.has(row)));
+      setMessage(`已入账 ${committed} 笔，其余未入账。请核对后重试：` +
+        (error instanceof Error ? error.message : "账单导入失败"));
     } finally {
       setImporting(false);
     }
   };
-
   return (
     <div className="hx-view">
       <div className="hx-import-grid">
@@ -521,10 +584,46 @@ export default function ImportBills() {
                 {message}
               </p>
             ) : null}
+            {billSource === "icbc" && rows.length > 0 ? (
+              <div className="hx-import-account-setup">
+                <h3>工商银行账户绑定</h3>
+                <p>先选择与 PDF 卡号后四位一致的账户。未匹配账户、内部资金划转会保留在原始账单中，只有已绑定的普通收支可以入账。</p>
+                <label htmlFor="bank-import-account">未匹配流水归属账户</label>
+                <select id="bank-import-account" value={bankAccountId}
+                  onChange={event => setBankAccountId(event.target.value)}>
+                  <option value="">请选择银行账户</option>
+                  {bankAccounts.map(account => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}{account.last4 ? ` · 尾号 ${account.last4}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <details>
+                  <summary>新增工商银行账户</summary>
+                  <label htmlFor="bank-import-name">账户名称</label>
+                  <input id="bank-import-name" value={newBankName}
+                    onChange={event => setNewBankName(event.target.value)} />
+                  <label htmlFor="bank-import-last4">银行卡尾号（4 位）</label>
+                  <input id="bank-import-last4" inputMode="numeric" maxLength={4}
+                    placeholder="例如 1234" value={newBankLast4}
+                    onChange={event => setNewBankLast4(event.target.value)} />
+                  <label htmlFor="bank-import-balance">当前余额（可留空，默认 0）</label>
+                  <input id="bank-import-balance" inputMode="decimal"
+                    placeholder="今天账户的实际余额" value={newBankBalance}
+                    onChange={event => setNewBankBalance(event.target.value)} />
+                  <button type="button" className="hx-btn" disabled={savingBank}
+                    onClick={() => void createBankAccount()}>
+                    {savingBank ? "正在保存…" : "创建并绑定账户"}
+                  </button>
+                </details>
+                <p role="status">可安全入账 {readyRows.length} 笔；待复核 {pendingRows.length} 笔（其中资金流转 
+                  {pendingRows.filter(isPendingTransfer).length} 笔）。银行卡尾号不符的记录不会被强制归入所选账户。</p>
+              </div>
+            ) : null}
             {rows.length > 0 ? (
               <div className="hx-import-preview">
                 <div>
-                  {rows.slice(0, 12).map((row, index) => (
+                  {effectiveBankRows.slice(0, 12).map((row, index) => (
                     <span key={`${row.sourceId ?? index}`}>
                       <b>{row.counterparty}</b>
                       <small>
@@ -543,15 +642,15 @@ export default function ImportBills() {
                   ))}
                 </div>
                 {rows.length > 12 ? (
-                  <small>另有 {rows.length - 12} 笔记录将在确认后一起导入</small>
+                  <small>另有 {rows.length - 12} 笔记录，可安全入账部分会在确认后导入</small>
                 ) : null}
                 <button
                   type="button"
                   className="hx-btn primary"
-                  disabled={importing || (billSource === "icbc" && (summary.unmatched > 0 || summary.transfers > 0))}
+                  disabled={importing || readyRows.length === 0}
                   onClick={commit}
                 >
-                  {importing ? "正在导入…" : `确认导入 ${rows.length} 笔`}
+                  {importing ? "正在导入…" : `确认导入 ${readyRows.length} 笔安全收支`}
                 </button>
               </div>
             ) : null}
@@ -581,7 +680,7 @@ export default function ImportBills() {
                   账户转账 <b>{summary.transfers}</b>
                 </span>
                 <span>
-                  未匹配账户 <b>{summary.unmatched}</b>
+                  未匹配账户 <b>{billSource === "icbc" ? effectiveBankRows.filter(row => !row.accountId).length : summary.unmatched}</b>
                 </span>
                 <span>
                   其他中性交易 <b>{summary.neutral}</b>
