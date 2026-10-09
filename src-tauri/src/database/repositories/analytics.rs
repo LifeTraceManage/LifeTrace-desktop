@@ -245,24 +245,6 @@ fn project_events(connection: &Connection, user_id: &str, stamp: &str) -> Result
              projection_version,projected_at
            )
            SELECT
-             'finance:transaction:'||t.id,t.user_id,
-             COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ',t.occurred_at),t.occurred_at),NULL,t.local_date,NULL,
-             'finance','transaction',
-             COALESCE(NULLIF(t.counterparty,''),NULLIF(t.merchant,''),NULLIF(t.item,''),
-                      NULLIF(t.legacy_category_name,''),'交易'),
-             COALESCE(t.note,''),'transaction',t.id,t.updated_at,
-             json_object('transactionType',t.transaction_type,'amountCents',t.amount_cents,
-                         'currency',t.currency,'status',t.status),
-             '[]',trim(COALESCE(t.counterparty,'')||' '||COALESCE(t.merchant,'')||' '||
-                       COALESCE(t.item,'')||' '||COALESCE(t.note,'')),1,?2
-             FROM transactions t
-            WHERE t.user_id=?1 AND t.deleted_at IS NULL AND t.status<>'ignored'"#,
-        r#"INSERT INTO analytics_events(
-             id,user_id,occurred_at,ended_at,local_date,timezone,domain,event_type,title,summary,
-             entity_type,entity_id,source_updated_at,metrics_json,tags_json,search_text,
-             projection_version,projected_at
-           )
-           SELECT
              'habits:activity_log:'||l.id,l.user_id,
              COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ',l.created_at),l.log_date||'T00:00:00Z'),
              NULL,l.log_date,NULL,'habits','habit_log',COALESCE(a.name,'坚持记录'),COALESCE(l.note,''),
@@ -367,19 +349,6 @@ fn project_search_documents(
     stamp: &str,
 ) -> Result<(), String> {
     let statements = [
-        r#"INSERT INTO analytics_search_documents(
-             id,user_id,domain,entity_type,entity_id,title,body,keywords,tags_json,occurred_at,
-             updated_at,projection_version,projected_at
-           )
-           SELECT 'finance:transaction:'||t.id,t.user_id,'finance','transaction',t.id,
-             COALESCE(NULLIF(t.counterparty,''),NULLIF(t.merchant,''),NULLIF(t.item,''),
-                      NULLIF(t.legacy_category_name,''),'交易'),
-             trim(COALESCE(t.note,'')||' '||COALESCE(t.item,'')),
-             trim(COALESCE(t.counterparty,'')||' '||COALESCE(t.merchant,'')||' '||
-                  COALESCE(t.legacy_category_name,'')||' '||COALESCE(t.transaction_type,'')),
-             '[]',t.occurred_at,t.updated_at,1,?2
-             FROM transactions t
-            WHERE t.user_id=?1 AND t.deleted_at IS NULL AND t.status<>'ignored'"#,
         r#"INSERT INTO analytics_search_documents(
              id,user_id,domain,entity_type,entity_id,title,body,keywords,tags_json,occurred_at,
              updated_at,projection_version,projected_at
