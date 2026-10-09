@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { FileImage, FileText, LoaderCircle, RefreshCw } from "lucide-react";
+import { open as chooseDirectory } from "@tauri-apps/plugin-dialog";
 import {
   medicalReportApi,
   type MedicalAssetData,
@@ -21,6 +22,8 @@ export default function MedicalReportBrowser() {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [backupStatus, setBackupStatus] = useState("");
+  const [backupBusy, setBackupBusy] = useState(false);
   const [filter, setFilter] = useState("");
   const load = async () => {
     setBusy(true);
@@ -60,20 +63,49 @@ export default function MedicalReportBrowser() {
       setError(cause instanceof Error ? cause.message : "无法读取历史检验数据");
     }
   };
+  const backupAction = async (action: "export" | "import") => {
+    if (backupBusy) return;
+    if (!window.confirm(action === "export"
+      ? "即将备份当前账号的医疗检查、原始图片和 PDF。备份不会加密，其他有文件权限的程序可读取，是否继续？"
+      : "即将从备份目录恢复医疗档案。会先校验每份原件，遇到与现有档案重复的文件则中止，不覆盖当前记录。是否继续？")) return;
+    setBackupBusy(true);
+    setError("");
+    setBackupStatus("");
+    try {
+      const directory = await chooseDirectory({ directory: true, multiple: false,
+        title: action === "export" ? "选择医疗报告备份保存位置" : "选择包含 manifest.json 的医疗档案备份文件夹" });
+      if (typeof directory !== "string") return;
+      const result = action === "export"
+        ? await medicalReportApi.exportBackup(directory)
+        : await medicalReportApi.importBackup(directory);
+      setBackupStatus((action === "export" ? "备份完成：" : "恢复完成：") +
+        result.reports + " 份报告、" + result.files + " 份原始文件。路径：" + result.path);
+      if (action === "import") await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "医疗档案备份或恢复失败");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
   const visible = items.filter((item) => [item.title, item.facility || "", item.examAt || "", item.reportType]
     .join(" ").toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
 
   return <article className="hx-panel">
     <header className="hx-panel-head">
       <div><span className="hx-kicker">医疗检查</span><h2>报告归档</h2></div>
-      <button type="button" title="刷新医疗检查" disabled={busy} onClick={() => void load()}><RefreshCw/></button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" disabled={busy || backupBusy} onClick={() => void backupAction("export")}>备份</button>
+        <button type="button" disabled={busy || backupBusy} onClick={() => void backupAction("import")}>恢复</button>
+        <button type="button" title="刷新医疗检查" disabled={busy || backupBusy} onClick={() => void load()}><RefreshCw/></button>
+      </div>
     </header>
     <div className="hx-panel-body">
-      <p>在「Agent」中发送医疗报告照片即可识别和归档；此处只负责查看记录和原始文件。医疗资料保存在本机普通文件与 SQLite 中，未加密。</p>
+      <p>在「Agent」中发送医疗报告图片或 PDF 即可识别和归档；此处只负责查看记录和原始文件。医疗资料保存在本机普通文件与 SQLite 中，未加密。</p>
       <input aria-label="搜索检查报告" placeholder="搜索检查名称、医院或日期"
         value={filter} onChange={(event) => setFilter(event.target.value)}
         style={{ padding: 8, width: "100%", borderRadius: 6 }}/>
       {error ? <p role="alert">{error}</p> : null}
+      {backupStatus ? <p role="status" style={{ overflowWrap: "anywhere" }}>{backupStatus}</p> : null}
       {busy ? <p><LoaderCircle className="spin"/>加载检查记录…</p> : null}
       {!busy && visible.length === 0 ? <p>没有匹配的检查记录。请在 Agent 对话中上传报告照片。</p> : null}
       {visible.map((item) => <button key={item.id} type="button" onClick={() => void open(item.id)}
