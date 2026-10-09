@@ -375,7 +375,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
 
   return <section className="nt-editor">
     <header className="nt-editor-head">
-      <div className="nt-editor-status">
+      <div className="nt-editor-status">{focusMode&&<button className="nt-focus-return" type="button" title="退出专注模式" onClick={onToggleFocus}><Minimize2/></button>}
         <span className={`nt-save-state ${status}`}>{status==="saving"?"正在保存":status==="dirty"?"未保存":status==="failed"?"保存失败":"已保存"}</span>
         <span>{wordCount} 字</span>
       </div>
@@ -385,6 +385,9 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
           <button title={libraryCollapsed?"展开笔记列表":"收起笔记列表"} aria-label={libraryCollapsed?"展开笔记列表":"收起笔记列表"} onClick={onToggleLibrary}>{libraryCollapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
           <button title={focusMode?"退出专注模式":"专注模式"} aria-label={focusMode?"退出专注模式":"专注模式"} aria-pressed={focusMode} className={focusMode?"active":""} onClick={onToggleFocus}>{focusMode?<Minimize2/>:<Maximize2/>}</button>
           {!focusMode&&<button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>
+        {!focusMode&&(<div className="nt-view-switch" role="group" aria-label="编辑显示模式">
+            {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={effectiveEditorMode===mode?"active":""} aria-pressed={effectiveEditorMode===mode} onClick={()=>{if(mode==="rich"&&hasUnsupportedRichSyntax){notify("当前笔记包含扩展 Markdown，请使用源码模式以完整保留原文");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
+          </div>)}
         <MoreMenu actions={[{id:"save",label:"保存版本",icon:Save,group:"primary",execute:async()=>{await save(true)}},{id:"favorite",label:draft.isFavorite?"取消收藏":"收藏笔记",icon:Star,group:"primary",execute:()=>patch({isFavorite:!draft.isFavorite})},{id:"pin",label:draft.isPinned?"取消置顶":"置顶笔记",icon:Pin,group:"primary",execute:()=>patch({isPinned:!draft.isPinned})},{id:"task",label:"创建 Task",icon:CheckSquare2,group:"related",execute:()=>createTaskFromNote()},{id:"history",label:"版本历史",icon:History,group:"related",execute:()=>loadHistory()},...editorActions]} context={draft} label="更多笔记操作" buttonClassName="nt-more-button"/>
       </div>
     </header>
@@ -408,9 +411,6 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
             <EditorButton title="代码块" onClick={()=>editSelection("\`\`\`\n","\n\`\`\`","代码")}><Braces/></EditorButton>
             <EditorButton title="表格" onClick={()=>insertSnippet("\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n")}><ListTree/></EditorButton>
           </div>}
-          <div className="nt-view-switch" role="group" aria-label="编辑显示模式">
-            {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={effectiveEditorMode===mode?"active":""} aria-pressed={effectiveEditorMode===mode} onClick={()=>{if(mode==="rich"&&hasUnsupportedRichSyntax){notify("当前笔记包含扩展 Markdown，请使用源码模式以完整保留原文");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
-          </div>
           <div className={`nt-edit-layout nt-mode-${effectiveEditorMode}`}>
           {editorMode==="rich"&&!hasUnsupportedRichSyntax&&<RichMarkdownEditor key={note.id} ref={richEditorRef} value={markdown} onChange={updateMarkdown}/>}
           {(editorMode==="source"||editorMode==="split"||(editorMode==="rich"&&hasUnsupportedRichSyntax))&&<textarea
