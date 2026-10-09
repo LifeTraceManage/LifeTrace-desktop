@@ -94,7 +94,7 @@ fn validate(req: &SaveStatementRequest) -> Result<(), String> {
             return Err(format!("第 {} 行序号、状态或数据不合法", i + 1));
         }
     }
-    if req.source == "icbc" {
+    if req.source == "icbc" && req.verified {
         let count = req.validation.get("transactions").and_then(Value::as_u64)
             .ok_or("银行校验报告缺少交易笔数")?;
         if count != req.rows.len() as u64 {
