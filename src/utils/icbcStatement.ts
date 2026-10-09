@@ -32,7 +32,9 @@ export function wordsFromPdfJs(items: readonly unknown[], pageWidth: number, pag
     const angle = Math.atan2(b, a) * 180 / Math.PI;
     if (Math.abs(angle) > 2) continue;
     const height = Math.abs(d) || part.height || 8;
-    const y = (pageHeight - baseline - height) * (595 / pageHeight);
+    // transform was already composed with the PDF.js viewport (top-left origin).
+    // Do not invert Y again: doing so reverses row order on rotated ICBC pages.
+    const y = (baseline - height) * (595 / pageHeight);
     const sx = 842 / pageWidth;
     const width = (part.width || part.str.length * Math.abs(a) * 0.55) * sx;
     for (const match of part.str.matchAll(/\S+/gu)) {
