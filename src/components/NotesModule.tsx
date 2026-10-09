@@ -384,7 +384,7 @@ function NoteEditor({note,folders,tags,onSaved,onListChanged,onOpenNote,trashMod
           <button title="切换编辑和阅读" onClick={()=>setEditorMode(value=>value==="preview"?"rich":"preview")}><FileText/></button>
           <button title={libraryCollapsed?"展开笔记列表":"收起笔记列表"} aria-label={libraryCollapsed?"展开笔记列表":"收起笔记列表"} onClick={onToggleLibrary}>{libraryCollapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
           <button title={focusMode?"退出专注模式":"专注模式"} aria-label={focusMode?"退出专注模式":"专注模式"} aria-pressed={focusMode} className={focusMode?"active":""} onClick={onToggleFocus}>{focusMode?<Minimize2/>:<Maximize2/>}</button>
-          {!focusMode&&<button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>
+          {!focusMode&&<button title="切换侧栏" aria-expanded={showInspector} className={showInspector?"active":""} onClick={()=>setShowInspector(value=>!value)}><ListTree/></button>}
         {!focusMode&&(<div className="nt-view-switch" role="group" aria-label="编辑显示模式">
             {(["rich","source","preview","split"] as const).map(mode=><button key={mode} type="button" className={effectiveEditorMode===mode?"active":""} aria-pressed={effectiveEditorMode===mode} onClick={()=>{if(mode==="rich"&&hasUnsupportedRichSyntax){notify("当前笔记包含扩展 Markdown，请使用源码模式以完整保留原文");return}setEditorMode(mode)}}>{mode==="rich"?"实时编辑":mode==="source"?"源码":mode==="preview"?"阅读":"分屏"}</button>)}
           </div>)}
