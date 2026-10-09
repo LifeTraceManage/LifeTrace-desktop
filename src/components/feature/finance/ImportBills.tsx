@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { archiveBillRows, listArchivedStatementBatches, reconcileArchivedStatements } from "@/src/services/statementArchive";
 import { bankChannel } from "@/src/utils/statementReconciliation";
+import { findSafeLedgerCorrections } from "@/src/utils/paymentLedgerPriority";
 import type { StoredStatementBatch } from "@/src/services/statementArchive";
 import { FileUp } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
@@ -30,7 +31,7 @@ type ImportRow = {
 
 
 export default function ImportBills() {
-  const { accounts, transactions, addTransaction, updateTransaction, saveAccount } = useLifeStore();
+  const { accounts, transactions, addTransaction, updateTransaction, deleteTransaction, saveAccount } = useLifeStore();
   const input = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [rows, setRows] = useState<ImportRow[]>([]);
@@ -48,6 +49,7 @@ export default function ImportBills() {
     invalid: 0,
   });
   const [importing, setImporting] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [bankAccountId, setBankAccountId] = useState("");
   const [newBankName, setNewBankName] = useState("工商银行储蓄卡");
   const [newBankLast4, setNewBankLast4] = useState("");
@@ -470,6 +472,24 @@ export default function ImportBills() {
     void read(file);
   };
 
+  const repairExistingDuplicates = async () => {
+    if (repairing || importing) return;
+    setRepairing(true);
+    let repaired = 0;
+    try {
+      const result = await reconcileArchivedStatements();
+      const candidates = findSafeLedgerCorrections(result.matches, result.rawRows, useLifeStore.getState().transactions);
+      for (const candidate of candidates) {
+        // Exact pair of archived source rows + exact transaction marker/order ID.
+        // Preserve the richer WeChat/Alipay ledger entry and the immutable original bank source.
+        await deleteTransaction(candidate.bankTransactionId);
+        repaired++;
+      }
+      setMessage(`对账完成：已清理 ${repaired} 笔有确切对应支付记录的重复银行收支。未唯一匹配的交易保持不变；原始账单仍完整保留。`);
+    } catch (error) {
+      setMessage(`已处理 ${repaired} 笔；其余未处理。` + (error instanceof Error ? error.message : String(error)));
+    } finally { setRepairing(false); }
+  };
   const createBankAccount = async () => {
     const name = newBankName.trim();
     const last4 = newBankLast4.trim();
@@ -728,6 +748,8 @@ export default function ImportBills() {
             ) : null}
             <hr />
             <strong>已归档的原始账单</strong>
+            <p>微信、支付宝账单是重复消费的优先记账来源。只有唯一证据充分时，才清理已经重复入账的银行记录。</p>
+            <button type="button" className="hx-btn" disabled={repairing || importing} onClick={() => void repairExistingDuplicates()}>{repairing ? "正在核对…" : "核对并修正历史重复收支"}</button>
             {archiveBatches.slice(0, 10).map(batch => (
               <p key={batch.id}>
                 <b>{batch.filename}</b>
