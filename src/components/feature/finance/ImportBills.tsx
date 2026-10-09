@@ -590,7 +590,7 @@ export default function ImportBills() {
                 <p>先选择与 PDF 卡号后四位一致的账户。未匹配账户、内部资金划转会保留在原始账单中，只有已绑定的普通收支可以入账。</p>
                 <label htmlFor="bank-import-account">未匹配流水归属账户</label>
                 <select id="bank-import-account" value={bankAccountId}
-                  onChange={event => setBankAccountId(event.target.value}>
+                  onChange={event => setBankAccountId(event.target.value)}>
                   <option value="">请选择银行账户</option>
                   {bankAccounts.map(account => (
                     <option key={account.id} value={account.id}>
@@ -602,15 +602,15 @@ export default function ImportBills() {
                   <summary>新增工商银行账户</summary>
                   <label htmlFor="bank-import-name">账户名称</label>
                   <input id="bank-import-name" value={newBankName}
-                    onChange={event => setNewBankName(event.target.value} />
+                    onChange={event => setNewBankName(event.target.value)} />
                   <label htmlFor="bank-import-last4">银行卡尾号（4 位）</label>
                   <input id="bank-import-last4" inputMode="numeric" maxLength={4}
                     placeholder="例如 1234" value={newBankLast4}
-                    onChange={event => setNewBankLast4(event.target.value} />
+                    onChange={event => setNewBankLast4(event.target.value)} />
                   <label htmlFor="bank-import-balance">当前余额（可留空，默认 0）</label>
                   <input id="bank-import-balance" inputMode="decimal"
                     placeholder="今天账户的实际余额" value={newBankBalance}
-                    onChange={event => setNewBankBalance(event.target.value} />
+                    onChange={event => setNewBankBalance(event.target.value)} />
                   <button type="button" className="hx-btn" disabled={savingBank}
                     onClick={() => void createBankAccount()}>
                     {savingBank ? "正在保存…" : "创建并绑定账户"}
