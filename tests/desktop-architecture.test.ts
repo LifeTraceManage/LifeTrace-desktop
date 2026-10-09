@@ -190,7 +190,7 @@ test("desktop execution center keeps native extras and restores web execution wo
   const routes = read("src/components/DesktopNativeRouteContent.tsx");
   const api = read("src/services/executionApi.ts");
 
-  for (const view of ["planner", "inbox", "habits", "focus", "review"]) {
+  for (const view of ["planner", "inbox", "focus", "review"]) {
     assert.match(module, new RegExp(`["']${view}["']`), `missing execution view: ${view}`);
   }
   assert.match(module, /executionApi\.focusSessions\.create/);
@@ -223,4 +223,15 @@ test("desktop mail uses a bounded workspace so wheel scrolling reaches the messa
   assert.match(styles, /\.lt-desk-content\.mail-route > \.lt-desk-route-content\s*\{[\s\S]*min-height:\s*0;[\s\S]*height:\s*100%;/);
   assert.match(mail, /overflowY:\s*"auto"/);
   assert.match(mail, /gridTemplateRows:\s*"auto minmax\(0, 1fr\)"/);
+});
+
+test("desktop navigation uses one habit entry and keeps review within execution", () => {
+  const shell = read("src/components/DesktopWorkbenchShell.tsx");
+  const execution = read("src/components/feature/execution/ExecutionModule.tsx");
+  const routes = read("src/components/DesktopNativeRouteContent.tsx");
+  assert.match(shell, /path: "\/app\/habits", label: "坚持"/);
+  assert.doesNotMatch(shell, /path: "\/app\/review", label: "复盘"/);
+  assert.doesNotMatch(execution, /\["habits", "坚持"/);
+  assert.match(execution, /\["review", "复盘"/);
+  assert.match(routes, /route === "\/app\/review"/);
 });
