@@ -10,7 +10,6 @@ mod execution_waiting;
 mod footprints;
 mod imports;
 pub(crate) mod migration;
-mod notes;
 pub(crate) mod photo;
 mod state;
 pub(crate) mod xunji;
@@ -401,7 +400,6 @@ pub async fn serve(
     }
     state::ensure_schema(&connection)?;
     imports::ensure_schema(&connection)?;
-    crate::database::repositories::notes::seed_default_folders(&connection)?;
     photo::ensure_schema(&connection)?;
     match crate::database::legacy::d1_import::import_once(&mut connection, &data_dir) {
         Ok(count) if count > 0 => eprintln!("LifeTrace migrated {count} legacy records"),
@@ -442,7 +440,6 @@ pub async fn serve(
                 .patch(imports::update)
                 .delete(imports::remove),
         )
-        .route("/api/notes", get(notes::get).post(notes::mutate))
         .merge(local_json_routes())
         .route("/api/xunji/parse", axum::routing::post(xunji::parse))
         .layer(middleware::from_fn_with_state(

@@ -1,28 +1,14 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
 };
 
 use serde_json::{json, Value};
 use tauri::State;
 use tokio::fs;
-use uuid::Uuid;
 
 pub struct DesktopState {
     pub data_dir: PathBuf,
-}
-
-fn safe_segment(value: &str) -> Result<&str, String> {
-    if value.is_empty()
-        || value.len() > 180
-        || value.contains(['/', '\\'])
-        || value == "."
-        || value == ".."
-    {
-        Err("文件标识无效".to_owned())
-    } else {
-        Ok(value)
-    }
 }
 
 #[tauri::command]
@@ -45,120 +31,6 @@ pub fn desktop_open_url(url: String) -> Result<(), String> {
     result
         .map(|_| ())
         .map_err(|error| format!("无法调用系统默认浏览器：{error}"))
-}
-
-#[tauri::command]
-pub async fn note_copy_attachment(
-    state: State<'_, DesktopState>,
-    note_id: String,
-    source_path: String,
-) -> Result<Value, String> {
-    let note_id = safe_segment(&note_id)?;
-    let source = PathBuf::from(source_path);
-    if !source.is_file() {
-        return Err("所选附件不存在".to_owned());
-    }
-    let original_name = source
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| "附件名称无效".to_owned())?
-        .to_owned();
-    let clean_name = original_name
-        .chars()
-        .filter(|character| !character.is_control() && !matches!(character, '/' | '\\'))
-        .take(120)
-        .collect::<String>();
-    let file_name = format!("{}-{}", Uuid::new_v4(), clean_name);
-    let folder = state.data_dir.join("attachments").join(note_id);
-    fs::create_dir_all(&folder)
-        .await
-        .map_err(|value| value.to_string())?;
-    let destination = folder.join(&file_name);
-    fs::copy(&source, &destination)
-        .await
-        .map_err(|value| value.to_string())?;
-    let metadata = fs::metadata(&destination)
-        .await
-        .map_err(|value| value.to_string())?;
-    Ok(json!({
-        "id": Uuid::new_v4().to_string(), "noteId": note_id, "fileName": file_name,
-        "originalName": original_name, "mimeType": mime_from_path(&source),
-        "fileSize": metadata.len(), "storagePath": destination.display().to_string(),
-        "createdAt": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
-fn mime_from_path(path: &Path) -> &'static str {
-    match path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_lowercase()
-        .as_str()
-    {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "webp" => "image/webp",
-        "pdf" => "application/pdf",
-        "md" | "txt" => "text/plain",
-        "json" => "application/json",
-        _ => "application/octet-stream",
-    }
-}
-
-fn attachment_path(
-    state: &DesktopState,
-    note_id: &str,
-    file_name: &str,
-) -> Result<PathBuf, String> {
-    Ok(state
-        .data_dir
-        .join("attachments")
-        .join(safe_segment(note_id)?)
-        .join(safe_segment(file_name)?))
-}
-
-#[tauri::command]
-pub async fn note_delete_attachment(
-    state: State<'_, DesktopState>,
-    note_id: String,
-    file_name: String,
-) -> Result<Value, String> {
-    let path = attachment_path(&state, &note_id, &file_name)?;
-    match fs::remove_file(path).await {
-        Ok(_) => Ok(json!({ "ok": true })),
-        Err(value) if value.kind() == std::io::ErrorKind::NotFound => Ok(json!({ "ok": true })),
-        Err(value) => Err(value.to_string()),
-    }
-}
-
-fn open_with_explorer(path: &Path, select: bool) -> Result<Value, String> {
-    let mut command = Command::new("explorer.exe");
-    if select {
-        command.arg(format!("/select,{}", path.display()));
-    } else {
-        command.arg(path);
-    }
-    command.spawn().map_err(|value| value.to_string())?;
-    Ok(json!({ "ok": true }))
-}
-
-#[tauri::command]
-pub fn note_open_attachment(
-    state: State<'_, DesktopState>,
-    note_id: String,
-    file_name: String,
-) -> Result<Value, String> {
-    open_with_explorer(&attachment_path(&state, &note_id, &file_name)?, false)
-}
-
-#[tauri::command]
-pub fn note_show_attachment(
-    state: State<'_, DesktopState>,
-    note_id: String,
-    file_name: String,
-) -> Result<Value, String> {
-    open_with_explorer(&attachment_path(&state, &note_id, &file_name)?, true)
 }
 
 #[tauri::command]

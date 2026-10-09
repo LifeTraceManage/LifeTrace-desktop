@@ -13,7 +13,6 @@ pub mod execution_structure;
 pub mod execution_waiting;
 pub mod finance;
 pub mod habits;
-pub mod notes;
 pub mod state_compat;
 pub mod workouts;
 
