@@ -105,7 +105,8 @@ export function parseIcbcPages(pages: PositionedWord[][]): BankStatement {
   return {transactions, pages: checks, balanceErrors, valid: errors.length === 0, errors};
 }
 export async function parseIcbcPdf(file: File): Promise<BankStatement> {
-  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const [{ getDocument, GlobalWorkerOptions }, worker] = await Promise.all([import("pdfjs-dist/legacy/build/pdf.mjs"), import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")]);
+  GlobalWorkerOptions.workerSrc = worker.default;
   const data = new Uint8Array(await file.arrayBuffer());
   const task = getDocument({data, useSystemFonts: true, disableFontFace: true, useWorkerFetch: false, isEvalSupported: false});
   const pdf = await task.promise;
