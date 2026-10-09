@@ -283,10 +283,14 @@ pub struct StatementMatch {
     pub payment_batch_id:String, pub payment_ordinal:i64,
     pub reason:String,
 }
+// Every invocation represents the full set of currently unambiguous inferred links.
+// Remove stale inference when a later statement makes an earlier match ambiguous.
+// Never touch future explicitly confirmed (non-inferred) links.
 pub fn save_matches(db:&mut Connection, matches:&[StatementMatch])->Result<usize,String>{
     schema(db)?;
     let tx=db.transaction().map_err(|e|e.to_string())?;
-    let mut inserted=0;
+    tx.execute("DELETE FROM statement_transaction_matches WHERE reason=?1",
+        ["unique-card-time-channel"]).map_err(|e|e.to_string())?;
     for item in matches {
         if item.reason!="unique-card-time-channel" || item.bank_ordinal<1 || item.payment_ordinal<1 {
             return Err("对账匹配依据或序号无效".into());
@@ -299,27 +303,15 @@ pub fn save_matches(db:&mut Connection, matches:&[StatementMatch])->Result<usize
         if bank_source!="icbc" || !matches!(payment_source.as_str(),"wechat"|"alipay"){
             return Err("对账只能关联工商银行及微信或支付宝流水".into());
         }
-        let existing:Option<(String,i64)>=tx.query_row(
-            "SELECT payment_batch_id,payment_ordinal FROM statement_transaction_matches
-             WHERE bank_batch_id=?1 AND bank_ordinal=?2",
-            params![item.bank_batch_id,item.bank_ordinal],
-            |row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e|e.to_string())?;
-        if let Some((batch,ordinal))=existing {
-            if batch!=item.payment_batch_id || ordinal!=item.payment_ordinal {
-                return Err("同一银行流水已有不同的匹配关系".into());
-            }
-            continue;
-        }
         tx.execute("INSERT INTO statement_transaction_matches
             (bank_batch_id,bank_ordinal,payment_batch_id,payment_ordinal,reason,matched_at)
             VALUES(?1,?2,?3,?4,?5,?6)",
             params![item.bank_batch_id,item.bank_ordinal,item.payment_batch_id,
                 item.payment_ordinal,item.reason,chrono::Utc::now().to_rfc3339()])
             .map_err(|e|e.to_string())?;
-        inserted+=1;
     }
     tx.commit().map_err(|e|e.to_string())?;
-    Ok(inserted)
+    Ok(matches.len())
 }
 #[tauri::command]
 pub async fn statement_save_matches(state:State<'_,DesktopState>,matches:Vec<StatementMatch>)
@@ -464,15 +456,23 @@ mod tests {
             payment_batch_id:wx.batch_id.clone(),payment_ordinal:1,
             reason:"unique-card-time-channel".into(),
         };
-        assert_eq!(save_matches(&mut db,&[duplicate]).unwrap(),0);
+        assert_eq!(save_matches(&mut db,&[duplicate]).unwrap(),1);
         let conflict=StatementMatch{
             bank_batch_id:bank.batch_id,bank_ordinal:2,
             payment_batch_id:wx.batch_id,payment_ordinal:1,
             reason:"unique-card-time-channel".into(),
         };
-        assert!(save_matches(&mut db,&[conflict]).is_err());
+        let first_again=StatementMatch{
+            bank_batch_id:conflict.bank_batch_id.clone(),bank_ordinal:1,
+            payment_batch_id:conflict.payment_batch_id.clone(),payment_ordinal:1,
+            reason:"unique-card-time-channel".into(),
+        };
+        assert!(save_matches(&mut db,&[first_again,conflict]).is_err());
         let count:i64=db.query_row("SELECT COUNT(*) FROM statement_transaction_matches",[],|r|r.get(0)).unwrap();
         assert_eq!(count,1);
+        assert_eq!(save_matches(&mut db,&[]).unwrap(),0);
+        let empty:i64=db.query_row("SELECT COUNT(*) FROM statement_transaction_matches",[],|r|r.get(0)).unwrap();
+        assert_eq!(empty,0);
     }
     #[test]
     fn invalid_batch_never_partially_imported() {
