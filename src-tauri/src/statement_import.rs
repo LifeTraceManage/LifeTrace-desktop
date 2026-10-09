@@ -331,23 +331,24 @@ pub struct ArchivedStatementRow {
     pub ordinal: i64,
     pub source: String,
     pub status: String,
+    pub verified: bool,
     pub payload: Value,
 }
 pub fn list_raw_rows(db: &Connection) -> Result<Vec<ArchivedStatementRow>, String> {
     schema(db)?;
     let mut stmt=db.prepare(
-        "SELECT r.batch_id,r.ordinal,b.source,r.status,r.payload_json
+        "SELECT r.batch_id,r.ordinal,b.source,r.status,r.payload_json,b.verified
          FROM statement_import_rows r JOIN statement_import_batches b ON b.id=r.batch_id
          ORDER BY b.imported_at,r.ordinal"
     ).map_err(|e|e.to_string())?;
     let rows=stmt.query_map([],|row|{
         let payload_json:String=row.get(4)?;
         Ok((row.get::<_,String>(0)?,row.get::<_,i64>(1)?,
-            row.get::<_,String>(2)?,row.get::<_,String>(3)?,payload_json))
+            row.get::<_,String>(2)?,row.get::<_,String>(3)?,payload_json,row.get::<_,bool>(5)?))
     }).map_err(|e|e.to_string())?;
     let values=rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())?;
-    values.into_iter().map(|(batch_id,ordinal,source,status,json)|{
-        Ok(ArchivedStatementRow{batch_id,ordinal,source,status,
+    values.into_iter().map(|(batch_id,ordinal,source,status,json,verified)|{
+        Ok(ArchivedStatementRow{batch_id,ordinal,source,status,verified,
             payload:serde_json::from_str(&json).map_err(|e:serde_json::Error|e.to_string())?})
     }).collect()
 }
