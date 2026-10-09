@@ -177,8 +177,9 @@ fn migrate_notes(source: &Connection, destination: &mut Connection) -> Result<us
         return Ok(0);
     }
     if has_column(destination, "notes", "content_json") {
-        // 目标已是规范化真实列表：直接导入 D1 真实列数据。
-        return crate::database::legacy::notes_d1::import_d1_notes(source, destination);
+        // The old notes_d1 importer was removed during the notes rewrite.
+        // Fail explicitly rather than marking a migration as complete while dropping notes.
+        return Err("检测到旧版 D1 笔记数据，但当前版本缺少兼容迁移器；已中止迁移以避免丢失笔记".to_owned());
     }
     let mut copied = 0;
     copied += copy_json_query(
