@@ -241,3 +241,36 @@
 .nt-editor-scroll::after{content:"";display:block;height:clamp(48px,10vh,120px);pointer-events:none}
 @media(max-width:1280px){.nt-editor-scroll{padding-left:clamp(24px,5vw,76px);padding-right:clamp(24px,5vw,76px)}}
 @media(max-width:700px){.nt-editor-scroll{padding:0 24px}.nt-title{padding-top:30px;font-size:26px}.nt-editor-head{padding:0 14px}.nt-tabs{padding-left:8px}}
+
+
+/* Compact writing workspace: width belongs to the document, not to chrome. */
+.nt-workspace{grid-template-columns:248px minmax(0,1fr)}
+.nt-workspace.nt-library-collapsed,.nt-workspace.nt-focus-mode{grid-template-columns:minmax(0,1fr)}
+.nt-library-nav{max-height:30%;border-bottom:0}
+.nt-library-nav section{margin-top:5px;padding-top:5px}
+.nt-list-scroll>button{padding:9px 11px}
+.nt-list-scroll>button>p{height:20px;margin:3px 0;white-space:nowrap;text-overflow:ellipsis}
+.nt-list-scroll>button>footer{font-size:9px}
+.nt-editor-head{display:flex;align-items:center;justify-content:space-between;height:34px;min-height:34px;padding:0 20px;gap:12px}
+.nt-editor-head>div:last-child{gap:1px;min-width:0}
+.nt-editor-head .nt-view-switch{display:flex;align-items:center;gap:0;margin:0 7px 0 0;width:auto;padding:0}
+.nt-editor-head .nt-view-switch button{min-height:25px;padding:3px 7px;font-size:10px}
+.nt-editor-scroll{padding:0 clamp(20px,2.5vw,40px) 0}
+.nt-title{padding:16px 0 10px;font-size:27px}
+.nt-edit-layout.nt-mode-rich,.nt-edit-layout.nt-mode-source,.nt-edit-layout.nt-mode-preview,.nt-edit-layout.nt-mode-split{max-width:none;width:100%}
+.nt-rich-editor,.nt-rich-content,.nt-edit-layout .nt-markdown-editor{width:100%}
+.nt-rich-toolbar{padding:0 0 2px}
+.nt-rich-content,.nt-edit-layout .nt-markdown-editor,.nt-markdown-preview{padding-top:6px}
+.nt-editor-scroll::after{height:32px}
+.nt-editor-body.nt-inspector-open{grid-template-columns:minmax(0,1fr) 285px}
+.nt-focus-mode .nt-editor-head{height:28px;min-height:28px;justify-content:flex-end}
+.nt-focus-mode .nt-editor-head>div:last-child{display:none}
+.nt-focus-mode .nt-editor-status>span{display:none}
+.nt-focus-mode .nt-focus-return{display:grid;width:26px;height:26px;opacity:.45}
+.nt-focus-mode .nt-focus-return:hover{opacity:1}
+.nt-focus-mode .nt-editor-scroll{padding-left:clamp(20px,3vw,48px);padding-right:clamp(20px,3vw,48px)}
+.nt-focus-mode .nt-title{padding-top:12px}
+.nt-focus-mode .nt-rich-toolbar{opacity:0}
+.nt-focus-mode .nt-rich-editor:hover .nt-rich-toolbar,.nt-focus-mode .nt-rich-toolbar:focus-within{opacity:1}
+@media(max-width:1050px){.nt-workspace{grid-template-columns:220px minmax(0,1fr)}.nt-editor-scroll{padding-left:20px;padding-right:20px}.nt-editor-head{padding:0 12px}}
+@media(max-width:750px){.nt-workspace{grid-template-columns:190px minmax(0,1fr)}.nt-editor-status span:last-child{display:none}.nt-editor-head .nt-view-switch button{padding:3px 5px}.nt-title{font-size:24px}}
