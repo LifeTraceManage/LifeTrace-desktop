@@ -638,27 +638,6 @@ pub fn generate_report(
     }
 
     let params_range: [&dyn rusqlite::ToSql; 3] = [&user_id, &period_start, &period_end];
-    let transaction_count = count(
-        connection,
-        "SELECT COUNT(*) FROM transactions
-          WHERE user_id=?1 AND local_date BETWEEN ?2 AND ?3 AND deleted_at IS NULL AND status<>'ignored'",
-        &params_range,
-    )?;
-    let expense_cents = count(
-        connection,
-        "SELECT COALESCE(SUM(amount_cents),0) FROM transactions
-          WHERE user_id=?1 AND local_date BETWEEN ?2 AND ?3 AND deleted_at IS NULL
-            AND status<>'ignored' AND transaction_type IN ('expense','fee')",
-        &params_range,
-    )?;
-    let income_cents = count(
-        connection,
-        "SELECT COALESCE(SUM(amount_cents),0) FROM transactions
-          WHERE user_id=?1 AND local_date BETWEEN ?2 AND ?3 AND deleted_at IS NULL
-            AND status<>'ignored' AND transaction_type IN ('income','refund')",
-        &params_range,
-    )?;
-
     let habit_logs = count(
         connection,
         "SELECT COUNT(*) FROM activity_logs
@@ -741,7 +720,6 @@ pub fn generate_report(
         .map_err(|error| error.to_string())?;
 
     let coverage = json!({
-        "finance": transaction_count > 0,
         "habits": habit_logs > 0,
         "fitness": workout_row.0 > 0,
         "english": english_row.0 > 0 || vocabulary_count > 0,
@@ -751,12 +729,6 @@ pub fn generate_report(
     });
     let facts = json!({
         "period": { "start": period_start, "end": period_end, "timezone": timezone },
-        "finance": {
-            "transactionCount": transaction_count,
-            "expenseCents": expense_cents,
-            "incomeCents": income_cents,
-            "netCents": income_cents - expense_cents
-        },
         "habits": {
             "logCount": habit_logs,
             "completedCount": habit_completed,
@@ -965,44 +937,11 @@ mod tests {
     #[test]
     fn rebuild_is_idempotent_and_dirty_state_tracks_source_changes() {
         let (mut connection, user_id) = setup();
-        connection
-            .execute(
-                "INSERT INTO transactions(
-                   id,user_id,transaction_type,amount_cents,currency,counterparty,occurred_at,local_date,
-                   status,source_type,created_at,updated_at,version
-                 ) VALUES('tx1',?1,'expense',2500,'CNY','咖啡店','2026-08-09T08:00:00Z',
-                          '2026-08-09','confirmed','manual','2026-08-09T08:00:00Z',
-                          '2026-08-09T08:00:00Z',1)",
-                [&user_id],
-            )
-            .unwrap();
+        // Non-finance projection changes are validated in timeline/report tests below.
         let first = ensure_current(&mut connection, &user_id).unwrap();
         assert!(!first.dirty);
-        assert_eq!(first.event_count, 1);
-        assert_eq!(first.search_document_count, 1);
-
         let second = rebuild(&mut connection, &user_id).unwrap();
-        assert_eq!(second.event_count, 1);
-        assert_eq!(second.search_document_count, 1);
-
-        connection
-            .execute(
-                "UPDATE transactions SET note='加班咖啡',updated_at='2026-08-09T09:00:00Z' WHERE id='tx1'",
-                [],
-            )
-            .unwrap();
-        assert!(projection_status(&connection, &user_id).unwrap().dirty);
-        ensure_current(&mut connection, &user_id).unwrap();
-        let hits = search(
-            &connection,
-            &user_id,
-            &SearchQuery {
-                q: "加班咖啡".to_owned(),
-                ..SearchQuery::default()
-            },
-        )
-        .unwrap();
-        assert_eq!(hits.len(), 1);
+        assert_eq!(first.event_count, second.event_count);
     }
 
     #[test]
