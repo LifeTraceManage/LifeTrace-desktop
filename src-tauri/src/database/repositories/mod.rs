@@ -11,9 +11,10 @@ pub mod execution_relation;
 pub mod execution_reminder;
 pub mod execution_structure;
 pub mod execution_waiting;
-pub mod finance;
 pub mod habits;
 pub mod state_compat;
 pub mod workouts;
 
 pub mod footprints;
+
+pub mod dates;

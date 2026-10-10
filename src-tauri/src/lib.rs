@@ -3,7 +3,6 @@
 mod application;
 mod cloud_api;
 mod cloud_auth;
-pub mod contracts;
 mod commands;
 mod database;
 mod desktop;
@@ -17,7 +16,6 @@ mod execution_structure;
 mod execution_waiting;
 mod observability;
 mod photo_library;
-mod statement_import;
 mod server;
 mod storage;
 mod sync;
@@ -51,10 +49,6 @@ pub fn run() {
             observability::client_log_read_recent,
             storage::storage_status,
             storage::storage_migrate,
-            statement_import::statement_save_raw,
-            statement_import::statement_list_batches,
-            statement_import::statement_list_raw_rows,
-            statement_import::statement_save_matches,
             photo_library::photo_library_scan,
             photo_library::photo_library_add_folder,
             photo_library::photo_library_remove_folder,

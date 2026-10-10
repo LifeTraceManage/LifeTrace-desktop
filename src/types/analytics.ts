@@ -1,4 +1,4 @@
-export type AnalyticsDomain = "finance" | "habits" | "notes" | "english" | "fitness" | "execution";
+export type AnalyticsDomain = "habits" | "notes" | "english" | "fitness" | "execution";
 
 export type ProjectionStatus = {
   dirty: boolean;
@@ -44,7 +44,6 @@ export type SearchHit = {
 
 export type ReportFacts = {
   period: { start: string; end: string; timezone: string };
-  finance: { transactionCount: number; expenseCents: number; incomeCents: number; netCents: number };
   habits: { logCount: number; completedCount: number; completionRate: number };
   fitness: { workoutCount: number; durationSeconds: number; volumeKg: number; caloriesKcal: number };
   english: { sessionCount: number; readingTimeSeconds: number; completedCount: number; newVocabularyCount: number };

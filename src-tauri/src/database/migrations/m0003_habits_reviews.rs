@@ -341,7 +341,7 @@ fn validate_habits(
 mod tests {
     use super::*;
     use crate::database::migration_runner::run;
-    use crate::database::migrations::{M0001Framework, M0002Finance};
+    use crate::database::migrations::{M0001Framework};
     use rusqlite::Connection;
     use serde_json::json;
     use std::fs;
@@ -433,11 +433,10 @@ mod tests {
         let context = crate::database::migration_runner::MigrationContext::new(directory.clone());
         let migrations: Vec<Box<dyn Migration>> = vec![
             Box::new(M0001Framework),
-            Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
         ];
         let summary = run(&mut connection, &context, &migrations).unwrap();
-        assert_eq!(summary.applied.len(), 3);
+        assert_eq!(summary.applied.len(), 2);
 
         let activities = habits::list_activities(&connection).unwrap();
         let logs = habits::list_activity_logs(&connection).unwrap();
@@ -484,7 +483,6 @@ mod tests {
         let context = crate::database::migration_runner::MigrationContext::new(directory.clone());
         let migrations: Vec<Box<dyn Migration>> = vec![
             Box::new(M0001Framework),
-            Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
         ];
         run(&mut connection, &context, &migrations).unwrap();

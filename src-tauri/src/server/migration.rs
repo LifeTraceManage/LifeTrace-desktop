@@ -5,13 +5,11 @@ use std::{
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 
-const JSON_TABLES: [(&str, &str); 9] = [
+const JSON_TABLES: [(&str, &str); 7] = [
     ("activities", "activities"),
     ("activity_logs", "activity_logs"),
-    ("transactions", "transactions"),
     ("daily_reviews", "daily_reviews"),
     ("settings", "settings"),
-    ("finance_accounts", "finance_accounts"),
     ("workout_history", "workout_history"),
     ("workout_import_records", "workout_imports"),
     ("training_notes", "training_notes"),
@@ -91,14 +89,6 @@ fn copy_json_table(
     if !has_column(destination, destination_table, "data_json") {
         // 目标已是规范化真实列表：通过对应 Repository 导入。
         return match destination_table {
-            "finance_accounts" | "transactions" => {
-                crate::database::legacy::finance_d1::import_json_table(
-                    source,
-                    destination,
-                    source_table,
-                    destination_table,
-                )
-            }
             "activities" | "activity_logs" | "daily_reviews" => {
                 crate::database::legacy::habits_d1::import_json_table(
                     source,
@@ -205,14 +195,8 @@ pub fn migrate_once(destination: &mut Connection, data_dir: &Path) -> Result<usi
             continue;
         }
         for (source_table, destination_table) in JSON_TABLES {
-            if source_table == "finance_accounts" || source_table == "transactions" {
-                continue;
-            }
             copied += copy_json_table(&source, destination, source_table, destination_table)?;
         }
-        // 财务：账户必须先于交易导入。
-        copied += copy_json_table(&source, destination, "finance_accounts", "finance_accounts")?;
-        copied += copy_json_table(&source, destination, "transactions", "transactions")?;
         if copied > 0 {
             break;
         }

@@ -321,7 +321,7 @@ mod tests {
     use super::*;
     use crate::database::migration_runner::run;
     use crate::database::migrations::{
-        M0001Framework, M0002Finance, M0003HabitsReviews, M0004Notes,
+        M0001Framework, M0003HabitsReviews, M0004Notes,
     };
     use rusqlite::Connection;
     use serde_json::json;
@@ -410,7 +410,6 @@ mod tests {
         let context = crate::database::migration_runner::MigrationContext::new(directory.clone());
         let migrations: Vec<Box<dyn Migration>> = vec![
             Box::new(M0001Framework),
-            Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
             Box::new(M0004Notes),
             Box::new(M0006Workouts),

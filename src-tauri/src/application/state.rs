@@ -3,7 +3,7 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 
-use crate::database::repositories::{finance, habits, workouts};
+use crate::database::repositories::{habits, workouts};
 
 const JSON_TABLES: [(&str, &str); 1] = [("settings", "settings")];
 
@@ -117,18 +117,6 @@ pub fn load(connection: &Connection) -> Result<Value, String> {
         );
     }
 
-    result.insert(
-        "accounts".to_owned(),
-        Value::Array(finance::list_accounts(connection)?),
-    );
-    result.insert(
-        "transactions".to_owned(),
-        Value::Array(finance::list_transactions(connection)?),
-    );
-    result.insert(
-        "categories".to_owned(),
-        Value::Array(finance::list_categories(connection)?),
-    );
     Ok(Value::Object(result))
 }
 
@@ -165,9 +153,6 @@ pub fn mutate(
                 .get("value")
                 .ok_or_else(|| "缺少写入数据".to_owned())?;
             match key {
-                "accounts" => finance::save_account(connection, value)?,
-                "transactions" => finance::save_transaction(connection, value)?,
-                "categories" => finance::save_category(connection, value)?,
                 "activities" => habits::save_activity(connection, value)?,
                 "logs" => habits::save_activity_log(connection, value)?,
                 "reviews" => habits::save_daily_review(connection, value)?,
@@ -193,7 +178,6 @@ pub fn mutate(
                 .and_then(Value::as_object)
                 .ok_or_else(|| "缺少更新内容".to_owned())?;
             let mut value = match key {
-                "accounts" => existing_by_id(finance::list_accounts(connection)?, id)?,
                 "activities" => existing_by_id(habits::list_activities(connection)?, id)?,
                 "settings" => return Err("设置不支持局部更新".to_owned()),
                 _ => return Err("该数据表不支持局部更新".to_owned()),
@@ -203,7 +187,6 @@ pub fn mutate(
                 current.insert("id".to_owned(), Value::String(id.to_owned()));
             }
             match key {
-                "accounts" => finance::save_account(connection, &value)?,
                 "activities" => habits::save_activity(connection, &value)?,
                 _ => unreachable!(),
             }
@@ -219,9 +202,6 @@ pub fn mutate(
                 .and_then(Value::as_str)
                 .ok_or_else(|| "缺少数据 id".to_owned())?;
             match key {
-                "accounts" => finance::delete_account(connection, id)?,
-                "transactions" => finance::delete_transaction(connection, id)?,
-                "categories" => finance::delete_category(connection, id)?,
                 "workoutHistory" => workouts::delete_workout(connection, id)?,
                 "settings" => return Err("不能删除设置".to_owned()),
                 _ => return Err("该数据表不支持删除".to_owned()),
@@ -235,16 +215,6 @@ pub fn mutate(
                 .ok_or_else(|| "备份数据格式错误".to_owned())?;
             crate::database::backup::create_backup(connection, data_dir, "before-restore")?;
 
-            let accounts = data
-                .get("accounts")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let transactions = data
-                .get("transactions")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
             let activities = data
                 .get("activities")
                 .and_then(Value::as_array)
@@ -267,7 +237,6 @@ pub fn mutate(
                 .unwrap_or_default();
 
             let transaction = connection.transaction().map_err(|error| error.to_string())?;
-            finance::replace_all(&transaction, &accounts, &transactions)?;
             habits::replace_all(&transaction, &activities, &logs, &reviews)?;
             workouts::replace_all(&transaction, &workout_history)?;
             transaction.commit().map_err(|error| error.to_string())?;

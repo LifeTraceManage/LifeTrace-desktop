@@ -40,7 +40,7 @@ export default function DesktopSearchModule({
       <div className="hx-panel-body">
         <form className="lt-desktop-search-form" onSubmit={run}>
           <Search/>
-          <input autoFocus value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="搜索笔记、账单、坚持、训练和执行记录…"/>
+          <input autoFocus value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="搜索笔记、坚持、训练和执行记录…"/>
           <button className="hx-btn primary" disabled={loading || !query.trim()}>{loading ? <LoaderCircle className="spin"/> : <Search/>}搜索</button>
         </form>
         {error ? <div className="lt-desk-error" role="alert">{error}</div> : null}

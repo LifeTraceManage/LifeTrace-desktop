@@ -768,7 +768,7 @@ fn validate_notes(
 mod tests {
     use super::*;
     use crate::database::migration_runner::run;
-    use crate::database::migrations::{M0001Framework, M0002Finance, M0003HabitsReviews};
+    use crate::database::migrations::{M0001Framework, M0003HabitsReviews};
     use rusqlite::Connection;
     use serde_json::json;
     use std::fs;
@@ -865,7 +865,6 @@ mod tests {
         let context = crate::database::migration_runner::MigrationContext::new(directory.clone());
         let migrations: Vec<Box<dyn Migration>> = vec![
             Box::new(M0001Framework),
-            Box::new(M0002Finance),
             Box::new(M0003HabitsReviews),
             Box::new(M0004Notes),
         ];

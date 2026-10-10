@@ -257,7 +257,6 @@
   background: var(--ui-primary);
 }
 
-.lt-stream-dot.finance { background: var(--ui-warning); }
 .lt-stream-dot.workout { background: var(--ui-info); }
 
 /* Turn habit cards into one desktop list surface. */

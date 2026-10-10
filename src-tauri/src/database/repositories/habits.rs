@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::database::legacy::json_parser;
-use crate::database::repositories::finance;
+use crate::database::repositories::dates;
 
 pub const DEFAULT_USER_ID: &str = "local";
 
@@ -222,7 +222,7 @@ pub fn activity_log_from_legacy_json(
     let created_at = json_parser::string_field(object, "createdAt")
         .or_else(|| json_parser::string_field(object, "updatedAt"))
         .ok_or_else(|| format!("打卡 {id} 缺少 createdAt"))?;
-    let log_date = finance::local_date_of(created_at)?;
+    let log_date = dates::local_date_of(created_at)?;
     let status = optional_text(object, "status");
     if let Some(value) = &status {
         if !LOG_STATUSES.contains(&value.as_str()) {
@@ -292,7 +292,7 @@ pub fn daily_review_from_legacy_json(
     if !review_date
         .chars()
         .all(|character| character.is_ascii_digit() || character == '-')
-        || finance::local_date_of(review_date).is_err()
+        || dates::local_date_of(review_date).is_err()
     {
         return Err(format!("复盘 {id} 日期不合法: {review_date}"));
     }
