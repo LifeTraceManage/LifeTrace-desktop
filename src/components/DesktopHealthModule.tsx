@@ -3,6 +3,7 @@ import { Activity, Dumbbell, HeartPulse, MoonStar } from "lucide-react";
 import { useLifeStore } from "@/src/stores/useLifeStore";
 import { EmptyState, StatDisplay } from "@/src/components/common";
 import { dayKey } from "@/src/utils/format";
+import MedicalReportBrowser from "@/src/components/MedicalReportBrowser";
 
 export default function DesktopHealthModule() {
   const { activities, logs, reviews, workoutHistory } = useLifeStore();
@@ -34,6 +35,7 @@ export default function DesktopHealthModule() {
       </div>
       <div><HeartPulse/><span>近 7 天复盘</span><strong>{recentReviews.length} 天</strong></div>
     </article>
+    <MedicalReportBrowser/>
     <div className="hx-metrics">
       <StatDisplay label="今日坚持" value={String(completedToday) + " / " + activities.length} sub="已完成项目" tone="positive"/>
       <StatDisplay label="本周训练" value={String(weekWorkouts.length)} sub="近 7 天训练次数"/>

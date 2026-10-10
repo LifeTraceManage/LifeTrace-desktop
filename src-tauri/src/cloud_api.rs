@@ -9,6 +9,7 @@ use url::Url;
 use crate::sync::SyncDesktopState;
 
 const MAX_API_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+const MAX_MEDICAL_REQUEST_BYTES: usize = 18 * 1024 * 1024;
 const MAX_API_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_QUERY_BYTES: usize = 16 * 1024;
 
@@ -70,10 +71,12 @@ pub async fn cloud_api_http_request(
     state: State<'_, SyncDesktopState>,
     request: CloudApiHttpRequest,
 ) -> Result<CloudApiHttpResponse, String> {
+    let medical_upload = request.path == "/api/v1/medical/extract";
+    let body_limit = if medical_upload { MAX_MEDICAL_REQUEST_BYTES } else { MAX_API_REQUEST_BYTES };
     if request
         .body
         .as_ref()
-        .is_some_and(|body| body.len() > MAX_API_REQUEST_BYTES)
+        .is_some_and(|body| body.len() > body_limit)
     {
         return Err("桌面云 API 请求体超过安全上限".to_owned());
     }
@@ -94,7 +97,7 @@ pub async fn cloud_api_http_request(
     let method = api_method(&request.method)?;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(45))
+        .timeout(Duration::from_secs(if medical_upload { 120 } else { 45 }))
         .redirect(Policy::none())
         .build()
         .map_err(|error| format!("无法初始化云端 API 客户端: {error}"))?;

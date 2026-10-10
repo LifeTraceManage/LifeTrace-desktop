@@ -1,4 +1,5 @@
 import { desktopApiClient } from "@/src/services/apiClient";
+import type { MedicalExtractReply, MedicalImageInput } from "@/src/services/medicalReportApi";
 
 export type CloudAgentSession = {
   id: string;
@@ -37,6 +38,13 @@ export type CloudAgentReply = {
 };
 
 export const cloudAgentApi = {
+  async extractMedicalReports(images: MedicalImageInput[], instruction?: string): Promise<MedicalExtractReply> {
+    return desktopApiClient.request<MedicalExtractReply>("/api/v1/medical/extract", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ images, instruction: instruction?.trim() || null }),
+    }, { timeoutMs: 120_000 });
+  },
   async ask(prompt: string, sessionId?: string | null): Promise<CloudAgentReply> {
     return desktopApiClient.request<CloudAgentReply>("/api/v1/web/assistant", {
       method: "POST",

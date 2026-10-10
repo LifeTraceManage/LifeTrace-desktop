@@ -1,10 +1,15 @@
 # LifeTrace Desktop · Agent 驱动医疗检查报告归档方案
 
+> **最新产品范围（2026-10-09）**：医疗报告全部为图片，首版只接受 JPG/PNG/WebP（最多 8 张，每张不超过 5 MiB，总计 12 MiB），不提供 PDF 导入、不做 OCR。使用多模态模型直接读取图片；原件字节不改动，SQLite 与文件均不加密。最新范围优先于下方旧设计中的其他格式说明。
+
+
+> **存储决策更新（2026-10-08）**：用户明确不使用加密。原始图片作为普通本地文件保存，检查结果作为普通 SQLite 数据保存；无需 Medical Vault/密码/解锁。其他与此冲突的旧设计均由 [实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md) 取代。
+
 > **工程实施清单**：参见 [Agent 医疗报告归档实施方案](MEDICAL_AGENT_IMPLEMENTATION_PLAN.md)。接口、安全、数据表、阶段任务及验收以实施方案为准。
 
-> 状态：方案更新（Agent-first；尚未实现）  
+> 状态：开发分支已有实现；仍在自动化与真实模型验收中  
 > 仓库：`LifeTraceManage/LifeTrace-desktop`  
-> 用户目标：**把医疗检查报告照片或 PDF 发给 LifeTrace 云端 Agent，由 Agent 识别并填写检查记录。**  
+> 用户目标：**把医疗检查报告照片 发给 LifeTrace 云端 Agent，由 Agent 识别并填写检查记录。**  
 > 用户交互：**上传报告 → Agent 提取 → 查看归档预览 → 一键确认**。不要求手动填写检查表单。  
 > 产品范围：只管理每次医疗检查报告，包括血检、尿检、彩超、CT、MRI、心电图、体检等；不建设完整医疗病历/诊疗系统。
 
@@ -12,7 +17,7 @@
 
 ### 1.1 唯一主要录入方式：对话
 
-用户在 `/app/assistant` 的云端 Agent 输入框发送一张或多张检查报告照片、扫描件或 PDF，也可以补充一句自然语言，例如：
+用户在 `/app/assistant` 的云端 Agent 输入框发送一张或多张检查报告照片、扫描图片，也可以补充一句自然语言，例如：
 
 - “把这份血常规报告记录下来”
 - “这是我今天做的腹部彩超”
@@ -53,7 +58,7 @@ Agent 应：
 
 - 列表：按日期倒序、检查类型、机构；
 - 详情：自动提取的日期、检查名称、报告所见、结论、指标表；
-- 附件：原图/PDF，按上传顺序预览；
+- 附件：原图，按上传顺序预览；
 - 趋势：对相同名称/同一单位的常见检验指标查看多次结果；
 - 管理动作：通过 Agent 对话修改、合并、重新识别、删除（删除需要明确确认）。
 
@@ -87,7 +92,7 @@ LifeTrace 当前云端 Agent 的实现与服务在：
 
 ```text
 桌面 Agent 对话窗口
-   └─ 用户发送 1..N 张报告照片 / PDF + 可选文字
+   └─ 用户发送 1..N 张报告照片 + 可选文字
         ↓
 桌面创建本机待归档草稿（保存原图、hash、上传顺序）
         ↓
@@ -226,7 +231,7 @@ created_at
 | 责任 | 所在端 | 说明 |
 | --- | --- | --- |
 | 文件选择/拍照及原图持有 | Desktop | 同一 Agent 聊天界面上传；原图先留本地 |
-| 直接视觉识别/字段抽取（无独立 OCR） | LifeTrace-cloud / 视觉模型提供方 | 将获授权的原始图片或 PDF 页面直接作为视觉输入 |
+| 直接视觉识别/字段抽取（无独立 OCR） | LifeTrace-cloud / 视觉模型提供方 | 将获授权的原始图片 页面直接作为视觉输入 |
 | 提取字段 schema 验证 | Cloud + Desktop | 模型输出当作非可信候选数据 |
 | 草稿预览/询问用户更正 | Agent 对话 UI | 展示异常字段和图片证据 |
 | 最终记录与原图持久化 | Desktop Rust + SQLite / encrypted object store | 不由 Cloud Agent 直接连本机数据库 |
@@ -239,14 +244,14 @@ created_at
 1. Agent 生成经过 schema 校验的 `medical_exam.commit` 候选动作；
 2. Cloud 将一次性 `draft_token` / `draft_id` 和脱敏状态返回桌面端；
 3. 用户在桌面 Agent 对话界面确认；
-4. 桌面端从本机加密草稿读取结构化数据，调用 Tauri IPC `medical_exam_commit_draft`；
+4. 桌面端从会话内存中的识别草稿读取结构化数据，调用 Tauri IPC `medical_exam_commit_draft`；
 5. Rust 校验当前登录 profile、草稿所属会话、附件归属、重复提交 key；
-6. Rust 在事务中创建检查与结果，管理附件加密对象并反馈；
+6. Rust 在事务中创建检查与结果，管理原始本地文件并反馈；
 7. Desktop 仅在收到成功回执后显示“已归档”。
 
 草稿结构化数据需通过一次性安全响应交付并存入**本机受保护草稿存储**，不要长久塞在 Cloud 的 Agent 对话历史/审批 JSON 中。不能从 Cloud 向客户端 localhost 打开未经认证的反向写入通道，也不能相信模型可自行完成本机写入。
 
-未来如果确实要求跨设备共享，可另行设计 opt-in 的医疗专用加密同步；它不是本次 MVP 必须项。
+医疗数据默认 local-only，不使用普通云同步，未来跨设备同步另行规划。
 
 ### 5.1 运行时能力探测与纯视觉模型策略
 
@@ -256,7 +261,7 @@ created_at
 
 - 在上传界面/服务端校验该 provider/model 的 image input capability；
 - **必须使用实际支持图片输入的多模态视觉模型**，直接读取照片中的表格、文字、日期、医院、检查所见和结论；不实施 OCR -> text fallback；
-- 对图片直接提交原图（可做旋转/缩放/去除界面边框等不改变报告信息的预处理）。对 PDF：模型接口支持原生 PDF 时可直接发送；否则仅使用 PDF 渲染器按页转换为图片并交给视觉模型，**不采用 OCR 或单独的文档文本解析流水线**；
+- 仅直接发送图片给视觉模型；不使用 PDF 渲染器或 OCR。
 - 任何 provider 不支持图像时明确报错或要求切换，**不能假装图片已被识别**；
 - 上传必须有大小、格式、页数、分辨率限制，并有明确失败反馈。
 
@@ -306,11 +311,11 @@ Cloud Agent 应增加受策略约束的医疗场景能力；不得直接给通�
 
 ### 6.2 本地保存
 
-- 当前主 `lifetrace.db` 未加密；医疗正文/指标/原图需要独立安全存储设计；
-- 原图建议用 Vault 通用 AES-GCM encrypted object store（抽离图片专属语义）；
-- 敏感结构化内容使用字段级加密或独立加密 medical DB，不明文塞普通全局查询表；
-- 当用户锁定医疗数据时，禁止通过 Agent 历史、普通搜索或缓存泄漏已提取内容；
-- 允许本机加密备份和恢复；备份时包含数据与附件，验证 hash 与可读取性。
+- 按用户要求不加密：检查结果以普通数据写入 `lifetrace.db`，原图原样保存到 `data_dir/medical/originals/`；
+- 不需要 Medical Vault、SQLCipher、照片 Vault 密钥或医疗数据解锁；
+- 本机具备文件访问权限的程序和备份可能直接读取医疗数据，用户需知晓这一隐私取舍；
+- 不将医疗记录写入 Agent 通用聊天历史、普通云同步和普通全局索引；
+- 备份同时包含 SQLite 和原图目录，验证 SHA-256 与关联关系。
 
 ### 6.3 医疗准确性
 
@@ -367,7 +372,7 @@ type MedicalExamExtractionDraft = {
 
 ### LifeTrace-desktop
 
-- `src/components/CloudAgentModule.tsx`：图片 / PDF 上传、预览、进度、批量附件、Agent 归档预览卡、确认操作；
+- `src/components/CloudAgentModule.tsx`：图片 上传、预览、进度、批量附件、Agent 归档预览卡、确认操作；
 - `src/services/cloudAgentApi.ts`：支持携带安全文件引用的多模态请求，typed draft/commit status；
 - `src/components/DesktopHealthModule.tsx`：健康检查列表、详情及检测值趋势的只读工作区；
 - `src/services/medicalExamApi.ts`：本机 IPC 查询 / 提交 / 备份；
@@ -375,14 +380,14 @@ type MedicalExamExtractionDraft = {
 - `src-tauri/src/commands/medical_exam.rs`：本机事务写入与查询；
 - `src-tauri/src/application/medical_exam.rs`：归档动作策略和幂等；
 - `src-tauri/src/database/repositories/medical_exam.rs`：数据持久化；
-- 数据库 migration、Medical Vault 扩展、备份和测试。
+- 数据库 migration、原始文件目录、备份和测试。
 
 **不再设计 `ExamForm.tsx` 一类手工创建界面作为入口。**
 
 ### LifeTrace-cloud
 
 - Agent 请求/会话扩展为带安全附件引用的多模态消息；图像识别直接由视觉模型完成，禁止额外 OCR 中间流程；
-- 短期文件接收 / 图像预处理 / PDF 渲染为图片（如模型不原生支持 PDF）；**不引入 PaddleOCR、Docling、MinerU 或其他独立 OCR/文档提取引擎**；
+- 图片来源签名校验与大小限制；**不引入 PaddleOCR、Docling、MinerU 或其他独立 OCR/文档提取引擎**；
 - 实际可用 vision provider 的能力校验；
 - `MedicalExamExtractionDraft` 严格 schema 提取；
 - 医疗场景的受控 tool/capability + 预览/纠错；
@@ -414,8 +419,8 @@ type MedicalExamExtractionDraft = {
 - [ ] 多报告批量导入、拆分/合并；
 - [ ] 对话式修正与修订历史；
 - [ ] 血检/生化指标趋势；
-- [ ] PDF（原生多模态支持或按页渲染为图片）处理；
-- [ ] 加密备份与恢复；
+- [ ] 图片格式与内容签名校验、来源关联和去重；
+- [ ] 普通文件备份与恢复；
 - [ ] 权限、过期、取消、恢复及中断重试。
 
 ### P2 — 非必需增强

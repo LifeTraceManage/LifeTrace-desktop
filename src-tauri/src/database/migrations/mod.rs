@@ -20,6 +20,8 @@ mod m0016_note_folder_hierarchy;
 mod m0017_execution_cloud_extensions;
 mod m0020_footprints;
 mod m0021_sync_registry_alignment;
+mod m0022_medical_reports;
+mod m0023_medical_revisions;
 
 pub use m0001_framework::M0001Framework;
 pub use m0003_habits_reviews::M0003HabitsReviews;
@@ -38,6 +40,8 @@ pub use m0016_note_folder_hierarchy::M0016NoteFolderHierarchy;
 pub use m0017_execution_cloud_extensions::M0017ExecutionCloudExtensions;
 pub use m0020_footprints::M0020Footprints;
 pub use m0021_sync_registry_alignment::M0021SyncRegistryAlignment;
+pub use m0022_medical_reports::M0022MedicalReports;
+pub use m0023_medical_revisions::M0023MedicalReportRevisions;
 
 use crate::database::migration_runner::Migration;
 
@@ -65,5 +69,7 @@ pub fn all() -> Vec<Box<dyn Migration>> {
         Box::new(M0017ExecutionCloudExtensions),
         Box::new(M0020Footprints),
         Box::new(M0021SyncRegistryAlignment),
+        Box::new(M0022MedicalReports),
+        Box::new(M0023MedicalReportRevisions),
     ]
 }
