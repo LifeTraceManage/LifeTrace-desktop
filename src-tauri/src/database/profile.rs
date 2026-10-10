@@ -238,24 +238,16 @@ mod tests {
         let first = active_profile_id(&connection).unwrap();
         let second = create(&connection, "第二资料").unwrap();
         connection.execute(
-            "INSERT INTO finance_accounts(id,user_id,name,account_type,opening_balance_cents,is_archived,created_at,updated_at,version)
-             VALUES('profile-a-account',?1,'A','cash',0,0,?3,?3,1),
-                   ('profile-b-account',?2,'B','cash',0,0,?3,?3,1)",
+            "INSERT INTO activities(id,user_id,name,activity_type,created_at,updated_at)
+             VALUES('profile-a-activity',?1,'A','count',?3,?3),
+                   ('profile-b-activity',?2,'B','count',?3,?3)",
             params![first, second.id, Utc::now().to_rfc3339()],
         ).unwrap();
         let first_count: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM finance_accounts WHERE user_id=?1",
-                [&first],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM activities WHERE user_id=?1", [&first], |row| row.get(0))
             .unwrap();
         let second_count: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM finance_accounts WHERE user_id=?1",
-                [&second.id],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM activities WHERE user_id=?1", [&second.id], |row| row.get(0))
             .unwrap();
         assert_eq!((first_count, second_count), (1, 1));
 

@@ -436,7 +436,7 @@ mod tests {
             Box::new(M0003HabitsReviews),
         ];
         let summary = run(&mut connection, &context, &migrations).unwrap();
-        assert_eq!(summary.applied.len(), 3);
+        assert_eq!(summary.applied.len(), 2);
 
         let activities = habits::list_activities(&connection).unwrap();
         let logs = habits::list_activity_logs(&connection).unwrap();

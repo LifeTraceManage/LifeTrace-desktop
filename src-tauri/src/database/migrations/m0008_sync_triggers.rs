@@ -176,7 +176,7 @@ mod tests {
             "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"});
         crate::database::repositories::habits::save_activity(&connection, &value).unwrap();
         let count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='habits.activity'",
+            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='habit.activity'",
             [], |row| row.get(0)).unwrap();
         assert_eq!(count, 1);
         connection.execute("UPDATE sync_context SET origin='remote' WHERE singleton=1", []).unwrap();
@@ -184,7 +184,7 @@ mod tests {
         updated["name"] = json!("远端阅读");
         crate::database::repositories::habits::save_activity(&connection, &updated).unwrap();
         let count_after: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='habits.activity'",
+            "SELECT COUNT(*) FROM sync_outbox WHERE entity_type='habit.activity'",
             [], |row| row.get(0)).unwrap();
         assert_eq!(count_after, 1);
     }
