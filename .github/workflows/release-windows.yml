@@ -2,12 +2,16 @@ name: Release Windows Installer
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+    paths:
+      - ".github/release-requests/**"
   workflow_dispatch:
     inputs:
       version:
-        description: "要发布的版本（必须与 package.json / tauri.conf.json / Cargo.toml 一致），例如 0.3.3"
+        description: "要发布的版本（必须与 package.json / tauri.conf.json / Cargo.toml 一致），例如 0.3.4"
         required: false
         type: string
 
@@ -72,6 +76,9 @@ jobs:
 
       - name: Frontend build
         run: npm run web:build
+
+      - name: Rust tests
+        run: npm run test:rust
 
       - name: Prepare release notes
         id: release_notes
