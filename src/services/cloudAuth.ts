@@ -95,7 +95,7 @@ const DESKTOP_SCOPES = [
   "mail:read",
   "mail:write",
 ] as const;
-export const CLIENT_VERSION = "0.3.3";
+export const CLIENT_VERSION = "0.3.4";
 const DEVICE_KEY = "lifetrace-cloud-device-id";
 const CLOUD_ORIGIN_KEY = "lifetrace-cloud-origin";
 
