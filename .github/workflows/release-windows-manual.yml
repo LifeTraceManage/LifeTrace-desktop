@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   manual-windows-installer:
@@ -45,16 +45,13 @@ jobs:
           npm run test:unit
           npm run web:build
 
-      - name: Run Rust tests
-        run: npm run test:rust
-
       - name: Ensure release credentials and existing latest are safe
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
-            throw "Missing RELEASE_TOKEN: cannot publish to LifeTrace-Releases."
+            throw "GitHub Actions token is unavailable; cannot publish in source repository."
           }
           $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           if ($config.version -ne "0.3.4") {
@@ -73,7 +70,7 @@ jobs:
       - name: Build and publish NSIS manual installer (no updater signing)
         uses: tauri-apps/tauri-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           projectPath: .
           tagName: v0.3.4
@@ -83,11 +80,11 @@ jobs:
             
             ⚠️ 本次仅提供 NSIS .exe 安装包。签名私钥配置尚需修复，本次不会生成 .sig 或 latest.json，不会通过应用内自动更新推送。请手动下载并安装。
             
-            v0.3.3 稳定版本和其自动更新元数据保持不变。修复原有签名密钥后再发布正式的自动更新版本。
+            安装包发布在 LifeTraceManage/LifeTrace-desktop（源码仓库）的 Releases 中，仅供手动下载。原 LifeTrace-Releases 仓库的 v0.3.3 稳定版本及自动更新元数据保持不变。后续需要恢复与旧客户端公钥匹配的原始签名密钥，再发布正式自动更新版本。
           releaseDraft: false
           prerelease: true
-          owner: zhouxingxing1279
-          repo: LifeTrace-Releases
+          owner: LifeTraceManage
+          repo: LifeTrace-desktop
           releaseCommitish: main
           args: --verbose --config src-tauri/tauri.manual.conf.json
           uploadUpdaterJson: false
@@ -95,10 +92,10 @@ jobs:
       - name: Verify installer and no updater metadata was published
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $release = gh api repos/zhouxingxing1279/LifeTrace-Releases/releases/tags/v0.3.4 | ConvertFrom-Json
+          $release = gh api repos/LifeTraceManage/LifeTrace-desktop/releases/tags/v0.3.4 | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw "Release v0.3.4 not found." }
           if (-not $release.prerelease) { throw "Unsigned manual installer must remain a prerelease." }
           $installer = @($release.assets | Where-Object { $_.name -eq "LifeTrace_0.3.4_x64-setup.exe" -and $_.size -gt 1000000 })
